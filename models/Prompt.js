@@ -9,8 +9,6 @@ const Prompt = sequelize.define("Prompt", {
     short_description: { type: DataTypes.STRING(500), allowNull: false },
     category_id: { type: DataTypes.INTEGER, references: { model: Category, key: "id" } },
     is_type: { type: DataTypes.INTEGER, defaultValue: 1 },
-    status: { type: DataTypes.INTEGER, defaultValue: 1 },
-    views: { type: DataTypes.INTEGER, defaultValue: 0 },
     created_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW },
     updated_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW },
 }, {

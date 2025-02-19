@@ -14,5 +14,4 @@ const Subscription = sequelize.define("Subscription", {
     updatedAt: "updated_at",
     createdAt: "created_at",
 });
-
 module.exports = Subscription;
