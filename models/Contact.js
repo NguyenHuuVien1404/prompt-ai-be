@@ -27,6 +27,10 @@ const Contact = sequelize.define("Contact", {
         type: DataTypes.TEXT,
         allowNull: true
     },
+    type: {
+        type: DataTypes.INTEGER,
+        allowNull: false
+    },
     created_at: {
         type: DataTypes.DATE,
         defaultValue: DataTypes.NOW

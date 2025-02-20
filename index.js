@@ -10,7 +10,7 @@ const contactRoutes = require("./routes/contactRoutes");
 dotenv.config();
 const app = express();
 app.use(cors({
-    origin: "http://localhost:3000", // Chỉ cho phép React frontend
+    origin: "*", // Chỉ cho phép React frontend
     methods: ["GET", "POST", "PUT", "DELETE"],
     allowedHeaders: ["Content-Type", "Authorization"]
 }));
