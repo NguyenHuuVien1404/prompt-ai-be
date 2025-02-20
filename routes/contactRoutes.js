@@ -61,6 +61,38 @@ router.post("/", async (req, res) => {
         res.status(400).json({ message: error.message });
     }
 });
+//Thêm người dùng thông báo
+router.post("/add-email", async (req, res) => {
+    try {
+        const { email, type, name, message, reply, status } = req.body;
+
+        if (!email) {
+            return res.status(400).json({ message: "Email is required" });
+        }
+
+        // Kiểm tra xem email đã tồn tại chưa
+        const existingContact = await Contact.findOne({ where: { email } });
+        if (existingContact) {
+            return res.status(400).json({ message: "Email already exists" });
+        }
+
+        // Tạo mới Contact với giá trị mặc định nếu không có trong request
+        const newContact = await Contact.create({
+            email,
+            type: type ?? 2,
+            name: name ?? "",
+            message: message ?? "",
+            reply: reply ?? "",
+            status: status ?? 1,
+        });
+
+        res.status(201).json({ message: "Email added successfully", contact: newContact });
+    } catch (error) {
+        res.status(500).json({ message: "Server error", error: error.message });
+    }
+});
+
+
 router.put("/:id", async (req, res) => {
     try {
         const { reply } = req.body;
