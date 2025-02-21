@@ -1,6 +1,8 @@
 const express = require("express");
 const router = express.Router();
 const Category = require("../models/Category");
+const { Sequelize } = require("sequelize");
+const Prompt = require("../models/Prompt");
 
 // Lấy danh sách danh mục
 router.get("/", async (req, res) => {
@@ -42,6 +44,39 @@ router.get("/list", async (req, res) => {
         res.status(500).json({ error: error.message });
     }
 });
+
+router.get("/by-sectionId/:sectionId", async (req, res) => {
+    try {
+        const { sectionId } = req.params;
+
+        if (!sectionId) {
+            return res.status(400).json({ error: "sectionId is required" });
+        }
+
+        // Lấy danh sách categories theo sectionId và đếm số lượng prompts trong mỗi category
+        const categories = await Category.findAll({
+            where: { section_id: sectionId },
+            include: [
+                {
+                    model: Prompt,
+                    attributes: [], // Không lấy dữ liệu Prompt, chỉ lấy số lượng
+                },
+            ],
+            attributes: {
+                include: [
+                    [Sequelize.fn("COUNT", Sequelize.col("Prompts.id")), "prompt_count"],
+                ],
+            },
+            group: ["Category.id"], // Nhóm theo Category để COUNT hoạt động chính xác
+        });
+
+        res.json({ categories });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+
 
 // Lấy chi tiết danh mục
 router.get("/:id", async (req, res) => {
