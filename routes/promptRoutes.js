@@ -1,9 +1,11 @@
 const express = require("express");
 const router = express.Router();
+const { Op, Sequelize } = require("sequelize");
 const Prompt = require("../models/Prompt");
 const Category = require("../models/Category");
 const multer = require("multer");
 const path = require("path");
+
 // Cấu hình Multer để lưu file vào thư mục "uploads"
 const storage = multer.diskStorage({
     destination: (req, file, cb) => {
@@ -80,7 +82,84 @@ router.get("/", async (req, res) => {
         res.status(500).json({ message: "Error fetching prompts", error: error.message });
     }
 });
+// Get all prompts for user by categoryId with pagination
 
+router.get("/by-category", async (req, res) => {
+    try {
+        const category_id = req.query.category_id;
+        if (!category_id) {
+            return res.status(400).json({ message: "category_id is required" });
+        }
+        const is_type = req.query.is_type || 1;
+        const content = req.query.content;
+        const searchText = req.query.search_text;
+        const page = parseInt(req.query.page) || 1;
+        const pageSize = parseInt(req.query.pageSize) || 12;
+        const offset = (page - 1) * pageSize;
+        console.log(req.query);
+        // Tạo điều kiện lọc động
+        let whereCondition = { category_id: category_id, is_type: is_type };
+
+        if (content) {
+            whereCondition.content = content;
+        }
+
+        if (searchText) {
+            whereCondition[Op.or] = [
+                { title: { [Op.like]: `%${searchText}%` } },
+                { title: { [Op.like]: `%${searchText.toLowerCase()}%` } },
+                { title: { [Op.like]: `%${searchText.toUpperCase()}%` } }
+            ];
+        }
+        
+        console.log("SEARCH TEXT:", searchText);
+        console.log("WHERE CONDITION:", JSON.stringify(whereCondition, null, 2));
+
+        const { count, rows } = await Prompt.findAndCountAll({
+            where: whereCondition,
+            include: [{ model: Category, attributes: ["id", "name", "image"] }],
+            limit: pageSize,
+            offset: offset,
+            order: [["created_at", "DESC"]],
+        });
+
+        res.status(200).json({
+            total: count,
+            page,
+            pageSize,
+            data: rows,
+        });
+    } catch (error) {
+        res.status(500).json({ message: "Error fetching prompts", error: error.message });
+    }
+});
+// lấy list content theo category
+router.get("/contents/by-category", async (req, res) => {
+    try {
+        const category_id = req.query.category_id;
+        if (!category_id) {
+            return res.status(400).json({ message: "category_id is required" });
+        }
+
+        // Lấy danh sách content, lọc trùng bằng DISTINCT
+        const contents = await Prompt.findAll({
+            attributes: [[Sequelize.fn("DISTINCT", Sequelize.col("content")), "content"]],
+            where: { category_id },
+            raw: true, // Trả về dữ liệu thuần (không phải instance Sequelize)
+        });
+
+        // Chuyển danh sách về mảng đơn giản
+        const uniqueContents = contents.map(item => item.content);
+
+        res.status(200).json({
+            category_id,
+            total: uniqueContents.length,
+            contents: uniqueContents
+        });
+    } catch (error) {
+        res.status(500).json({ message: "Error fetching contents", error: error.message });
+    }
+});
 // Get prompt by id
 router.get("/:id", async (req, res) => {
     try {
@@ -213,5 +292,7 @@ router.delete("/:id", async (req, res) => {
     }
 });
 // API upload ảnh
+
+
 
 module.exports = router;
