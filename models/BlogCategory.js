@@ -13,14 +13,7 @@ const BlogCategory = sequelize.define(
             type: DataTypes.STRING(255),
             allowNull: false,
         },
-        description: {
-            type: DataTypes.TEXT,
-        },
-        slug: {
-            type: DataTypes.STRING(255),
-            allowNull: false,
-            unique: true,
-        },
+
     },
     {
         tableName: "blog_categories",

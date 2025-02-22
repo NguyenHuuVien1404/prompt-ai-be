@@ -28,15 +28,7 @@ const Blog = sequelize.define(
             defaultValue: "draft",
             allowNull: false,
         },
-        author_id: {
-            type: DataTypes.INTEGER,
-            allowNull: false,
-            references: {
-                model: User,
-                key: "id",
-            },
-            onDelete: "CASCADE",
-        },
+
         category_id: {
             type: DataTypes.INTEGER,
             allowNull: false,
@@ -50,16 +42,12 @@ const Blog = sequelize.define(
             type: DataTypes.DATE,
             allowNull: true,
         },
-        slug: {
-            type: DataTypes.STRING(255),
-            allowNull: false,
-            unique: true,
-        },
+
         meta_description: {
             type: DataTypes.STRING(255),
         },
         featured_image: {
-            type: DataTypes.STRING(255),
+            type: DataTypes.TEXT,
         },
     },
     {
@@ -69,5 +57,8 @@ const Blog = sequelize.define(
         updatedAt: "updated_at",
     }
 );
-
+Blog.belongsTo(BlogCategory, {
+    foreignKey: "category_id",
+    as: "category", // Định danh alias để dùng trong truy vấn
+});
 module.exports = Blog;
