@@ -10,7 +10,6 @@ const sectionRoutes = require("./routes/sectionRoutes");
 const blogCategoryRoutes = require("./routes/blogCategoryRoutes");
 const blogRoutes = require("./routes/blogRoutes");
 const subscriptionRotues = require("./routes/subscriptionRotues");
-
 dotenv.config();
 const app = express();
 app.use("/uploads", express.static("uploads"));
