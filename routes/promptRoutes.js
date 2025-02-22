@@ -3,6 +3,7 @@ const router = express.Router();
 const { Op, Sequelize } = require("sequelize");
 const Prompt = require("../models/Prompt");
 const Category = require("../models/Category");
+const Topic = require("../models/Topic")
 const multer = require("multer");
 const path = require("path");
 
@@ -91,19 +92,16 @@ router.get("/by-category", async (req, res) => {
             return res.status(400).json({ message: "category_id is required" });
         }
         const is_type = req.query.is_type || 1;
-        const content = req.query.content;
+        const topic_id = req.query.topic_id;
         const searchText = req.query.search_text;
         const page = parseInt(req.query.page) || 1;
         const pageSize = parseInt(req.query.pageSize) || 12;
         const offset = (page - 1) * pageSize;
-        console.log(req.query);
         // Tạo điều kiện lọc động
-        let whereCondition = { category_id: category_id, is_type: is_type };
-
-        if (content) {
-            whereCondition.content = content;
+        let whereCondition = { category_id: category_id, is_type: is_type  };
+        if (topic_id && topic_id != 0) {
+            whereCondition.topic_id = topic_id;
         }
-
         if (searchText) {
             whereCondition[Op.or] = [
                 { title: { [Op.like]: `%${searchText}%` } },
@@ -111,16 +109,16 @@ router.get("/by-category", async (req, res) => {
                 { title: { [Op.like]: `%${searchText.toUpperCase()}%` } }
             ];
         }
-        
-        console.log("SEARCH TEXT:", searchText);
-        console.log("WHERE CONDITION:", JSON.stringify(whereCondition, null, 2));
 
         const { count, rows } = await Prompt.findAndCountAll({
             where: whereCondition,
-            include: [{ model: Category, attributes: ["id", "name", "image"] }],
+            include: [
+                { model: Category, attributes: ["id", "name", "image"] },
+                { model: Topic, attributes: ["id", "name"] },
+        ],
             limit: pageSize,
             offset: offset,
-            order: [["created_at", "DESC"]],
+            // order: [["created_at", "DESC"]],
         });
 
         res.status(200).json({
@@ -133,33 +131,77 @@ router.get("/by-category", async (req, res) => {
         res.status(500).json({ message: "Error fetching prompts", error: error.message });
     }
 });
-// lấy list content theo category
-router.get("/contents/by-category", async (req, res) => {
+router.get("/topics/by-category", async (req, res) => {
+    try {
+        const { category_id } = req.query;
+        if (!category_id) {
+            return res.status(400).json({ message: "category_id is required" });
+        }
+
+        // Kiểm tra xem có prompt nào với category_id không
+        const prompts = await Prompt.findAll({
+            where: { category_id },
+            attributes: ["topic_id"], // Chỉ lấy topic_id để tìm topic tương ứng
+            raw: true,
+        });
+
+        if (!prompts.length) {
+            return res.status(404).json({ message: "No topics found for this category" });
+        }
+
+        // Lấy danh sách topic dựa trên topic_id từ bảng Prompt
+        const topicIds = [...new Set(prompts.map(p => p.topic_id))]; // Lọc các topic_id duy nhất
+        const topics = await Topic.findAll({
+            where: { id: topicIds },
+            raw: true,
+        });
+
+        res.status(200).json({
+            category_id,
+            total: topics.length,
+            topics,
+        });
+    } catch (error) {
+        console.error("Error fetching topics:", error);
+        res.status(500).json({ message: "Error fetching topics", error: error.message });
+    }
+});
+
+
+// lấy list prompts mới nhất
+router.get("/newest", async (req, res) => {
     try {
         const category_id = req.query.category_id;
         if (!category_id) {
             return res.status(400).json({ message: "category_id is required" });
         }
 
-        // Lấy danh sách content, lọc trùng bằng DISTINCT
-        const contents = await Prompt.findAll({
-            attributes: [[Sequelize.fn("DISTINCT", Sequelize.col("content")), "content"]],
-            where: { category_id },
-            raw: true, // Trả về dữ liệu thuần (không phải instance Sequelize)
-        });
+        // Lấy ngày hiện tại và ngày cách đây 30 ngày
+        const thirtyDaysAgo = new Date();
+        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
-        // Chuyển danh sách về mảng đơn giản
-        const uniqueContents = contents.map(item => item.content);
+        // Lấy danh sách content mới nhất trong vòng 30 ngày
+        const newest_prompts = await Prompt.findAll({
+            where: {
+                category_id: category_id,
+                created_at: {
+                    [Op.gte]: thirtyDaysAgo, // Lọc các prompt có created_at >= 30 ngày trước
+                },
+            },
+            order: [['created_at', 'DESC']], // Sắp xếp theo ngày tạo mới nhất
+            raw: true,
+        });
 
         res.status(200).json({
             category_id,
-            total: uniqueContents.length,
-            contents: uniqueContents
+            total: newest_prompts.length,
+            data: newest_prompts,
         });
     } catch (error) {
-        res.status(500).json({ message: "Error fetching contents", error: error.message });
+        res.status(500).json({ message: "Error fetching newest prompts", error: error.message });
     }
 });
+
 // Get prompt by id
 router.get("/:id", async (req, res) => {
     try {
@@ -197,7 +239,6 @@ router.post("/", async (req, res) => {
             addtip,
             addinformation,
         } = req.body;
-        console.log(req.body);
         // Validate required fields
         if (!title || !content || !short_description) {
             return res.status(400).json({ message: "Title, content, and short description are required" });

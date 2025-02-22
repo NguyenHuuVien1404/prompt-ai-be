@@ -1,25 +1,26 @@
 const { DataTypes } = require("sequelize");
 const sequelize = require("../config/database");
-const Prompts = require("./Prompt");
 
-const Topic = sequelize.define("Topic", {
+const Topic = sequelize.define(
+  "Topic",
+  {
     id: {
-        type: DataTypes.INTEGER,
-        autoIncrement: true,
-        primaryKey: true,
+      type: DataTypes.INTEGER,
+      autoIncrement: true,
+      primaryKey: true,
     },
     name: {
-        type: DataTypes.STRING,
-        allowNull: false,
+      type: DataTypes.STRING,
+      allowNull: false,
     },
-});
-
-Topic.associate = (models) => {
-    Topic.hasMany(models.Prompt, {
-        foreignKey: "topic_id",
-        onDelete: "SET NULL",
-    });
-};
-Topic.hasMany(Prompts, { foreignKey: "topic_id" });
+    created_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW },
+    updated_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW },
+  },
+  {
+    timestamps: false,
+    updatedAt: "updated_at",
+    createdAt: "created_at",
+    tableName: "topics"
+  }
+);
 module.exports = Topic;
-

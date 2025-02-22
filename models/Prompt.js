@@ -1,6 +1,7 @@
 const { DataTypes } = require("sequelize");
 const sequelize = require("../config/database");
 const Category = require("./Category");
+const Topic = require("./Topic");
 
 const Prompt = sequelize.define("Prompt", {
     id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
@@ -20,6 +21,7 @@ const Prompt = sequelize.define("Prompt", {
     addinformation: { type: DataTypes.TEXT, allowNull: true },
     created_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW },
     updated_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW },
+    topic_id: { type: DataTypes.INTEGER, references: { model: Topic, key: "id" } },
 }, {
     timestamps: true,
     updatedAt: "updated_at",
@@ -28,5 +30,8 @@ const Prompt = sequelize.define("Prompt", {
 
 Category.hasMany(Prompt, { foreignKey: "category_id", onDelete: "SET NULL" });
 Prompt.belongsTo(Category, { foreignKey: "category_id" });
+
+Topic.hasMany(Prompt, { foreignKey: "topic_id", onDelete: "SET NULL" });
+Prompt.belongsTo(Topic, { foreignKey: "topic_id" });
 
 module.exports = Prompt;
