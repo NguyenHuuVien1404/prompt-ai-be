@@ -1,0 +1,153 @@
+const express = require("express");
+const router = express.Router();
+const Subscription = require("../models/Subscription");
+
+// 📌 Lấy danh sách Subscription
+router.get("/", async (req, res) => {
+    try {
+        const subscriptions = await Subscription.findAll();
+        res.json(subscriptions);
+    } catch (error) {
+        res.status(500).json({ error: "Lỗi khi lấy danh sách Subscription!" });
+    }
+});
+router.get("/list", async (req, res) => {
+    try {
+        let { page = 1, limit = 10 } = req.query;
+        page = parseInt(page);
+        limit = parseInt(limit);
+
+        if (isNaN(page) || isNaN(limit) || page < 1 || limit < 1) {
+            return res.status(400).json({ error: "Invalid page or limit value" });
+        }
+
+        const offset = (page - 1) * limit;
+        const { count, rows } = await Subscription.findAndCountAll({
+            limit,
+            offset,
+            order: [["created_at", "DESC"]], // Sắp xếp theo thời gian tạo mới nhất
+        });
+
+        res.json({
+            totalItems: count,
+            totalPages: Math.ceil(count / limit),
+            currentPage: page,
+            data: rows,
+        });
+    } catch (error) {
+        res.status(500).json({ error: error });
+    }
+});
+router.get("/by-duration", async (req, res) => {
+    try {
+        const { duration } = req.query;
+
+        // Kiểm tra nếu duration không được cung cấp
+        if (!duration) {
+            return res.status(400).json({ error: "Duration is required" });
+        }
+
+        // Chuyển duration thành số nguyên
+        const durationNumber = parseInt(duration);
+
+        // Lấy danh sách subscription theo duration
+        const subscriptions = await Subscription.findAll({
+            where: { duration: durationNumber }, // Lọc theo duration
+            order: [["created_at", "DESC"]], // Sắp xếp theo thời gian tạo mới nhất
+        });
+
+        res.json(subscriptions);
+    } catch (error) {
+        res.status(500).json({ error: "Lỗi khi lấy danh sách Subscription theo duration!" });
+    }
+});
+
+// 📌 Lấy Subscription theo ID
+router.get("/:id", async (req, res) => {
+    try {
+        const subscription = await Subscription.findByPk(req.params.id);
+        if (!subscription) {
+            return res.status(404).json({ error: "Không tìm thấy Subscription!" });
+        }
+        res.json(subscription);
+    } catch (error) {
+        res.status(500).json({ error: "Lỗi khi lấy Subscription!" });
+    }
+});
+
+// 📌 Tạo Subscription mới
+router.post("/", async (req, res) => {
+    try {
+        const { name_sub, type, duration, price, description } = req.body;
+        const newSubscription = await Subscription.create({ name_sub, type, duration, price, description });
+        res.status(201).json(newSubscription);
+    } catch (error) {
+        res.status(500).json({ error: "Lỗi khi tạo Subscription!" });
+    }
+});
+
+// 📌 Cập nhật Subscription
+router.put("/:id", async (req, res) => {
+    try {
+        const { name_sub, type, duration, price, description } = req.body;
+        const subscription = await Subscription.findByPk(req.params.id);
+        if (!subscription) {
+            return res.status(404).json({ error: "Không tìm thấy Subscription!" });
+        }
+        await subscription.update({ name_sub, type, duration, price, description });
+        res.json(subscription);
+    } catch (error) {
+        res.status(500).json({ error: "Lỗi khi cập nhật Subscription!" });
+    }
+});
+
+// 📌 Xóa Subscription
+router.delete("/:id", async (req, res) => {
+    try {
+        const subscription = await Subscription.findByPk(req.params.id);
+        if (!subscription) {
+            return res.status(404).json({ error: "Không tìm thấy Subscription!" });
+        }
+        await subscription.destroy();
+        res.json({ message: "Xóa Subscription thành công!" });
+    } catch (error) {
+        res.status(500).json({ error: "Lỗi khi xóa Subscription!" });
+    }
+});
+router.get("/list", async (req, res) => {
+    try {
+        let { page = 1, limit = 10, duration } = req.query;
+        page = parseInt(page);
+        limit = parseInt(limit);
+
+        if (isNaN(page) || isNaN(limit) || page < 1 || limit < 1) {
+            return res.status(400).json({ error: "Invalid page or limit value" });
+        }
+
+        const offset = (page - 1) * limit;
+
+        // Tạo điều kiện lọc nếu có duration
+        const whereClause = {};
+        if (duration) {
+            whereClause.duration = duration;
+        }
+
+        const { count, rows } = await Subscription.findAndCountAll({
+            where: whereClause, // Thêm điều kiện lọc
+            limit,
+            offset,
+            order: [["created_at", "DESC"]], // Sắp xếp theo thời gian tạo mới nhất
+        });
+
+        res.json({
+            totalItems: count,
+            totalPages: Math.ceil(count / limit),
+            currentPage: page,
+            data: rows,
+        });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+module.exports = router;

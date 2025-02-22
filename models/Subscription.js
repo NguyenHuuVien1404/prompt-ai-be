@@ -7,6 +7,7 @@ const Subscription = sequelize.define("Subscription", {
     type: { type: DataTypes.INTEGER, defaultValue: 1 },
     duration: { type: DataTypes.INTEGER, defaultValue: 1 },
     price: { type: DataTypes.DECIMAL(10, 2), allowNull: true },
+    description: { type: DataTypes.TEXT, allowNull: true },
     created_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW },
     updated_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW },
 }, {
