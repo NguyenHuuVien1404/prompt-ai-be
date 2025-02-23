@@ -30,6 +30,9 @@ const Prompt = sequelize.define("Prompt", {
 
 Category.hasMany(Prompt, { foreignKey: "category_id", onDelete: "SET NULL" });
 Prompt.belongsTo(Category, { foreignKey: "category_id" });
+
+
 Topic.hasMany(Prompt, { foreignKey: "topic_id", onDelete: "SET NULL" });
 Prompt.belongsTo(Topic, { foreignKey: "topic_id" });
+
 module.exports = Prompt;
