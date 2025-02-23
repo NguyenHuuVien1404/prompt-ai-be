@@ -7,6 +7,7 @@ const Category = sequelize.define("Category", {
     name: { type: DataTypes.STRING(100), allowNull: false },
     image: { type: DataTypes.STRING(500), allowNull: false },
     description: { type: DataTypes.TEXT, allowNull: true },
+    image_card: { type: DataTypes.STRING(500), allowNull: false },
     section_id: { type: DataTypes.INTEGER, allowNull: false, references: { model: Section, key: "id" } },
     created_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW },
     updated_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW },
