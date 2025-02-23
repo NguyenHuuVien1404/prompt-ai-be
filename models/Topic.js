@@ -14,12 +14,6 @@ const Topic = sequelize.define("Topic", {
     },
 });
 
-Topic.associate = (models) => {
-    Topic.hasMany(models.Prompt, {
-        foreignKey: "topic_id",
-        onDelete: "SET NULL",
-    });
-};
-Topic.hasMany(Prompts, { foreignKey: "topic_id" });
+
 module.exports = Topic;
 

@@ -1,8 +1,73 @@
 const express = require("express");
 const router = express.Router();
+const multer = require("multer");
+const path = require("path");
+const fs = require("fs");
 const Blog = require("../models/Blog");
 const BlogCategory = require("../models/BlogCategory");
 const { Sequelize } = require("sequelize");
+const { Op } = require('sequelize');
+
+// Cấu hình storage cho multer
+const storage = multer.diskStorage({
+    destination: (req, file, cb) => {
+        const uploadDir = 'uploads';
+        if (!fs.existsSync(uploadDir)) {
+            fs.mkdirSync(uploadDir, { recursive: true });
+        }
+        cb(null, uploadDir);
+    },
+    filename: (req, file, cb) => {
+        // Lấy extension của file gốc
+        const ext = path.extname(file.originalname).toLowerCase();
+        // Tạo tên file mới
+        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+        cb(null, uniqueSuffix + ext);
+    }
+});
+
+// Kiểm tra file type
+const fileFilter = (req, file, cb) => {
+    // Kiểm tra mime type của file
+    if (file.mimetype.startsWith('image/')) {
+        cb(null, true);
+    } else {
+        cb(new Error('Only image files are allowed!'), false);
+    }
+};
+
+// Cấu hình multer
+const upload = multer({
+    storage: storage,
+    fileFilter: fileFilter,
+    limits: {
+        fileSize: 5 * 1024 * 1024 // 5MB
+    }
+}).single('featured_image');
+
+// Middleware xử lý upload với xử lý lỗi
+const handleUpload = (req, res, next) => {
+    upload(req, res, function (err) {
+        if (err instanceof multer.MulterError) {
+            // Lỗi từ multer
+            if (err.code === 'LIMIT_FILE_SIZE') {
+                return res.status(400).json({
+                    error: 'File size too large. Max size is 5MB'
+                });
+            }
+            return res.status(400).json({
+                error: err.message
+            });
+        } else if (err) {
+            // Lỗi khác
+            return res.status(400).json({
+                error: err.message
+            });
+        }
+        // Không có lỗi
+        next();
+    });
+};
 
 // Middleware kiểm tra đầu vào
 const validateBlogData = (req, res, next) => {
@@ -30,7 +95,7 @@ router.get("/", async (req, res) => {
 // 📌 **Lấy danh sách bài viết có phân trang**
 router.get("/list", async (req, res) => {
     try {
-        let { page = 1, pageSize = 10 } = req.query;
+        let { page = 1, pageSize = 6, search } = req.query;
         page = parseInt(page);
         pageSize = parseInt(pageSize);
 
@@ -38,7 +103,11 @@ router.get("/list", async (req, res) => {
         const limit = pageSize;
 
         const { count, rows } = await Blog.findAndCountAll({
-            where: { status: "published" },
+            where: {
+                title: {
+                    [Op.like]: `%${search}%`, // Tìm kiếm gần đúng
+                },
+            },
             include: [
                 { model: BlogCategory, as: "category", attributes: ["name"] },
             ],
@@ -76,54 +145,78 @@ router.get("/by-category/:categoryId", async (req, res) => {
         res.status(500).json({ error: error.message });
     }
 });
-
-// 📌 **Lấy bài viết theo slug**
-router.get("/:slug", async (req, res) => {
+// Route tạo blog mới
+router.post("/", handleUpload, validateBlogData, async (req, res) => {
     try {
-        const blog = await Blog.findOne({
-            include: [
-                { model: BlogCategory, as: "category", attributes: ["name"] },
-            ]
-        });
+        const serverUrl = `${req.protocol}://${req.get("host")}`;
+        const blogData = {
+            ...req.body,
+            category_id: Number(req.body.category_id),
+            featured_image: req.file ? `${serverUrl}/uploads/${req.file.filename}` : null,
+            published_at: req.body.status === "published" ? new Date() : null
+        };
 
-        if (!blog) return res.status(404).json({ message: "Không tìm thấy bài viết" });
-        res.json(blog);
-    } catch (error) {
-        res.status(500).json({ error: error.message });
-    }
-});
-
-// 📌 **Tạo bài viết mới**
-router.post("/", validateBlogData, async (req, res) => {
-    try {
-        const blog = await Blog.create(req.body);
+        const blog = await Blog.create(blogData);
         res.status(201).json(blog);
     } catch (error) {
+        // Xóa file nếu có lỗi khi tạo blog
+        if (req.file) {
+            fs.unlinkSync(req.file.path);
+        }
         res.status(500).json({ error: error.message });
     }
 });
 
-// 📌 **Cập nhật bài viết**
-router.put("/:id", validateBlogData, async (req, res) => {
+// Route cập nhật blog
+router.put("/:id", handleUpload, validateBlogData, async (req, res) => {
     try {
         const blog = await Blog.findByPk(req.params.id);
-        if (!blog) return res.status(404).json({ message: "Không tìm thấy bài viết" });
+        if (!blog) return res.status(404).json({ message: "Blog not found" });
 
-        await blog.update(req.body);
+        const serverUrl = `${req.protocol}://${req.get("host")}`;
+        let blogData = { ...req.body };
+
+        if (req.file) {
+            // Xóa ảnh cũ nếu có
+            if (blog.featured_image) {
+                const oldPath = path.join("public", blog.featured_image.replace(serverUrl, ""));
+                if (fs.existsSync(oldPath)) {
+                    fs.unlinkSync(oldPath);
+                }
+            }
+            blogData.featured_image = `${serverUrl}/uploads/${req.file.filename}`;
+        }
+
+        // if (blogData.status === "published" && blog.status === "draft") {
+        //     blogData.published_at = new Date();
+        // }
+
+        await blog.update(blogData);
         res.json(blog);
     } catch (error) {
+        // Xóa file mới nếu có lỗi khi cập nhật
+        if (req.file) {
+            fs.unlinkSync(req.file.path);
+        }
         res.status(500).json({ error: error.message });
     }
 });
 
-// 📌 **Xóa bài viết**
+// Delete blog with image cleanup
 router.delete("/:id", async (req, res) => {
     try {
         const blog = await Blog.findByPk(req.params.id);
-        if (!blog) return res.status(404).json({ message: "Không tìm thấy bài viết" });
+        if (!blog) return res.status(404).json({ message: "Blog not found" });
+
+        if (blog.featured_image) {
+            const imagePath = path.join('public', blog.featured_image);
+            if (fs.existsSync(imagePath)) {
+                fs.unlinkSync(imagePath);
+            }
+        }
 
         await blog.destroy();
-        res.json({ message: "Xóa thành công" });
+        res.json({ message: "Successfully deleted" });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }

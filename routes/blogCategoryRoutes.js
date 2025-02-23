@@ -11,7 +11,29 @@ router.get("/", async (req, res) => {
         res.status(500).json({ error: error.message });
     }
 });
+// Lấy danh sách danh mục có phân trang
+router.get("/list", async (req, res) => {
+    try {
+        const { page = 1, pageSize = 10 } = req.query;
+        const offset = (page - 1) * pageSize;
 
+        const { count, rows } = await BlogCategory.findAndCountAll({
+            order: [["created_at", "DESC"]],
+            limit: parseInt(pageSize),
+            offset: offset
+        });
+
+        res.json({
+            categories: rows,
+            totalItems: count,
+            totalPages: Math.ceil(count / pageSize),
+            currentPage: parseInt(page),
+            pageSize: parseInt(pageSize)
+        });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
 // Thêm danh mục mới
 router.post("/", async (req, res) => {
     try {

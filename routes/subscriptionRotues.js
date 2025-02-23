@@ -77,12 +77,13 @@ router.get("/:id", async (req, res) => {
 
 // 📌 Tạo Subscription mới
 router.post("/", async (req, res) => {
+    console.log("Dữ liệu nhận từ frontend:", req.body); // Kiểm tra dữ liệu nhận được
     try {
         const { name_sub, type, duration, price, description } = req.body;
         const newSubscription = await Subscription.create({ name_sub, type, duration, price, description });
         res.status(201).json(newSubscription);
     } catch (error) {
-        res.status(500).json({ error: "Lỗi khi tạo Subscription!" });
+        res.status(500).json(error);
     }
 });
 

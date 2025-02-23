@@ -19,15 +19,7 @@ const Blog = sequelize.define(
             type: DataTypes.TEXT("long"),
             allowNull: false,
         },
-        is_premium: {
-            type: DataTypes.BOOLEAN,
-            defaultValue: false,
-        },
-        status: {
-            type: DataTypes.ENUM("draft", "published"),
-            defaultValue: "draft",
-            allowNull: false,
-        },
+
 
         category_id: {
             type: DataTypes.INTEGER,
