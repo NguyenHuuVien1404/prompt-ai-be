@@ -300,6 +300,7 @@ router.post("/", async (req, res) => {
       OptimationGuide,
       addtip,
       addinformation,
+      topic_id
     } = req.body;
     // Validate required fields
     if (!title || !content || !short_description) {
@@ -323,6 +324,7 @@ router.post("/", async (req, res) => {
       OptimationGuide,
       addtip,
       addinformation,
+      topic_id
     });
 
     res.status(201).json(newPrompt);
@@ -352,6 +354,7 @@ router.put("/:id", async (req, res) => {
       OptimationGuide,
       addtip,
       addinformation,
+      topic_id
     } = req.body;
 
     const prompt = await Prompt.findByPk(promptId);
@@ -374,6 +377,7 @@ router.put("/:id", async (req, res) => {
       OptimationGuide: OptimationGuide || prompt.OptimationGuide,
       addtip: addtip || prompt.addtip,
       addinformation: addinformation || prompt.addinformation,
+      topic_id: topic_id || prompt.topic_id
     });
 
     res.status(200).json(prompt);

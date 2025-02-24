@@ -10,6 +10,7 @@ const sectionRoutes = require("./routes/sectionRoutes");
 const blogCategoryRoutes = require("./routes/blogCategoryRoutes");
 const blogRoutes = require("./routes/blogRoutes");
 const subscriptionRotues = require("./routes/subscriptionRotues");
+const topicRoutes = require("./routes/topicRoutes");
 dotenv.config();
 const app = express();
 app.use("/uploads", express.static("uploads"));
@@ -29,6 +30,6 @@ app.use("/api/sections", sectionRoutes);
 app.use("/api/blogcategory", blogCategoryRoutes);
 app.use("/api/blog", blogRoutes);
 app.use("/api/subscriptions", subscriptionRotues);
-
+app.use("/api/topic", topicRoutes);
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));

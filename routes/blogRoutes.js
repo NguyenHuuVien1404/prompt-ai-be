@@ -145,6 +145,25 @@ router.get("/by-category/:categoryId", async (req, res) => {
         res.status(500).json({ error: error.message });
     }
 });
+router.get("/:id", async (req, res) => {
+    try {
+        const { id } = req.params;
+        const blog = await Blog.findOne({
+            where: { id },
+            include: [
+                { model: BlogCategory, as: "category", attributes: ["name"] },
+            ]
+        });
+
+        if (!blog) {
+            return res.status(404).json({ error: "Blog không tồn tại" });
+        }
+
+        res.json(blog);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
 // Route tạo blog mới
 router.post("/", handleUpload, validateBlogData, async (req, res) => {
     try {
