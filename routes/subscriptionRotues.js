@@ -1,7 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const Subscription = require("../models/Subscription");
-
+const ContentSubscription = require("../models/ContentSubscription");
 // 📌 Lấy danh sách Subscription
 router.get("/", async (req, res) => {
     try {
@@ -48,12 +48,23 @@ router.get("/by-duration", async (req, res) => {
         }
 
         // Chuyển duration thành số nguyên
-        const durationNumber = parseInt(duration);
+        var durationNumber = 0;
+        if (duration == "Yearly") {
+            durationNumber = 365;
+        } else if (duration == "Monthly") {
+            durationNumber = 30;
+        } else if (duration == "Lifetime"){ //gói trọn đời
+            durationNumber = 999;
+        }
+
 
         // Lấy danh sách subscription theo duration
         const subscriptions = await Subscription.findAll({
-            where: { duration: durationNumber }, // Lọc theo duration
-            order: [["created_at", "DESC"]], // Sắp xếp theo thời gian tạo mới nhất
+            where: { duration: durationNumber },
+            include: [
+                { model: ContentSubscription, attributes: ["id", "content", "included", "created_at", "updated_at"] },
+              ],
+            order: [["price", "ASC"]],
         });
 
         res.json(subscriptions);
