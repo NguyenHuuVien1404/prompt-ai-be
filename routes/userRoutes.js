@@ -3,7 +3,7 @@ const { User } = require('../models');
 const router = express.Router();
 const bcrypt = require('bcrypt');
 const { sendOtpEmail } = require('../utils/emailService');
-
+const UserSub = require("../models/UserSub");
 // Lấy tất cả users
 router.get('/', async (req, res) => {
     try {
@@ -132,7 +132,7 @@ router.post("/login", async (req, res) => {
 router.post("/login-verify", async (req, res) => {
     try {
         const { email, otp } = req.body;
-        const user = await User.findOne({ where: { email } });
+        const user = await User.findOne({ where: { email }, include: {model: UserSub}, nest: true });
 
         if (!user || user.otp_code !== otp || new Date() > new Date(user.otp_expires_at)) {
             return res.status(400).json({ error: "Invalid or expired OTP" });
@@ -141,7 +141,6 @@ router.post("/login-verify", async (req, res) => {
         // 🟢 Xóa OTP sau khi đăng nhập
         user.otp_code = null;
         await user.save();
-
         // 🟢 Trả về thông tin người dùng
         res.json({
             message: "Login successful",
@@ -149,7 +148,8 @@ router.post("/login-verify", async (req, res) => {
                 id: user.id,
                 fullName: user.full_name,
                 email: user.email,
-                role: user.role
+                role: user.role,
+                userSub: user.UserSubs?.[0] || null,
             },
         });
     } catch (error) {
