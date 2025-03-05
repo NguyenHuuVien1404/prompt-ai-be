@@ -1,7 +1,7 @@
 const express = require('express');
 const { User } = require('../models');
 const router = express.Router();
-const bcrypt = require('bcrypt');
+const bcrypt = require('bcryptjs');
 const { sendOtpEmail } = require('../utils/emailService');
 const UserSub = require("../models/UserSub");
 // Lấy tất cả users
