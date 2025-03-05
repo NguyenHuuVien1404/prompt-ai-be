@@ -2,7 +2,7 @@ const { DataTypes } = require("sequelize");
 const sequelize = require("../config/database");
 const Prompt = require("./Prompt");
 const Topic = sequelize.define(
-    "Topic",
+    "topic",
     {
         id: {
             type: DataTypes.INTEGER,
@@ -12,6 +12,16 @@ const Topic = sequelize.define(
         name: {
             type: DataTypes.STRING,
             allowNull: false,
+        },
+        createdAt: {
+            type: DataTypes.DATE,
+            allowNull: false,
+            defaultValue: DataTypes.NOW,
+        },
+        updatedAt: {
+            type: DataTypes.DATE,
+            allowNull: false,
+            defaultValue: DataTypes.NOW,
         },
     });
 
