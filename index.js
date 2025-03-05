@@ -16,7 +16,8 @@ const app = express();
 app.use("/uploads", express.static("uploads"));
 
 app.use(cors({
-    origin: "*", // Chỉ cho phép React frontend
+    // origin: ["https://www.prom.vn", "https://prom.vn"],
+    origin: "*",
     methods: ["GET", "POST", "PUT", "DELETE"],
     allowedHeaders: ["Content-Type", "Authorization"]
 }));
