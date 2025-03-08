@@ -72,8 +72,39 @@ router.get("/", async (req, res) => {
     const pageSize = parseInt(req.query.pageSize) || 10;
     const offset = (page - 1) * pageSize;
 
+    // Build where clause based on filters
+    const where = {};
+
+    if (req.query.category_id) {
+      where.category_id = req.query.category_id;
+    }
+
+    if (req.query.is_type) {
+      where.is_type = req.query.is_type;
+    }
+
+    if (req.query.status !== undefined) {
+      where.status = req.query.status;
+    }
+
+    if (req.query.search) {
+      where.title = {
+        [Op.like]: `%${req.query.search}%`
+      };
+    }
+
     const { count, rows } = await Prompt.findAndCountAll({
-      include: [{ model: Category, attributes: ["id", "name"] }],
+      where,
+      include: [
+        {
+          model: Category,
+          attributes: ["id", "name"],
+        },
+        {
+          model: Topic,
+          attributes: ["id", "name"],
+        },
+      ],
       limit: pageSize,
       offset: offset,
       order: [["created_at", "DESC"]],
