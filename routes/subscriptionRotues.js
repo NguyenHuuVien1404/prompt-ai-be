@@ -64,7 +64,7 @@ router.get("/by-duration", async (req, res) => {
             include: [
                 { model: ContentSubscription, attributes: ["id", "content", "included", "created_at", "updated_at"] },
               ],
-            order: [["price", "ASC"]],
+            order: [["updated_at", "DESC"]],
         });
 
         res.json(subscriptions);
