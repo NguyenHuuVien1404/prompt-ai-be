@@ -209,6 +209,7 @@ router.get("/by-sectionId/:sectionId", async (req, res) => {
                 ],
             },
             group: ["Category.id"], // Nhóm theo Category để COUNT hoạt động chính xác
+            order: [["created_at", "DESC"]],
         });
 
         res.json({ categories });
