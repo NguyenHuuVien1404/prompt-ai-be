@@ -6,6 +6,7 @@ const Category = require("../models/Category");
 const Topic = require("../models/Topic");
 const multer = require("multer");
 const path = require("path");
+const Section = require("../models/Section");
 
 // Cấu hình Multer để lưu file vào thư mục "uploads"
 const storage = multer.diskStorage({
@@ -99,6 +100,12 @@ router.get("/", async (req, res) => {
         {
           model: Category,
           attributes: ["id", "name"],
+          include: [
+            {
+              model: Section,
+              attributes: ["id", "name", "description"],
+            },
+          ],
         },
         {
           model: Topic,
