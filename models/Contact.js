@@ -29,7 +29,7 @@ const Contact = sequelize.define("Contact", {
     },
     type: {
         type: DataTypes.INTEGER,
-        allowNull: false
+        allowNull: true
     },
     created_at: {
         type: DataTypes.DATE,
