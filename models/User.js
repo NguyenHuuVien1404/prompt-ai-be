@@ -15,6 +15,7 @@ const User = sequelize.define('User', {
     otp_expires_at: { type: DataTypes.DATE },
     is_verified: { type: DataTypes.BOOLEAN, defaultValue: false },
 }, {
+    tableName: "users",
     timestamps: true,
     createdAt: 'created_at',
     updatedAt: 'updated_at'

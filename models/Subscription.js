@@ -12,6 +12,7 @@ const Subscription = sequelize.define("Subscription", {
     created_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW },
     updated_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW },
 }, {
+    tableName: "subscriptions",
     timestamps: true,
     updatedAt: "updated_at",
     createdAt: "created_at",
