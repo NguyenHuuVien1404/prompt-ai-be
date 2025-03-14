@@ -23,7 +23,12 @@ const Topic = sequelize.define(
             allowNull: false,
             defaultValue: DataTypes.NOW,
         },
-    });
+    },
+    {
+        tableName: "topics",
+        timestamps: true,
+    }
+);
 
 
 module.exports = Topic;

@@ -40,6 +40,7 @@ const Contact = sequelize.define("Contact", {
         defaultValue: DataTypes.NOW
     },
 }, {
+    tableName: "contacts",
     timestamps: true,
     updatedAt: "updated_at",
     createdAt: "created_at",

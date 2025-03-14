@@ -37,7 +37,7 @@ PromFavorite.belongsTo(Prompt, { foreignKey: "prompt_id" });
 User.belongsTo(Referral, { foreignKey: "referral_id" });
 Referral.hasMany(User, { foreignKey: "referral_id" });
 // Đồng bộ Models với Database
-sequelize.sync({ force: false, alter: true }).then(() => {
+sequelize.sync({ force: false, alter: false }).then(() => {
     console.log("All models were synchronized successfully.");
 });
 
