@@ -1,6 +1,6 @@
 const { DataTypes } = require('sequelize');
 const sequelize = require('../config/database');
-
+const Referral = require('./Referral');
 const User = sequelize.define('User', {
     id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
     email: { type: DataTypes.STRING, unique: true, allowNull: false },
@@ -14,6 +14,15 @@ const User = sequelize.define('User', {
     otp_code: { type: DataTypes.STRING },
     otp_expires_at: { type: DataTypes.DATE },
     is_verified: { type: DataTypes.BOOLEAN, defaultValue: false },
+    referral_id: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+        references: {
+            model: Referral,
+            key: "id",
+        },
+        onDelete: "CASCADE",
+    },
 }, {
     tableName: "users",
     timestamps: true,
