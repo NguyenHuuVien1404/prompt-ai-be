@@ -4,6 +4,7 @@ const router = express.Router();
 const bcrypt = require('bcryptjs');
 const { sendOtpEmail } = require('../utils/emailService');
 const UserSub = require("../models/UserSub");
+const Subscription = require("../models/Subscription");
 // Lấy tất cả users
 router.get('/', async (req, res) => {
     try {
@@ -141,6 +142,22 @@ router.post("/login-verify", async (req, res) => {
         // 🟢 Xóa OTP sau khi đăng nhập
         user.otp_code = null;
         await user.save();
+
+        const userSubs = await user.getUserSubs({
+            where: { status: 1 },
+            include: [Subscription],
+        });
+        const sortedUserSubs = userSubs
+        .map(us => ({
+            status: us.status,
+            start_date: us.start_date,
+            end_date: us.end_date,
+            subscription: us.Subscription ? {
+                name: us.Subscription.name_sub,
+                type: us.Subscription.type,
+            } : null
+        }))
+        .sort((a, b) => b.subscription?.type - a.subscription?.type);
         // 🟢 Trả về thông tin người dùng
         res.json({
             message: "Login successful",
@@ -149,7 +166,8 @@ router.post("/login-verify", async (req, res) => {
                 fullName: user.full_name,
                 email: user.email,
                 role: user.role,
-                userSub: user.UserSubs?.[0] || null,
+                count_prompt: user.count_prompt,
+                userSub: sortedUserSubs.length > 0 ? sortedUserSubs[0] : null, // Lấy userSub có type lớn nhất
             },
         });
     } catch (error) {
@@ -160,4 +178,5 @@ router.post("/login-verify", async (req, res) => {
 // router.post('/upload-avatar', upload.single('avatar'), (req, res) => {
 //     res.json({ message: 'Upload successful', filePath: `/uploads/${req.file.filename}` });
 // });
+
 module.exports = router;
