@@ -166,7 +166,7 @@ router.post("/login-verify", async (req, res) => {
                 fullName: user.full_name,
                 email: user.email,
                 role: user.role,
-                count_prompt: user.count_prompt,
+                count_prompt: user.count_promt,
                 userSub: sortedUserSubs.length > 0 ? sortedUserSubs[0] : null, // Lấy userSub có type lớn nhất
             },
         });
