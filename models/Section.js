@@ -8,6 +8,7 @@ const Section = sequelize.define("Section", {
     created_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW },
     updated_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW },
 }, {
+    tableName: "sections",
     timestamps: true,
     updatedAt: "updated_at",
     createdAt: "created_at",

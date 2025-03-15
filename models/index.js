@@ -135,7 +135,7 @@ Referral.hasMany(User, {
 });
 
 // Đồng bộ Models với Database
-sequelize.sync({ force: false, alter: true }).then(() => {
+sequelize.sync({ force: false, alter: false }).then(() => {
     console.log("All models were synchronized successfully.");
 }).catch((error) => {
     console.error("Error synchronizing models:", error);

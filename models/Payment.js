@@ -14,6 +14,7 @@ const Payment = sequelize.define("Payment", {
     payment_date: { type: DataTypes.DATE, defaultValue: DataTypes.NOW },
     notes: { type: DataTypes.TEXT, allowNull: true },
 }, {
+    tableName: "payments",
     timestamps: false,
 });
 

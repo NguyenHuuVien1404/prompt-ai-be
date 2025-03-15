@@ -21,6 +21,7 @@ const UserSub = sequelize.define("UserSub", {
     start_date: { type: DataTypes.DATE, allowNull: true },
     end_date: { type: DataTypes.DATE, allowNull: true },
 }, {
+    tableName: "usersubs",
     timestamps: false,
 });
 

@@ -24,6 +24,7 @@ const User = sequelize.define('User', {
         onDelete: "CASCADE",
     },
 }, {
+    tableName: "users",
     timestamps: true,
     createdAt: 'created_at',
     updatedAt: 'updated_at'
