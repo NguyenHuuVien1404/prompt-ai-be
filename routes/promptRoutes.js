@@ -96,7 +96,8 @@ router.get("/", async (req, res) => {
     const { count, rows } = await Prompt.findAndCountAll({
       where,
       include: [
-        { model: Category, attributes: ["id", "name", "image", "image_card"], include: {model: Section, attributes: ["id", "name", "description"]} },
+        { model: Category, attributes: ["id", "name", "image", "image_card", "section_id"], include: { model: Section, attributes: ["id", "name", "description"] } },
+
         {
           model: Topic,
           attributes: ["id", "name"],
@@ -149,7 +150,7 @@ router.get("/by-category", async (req, res) => {
     const { count, rows } = await Prompt.findAndCountAll({
       where: whereCondition,
       include: [
-        { model: Category, attributes: ["id", "name", "image", "image_card"], include: {model: Section, attributes: ["id", "name", "description"]} },
+        { model: Category, attributes: ["id", "name", "image", "image_card"], include: { model: Section, attributes: ["id", "name", "description"] } },
         { model: Topic, attributes: ["id", "name"] },
       ],
       limit: pageSize,
@@ -230,7 +231,7 @@ router.get("/newest", async (req, res) => {
         },
       },
       include: [
-        { model: Category, attributes: ["id", "name", "image", "image_card"], include: {model: Section, attributes: ["id", "name", "description"]} },
+        { model: Category, attributes: ["id", "name", "image", "image_card"], include: { model: Section, attributes: ["id", "name", "description"] } },
         { model: Topic, attributes: ["id", "name"] },
       ],
       order: [["created_at", "DESC"]], // Sắp xếp theo ngày tạo mới nhất
@@ -270,7 +271,7 @@ router.get("/related", async (req, res) => {
         id: { [Op.ne]: current_id },
       },
       include: [
-        { model: Category, attributes: ["id", "name", "image", "image_card"], include: {model: Section, attributes: ["id", "name", "description"]} },
+        { model: Category, attributes: ["id", "name", "image", "image_card"], include: { model: Section, attributes: ["id", "name", "description"] } },
         { model: Topic, attributes: ["id", "name"] },
       ],
       order: [["created_at", "DESC"]], // Sắp xếp theo ngày tạo mới nhất
@@ -293,7 +294,7 @@ router.get("/:id", async (req, res) => {
     const promptId = req.params.id;
     const prompt = await Prompt.findByPk(promptId, {
       include: [
-        { model: Category, attributes: ["id", "name", "image", "image_card"], include: {model: Section, attributes: ["id", "name", "description"]} },
+        { model: Category, attributes: ["id", "name", "image", "image_card"], include: { model: Section, attributes: ["id", "name", "description"] } },
         { model: Topic, attributes: ["id", "name"] },
       ],
     });
