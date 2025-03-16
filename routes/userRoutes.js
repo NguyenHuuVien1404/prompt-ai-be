@@ -4,6 +4,7 @@ const router = express.Router();
 const bcrypt = require('bcryptjs');
 const { sendOtpEmail } = require('../utils/emailService');
 const UserSub = require("../models/UserSub");
+const Subscription = require("../models/Subscription");
 // Lấy tất cả users
 router.get('/', async (req, res) => {
     try {
@@ -141,6 +142,22 @@ router.post("/login-verify", async (req, res) => {
         // 🟢 Xóa OTP sau khi đăng nhập
         user.otp_code = null;
         await user.save();
+
+        const userSubs = await user.getUserSubs({
+            where: { status: 1 },
+            include: [Subscription],
+        });
+        const sortedUserSubs = userSubs
+        .map(us => ({
+            status: us.status,
+            start_date: us.start_date,
+            end_date: us.end_date,
+            subscription: us.Subscription ? {
+                name: us.Subscription.name_sub,
+                type: us.Subscription.type,
+            } : null
+        }))
+        .sort((a, b) => b.subscription?.type - a.subscription?.type);
         // 🟢 Trả về thông tin người dùng
         res.json({
             message: "Login successful",
@@ -149,7 +166,8 @@ router.post("/login-verify", async (req, res) => {
                 fullName: user.full_name,
                 email: user.email,
                 role: user.role,
-                userSub: user.UserSubs?.[0] || null,
+                count_prompt: user.count_promt,
+                userSub: sortedUserSubs.length > 0 ? sortedUserSubs[0] : null, // Lấy userSub có type lớn nhất
             },
         });
     } catch (error) {
@@ -157,7 +175,40 @@ router.post("/login-verify", async (req, res) => {
     }
 });
 
+// Cập nhật count_promt giảm 1 cho user theo id
+router.put('/count-prompt/:id', async (req, res) => {
+    try {
+        const userId = req.params.id;
+
+        // Tìm người dùng theo id
+        const user = await User.findByPk(userId);
+
+        if (!user) {
+            return res.status(404).json({ message: "User not found" });
+        }
+
+        // Kiểm tra nếu count_promt đã đạt 0, không giảm nữa
+        if (user.count_promt <= 0) {
+            return res.status(200).json({ message: "count_promt is min", count_prompt: 0 });
+        }
+
+        // Giảm count_promt đi 1
+        user.count_promt -= 1;
+
+        // Lưu thay đổi
+        await user.save();
+
+        res.status(200).json({
+            message: "count_promt decreased successfully",
+            count_promt: user.count_promt,
+        });
+    } catch (error) {
+        res.status(500).json({ message: "Error updating count_promt", error: error.message });
+    }
+});
+
 // router.post('/upload-avatar', upload.single('avatar'), (req, res) => {
 //     res.json({ message: 'Upload successful', filePath: `/uploads/${req.file.filename}` });
 // });
+
 module.exports = router;
