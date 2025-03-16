@@ -175,6 +175,38 @@ router.post("/login-verify", async (req, res) => {
     }
 });
 
+// Cập nhật count_promt giảm 1 cho user theo id
+router.put('/count-prompt/:id', async (req, res) => {
+    try {
+        const userId = req.params.id;
+
+        // Tìm người dùng theo id
+        const user = await User.findByPk(userId);
+
+        if (!user) {
+            return res.status(404).json({ message: "User not found" });
+        }
+
+        // Kiểm tra nếu count_promt đã đạt 0, không giảm nữa
+        if (user.count_promt <= 0) {
+            return res.status(200).json({ message: "count_promt is min", count_prompt: 0 });
+        }
+
+        // Giảm count_promt đi 1
+        user.count_promt -= 1;
+
+        // Lưu thay đổi
+        await user.save();
+
+        res.status(200).json({
+            message: "count_promt decreased successfully",
+            count_promt: user.count_promt,
+        });
+    } catch (error) {
+        res.status(500).json({ message: "Error updating count_promt", error: error.message });
+    }
+});
+
 // router.post('/upload-avatar', upload.single('avatar'), (req, res) => {
 //     res.json({ message: 'Upload successful', filePath: `/uploads/${req.file.filename}` });
 // });
