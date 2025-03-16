@@ -1,5 +1,5 @@
 const cron = require('node-cron');
-const { User } = require('./models/User'); // Đảm bảo rằng model User được import đúng
+const { User } = require('./models');
 
 // Lập lịch cron để cập nhật count_promt mỗi đêm lúc 0h
 cron.schedule('0 0 * * *', async () => {
