@@ -99,7 +99,7 @@ router.get("/", async (req, res) => {
       include: [
         {
           model: Category,
-          attributes: ["id", "name"],
+          attributes: ["id", "name", "section_id"],
         },
         {
           model: Topic,
