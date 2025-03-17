@@ -22,6 +22,7 @@ const Prompt = sequelize.define("Prompt", {
     created_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW },
     updated_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW },
     topic_id: { type: DataTypes.INTEGER, references: { model: Topic, key: "id" } },
+    sum_view: { type: DataTypes.INTEGER, defaultValue: 0 },
 }, {
     tableName: "prompts",
     timestamps: true,

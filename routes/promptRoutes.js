@@ -6,7 +6,9 @@ const Category = require("../models/Category");
 const Topic = require("../models/Topic");
 const multer = require("multer");
 const path = require("path");
+const sequelize = require('../config/database');
 const Section = require("../models/Section");
+const PromDetails = require("../models/PromDetails");
 // Cấu hình Multer để lưu file vào thư mục "uploads"
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
@@ -329,8 +331,10 @@ router.post("/", async (req, res) => {
       OptimationGuide,
       addtip,
       addinformation,
-      topic_id
+      topic_id,
+      promDetails // Mảng chứa các PromDetails: [{ text, image }, ...]
     } = req.body;
+
     // Validate required fields
     if (!title || !content || !short_description) {
       return res.status(400).json({
@@ -338,33 +342,53 @@ router.post("/", async (req, res) => {
       });
     }
 
-    const newPrompt = await Prompt.create({
-      title,
-      content,
-      short_description,
-      category_id,
-      is_type: is_type || 1,
-      what,
-      tips,
-      text,
-      how,
-      input,
-      output,
-      OptimationGuide,
-      addtip,
-      addinformation,
-      topic_id
+    // Tạo transaction để đảm bảo tính toàn vẹn dữ liệu
+    const result = await sequelize.transaction(async (t) => {
+      // Tạo Prompt mới
+      const newPrompt = await Prompt.create({
+        title,
+        content,
+        short_description,
+        category_id,
+        is_type: is_type || 1,
+        what,
+        tips,
+        text,
+        how,
+        input,
+        output,
+        OptimationGuide,
+        addtip,
+        addinformation,
+        topic_id
+      }, { transaction: t });
+
+      // Nếu có PromDetails, tạo các bản ghi PromDetails liên quan
+      if (promDetails && Array.isArray(promDetails)) {
+        const promDetailsData = promDetails.map(detail => ({
+          text: detail.text,
+          image: detail.image,
+          prompt_id: newPrompt.id
+        }));
+        await PromDetails.bulkCreate(promDetailsData, { transaction: t });
+      }
+
+      // Trả về Prompt vừa tạo cùng với PromDetails
+      const promptWithDetails = await Prompt.findByPk(newPrompt.id, {
+        include: [{ model: PromDetails }],
+        transaction: t
+      });
+
+      return promptWithDetails;
     });
 
-    res.status(201).json(newPrompt);
+    res.status(201).json(result);
   } catch (error) {
-    res
-      .status(500)
-      .json({ message: "Error creating prompt", error: error.message });
+    res.status(500).json({ message: "Error creating prompt", error: error.message });
   }
 });
 
-// Update prompt
+// Update prompt with PromDetails
 router.put("/:id", async (req, res) => {
   try {
     const promptId = req.params.id;
@@ -383,7 +407,8 @@ router.put("/:id", async (req, res) => {
       OptimationGuide,
       addtip,
       addinformation,
-      topic_id
+      topic_id,
+      promDetails // Mảng chứa các PromDetails: [{ id, text, image }, ...] (id là tùy chọn cho cập nhật)
     } = req.body;
 
     const prompt = await Prompt.findByPk(promptId);
@@ -391,29 +416,77 @@ router.put("/:id", async (req, res) => {
       return res.status(404).json({ message: "Prompt not found" });
     }
 
-    await prompt.update({
-      title: title || prompt.title,
-      content: content || prompt.content,
-      short_description: short_description || prompt.short_description,
-      category_id: category_id || prompt.category_id,
-      is_type: is_type !== undefined ? is_type : prompt.is_type,
-      what: what || prompt.what,
-      tips: tips || prompt.tips,
-      text: text || prompt.text,
-      how: how || prompt.how,
-      input: input || prompt.input,
-      output: output || prompt.output,
-      OptimationGuide: OptimationGuide || prompt.OptimationGuide,
-      addtip: addtip || prompt.addtip,
-      addinformation: addinformation || prompt.addinformation,
-      topic_id: topic_id || prompt.topic_id
+    // Tạo transaction để đảm bảo tính toàn vẹn dữ liệu
+    const result = await sequelize.transaction(async (t) => {
+      // Cập nhật Prompt
+      await prompt.update({
+        title: title || prompt.title,
+        content: content || prompt.content,
+        short_description: short_description || prompt.short_description,
+        category_id: category_id || prompt.category_id,
+        is_type: is_type !== undefined ? is_type : prompt.is_type,
+        what: what || prompt.what,
+        tips: tips || prompt.tips,
+        text: text || prompt.text,
+        how: how || prompt.how,
+        input: input || prompt.input,
+        output: output || prompt.output,
+        OptimationGuide: OptimationGuide || prompt.OptimationGuide,
+        addtip: addtip || prompt.addtip,
+        addinformation: addinformation || prompt.addinformation,
+        topic_id: topic_id || prompt.topic_id
+      }, { transaction: t });
+
+      // Xử lý PromDetails nếu có
+      if (promDetails && Array.isArray(promDetails)) {
+        // Lấy tất cả PromDetails hiện tại của Prompt
+        const existingDetails = await PromDetails.findAll({
+          where: { prompt_id: promptId },
+          transaction: t
+        });
+        const existingIds = existingDetails.map(detail => detail.id);
+
+        // Các PromDetails từ request
+        const requestIds = promDetails.filter(detail => detail.id).map(detail => detail.id);
+
+        // Xóa các PromDetails không còn trong request
+        const detailsToDelete = existingIds.filter(id => !requestIds.includes(id));
+        if (detailsToDelete.length > 0) {
+          await PromDetails.destroy({
+            where: { id: detailsToDelete },
+            transaction: t
+          });
+        }
+
+        // Cập nhật hoặc tạo mới PromDetails
+        for (const detail of promDetails) {
+          if (detail.id) {
+            // Cập nhật PromDetails hiện có
+            await PromDetails.update(
+              { text: detail.text, image: detail.image },
+              { where: { id: detail.id, prompt_id: promptId }, transaction: t }
+            );
+          } else {
+            // Tạo mới PromDetails
+            await PromDetails.create({
+              text: detail.text,
+              image: detail.image,
+              prompt_id: promptId
+            }, { transaction: t });
+          }
+        }
+      }
+
+      // Trả về Prompt đã cập nhật cùng với PromDetails
+      return await Prompt.findByPk(promptId, {
+        include: [{ model: PromDetails }],
+        transaction: t
+      });
     });
 
-    res.status(200).json(prompt);
+    res.status(200).json(result);
   } catch (error) {
-    res
-      .status(500)
-      .json({ message: "Error updating prompt", error: error.message });
+    res.status(500).json({ message: "Error updating prompt", error: error.message });
   }
 });
 

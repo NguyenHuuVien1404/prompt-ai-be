@@ -9,7 +9,9 @@ const Payment = require('./Payment');
 const UserActivity = require('./UserActivity');
 const PromFavorite = require('./PromFavorite');
 const Referral = require('./Referral');
-
+const Product = require('./Product');
+const Section = require('./Section');
+const PromDetails = require('./PromDetails');
 // Định nghĩa các quan hệ với tên khóa ngoại cụ thể
 User.hasMany(UserSub, {
     foreignKey: 'user_id',
@@ -133,7 +135,33 @@ Referral.hasMany(User, {
     foreignKeyConstraint: true,
     name: 'fk_user_referral_id'
 });
-
+// Quan hệ giữa Section và Product (1 Section có nhiều Product)
+Section.hasMany(Product, {
+    foreignKey: 'section_id',
+    onDelete: 'CASCADE',
+    constraints: true,
+    foreignKeyConstraint: true,
+    name: 'fk_product_section_id'
+});
+Product.belongsTo(Section, {
+    foreignKey: 'section_id',
+    constraints: true,
+    foreignKeyConstraint: true,
+    name: 'fk_product_section_id'
+});
+Prompt.hasMany(PromDetails, {
+    foreignKey: 'prompt_id',
+    onDelete: 'CASCADE',
+    constraints: true,
+    foreignKeyConstraint: true,
+    name: 'fk_promdetails_prompt_id'
+});
+PromDetails.belongsTo(Prompt, {
+    foreignKey: 'prompt_id',
+    constraints: true,
+    foreignKeyConstraint: true,
+    name: 'fk_promdetails_prompt_id'
+});
 // Đồng bộ Models với Database
 sequelize.sync({ force: false, alter: false }).then(() => {
     console.log("All models were synchronized successfully.");
