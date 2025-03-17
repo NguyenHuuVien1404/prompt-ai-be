@@ -2,7 +2,10 @@ const express = require("express");
 const router = express.Router();
 const { Op, Sequelize } = require("sequelize");
 const PromFavorite = require("../models/PromFavorite");
-
+const Prompt = require("../models/Prompt");
+const Section = require("../models/Section");
+const Category = require("../models/Category");
+const Topic = require("../models/Topic");
 router.get("/:userId", async (req, res) => {
     try {
         const userId = req.params.userId;
@@ -60,5 +63,63 @@ router.delete("/:id", async (req, res) => {
         res.status(500).json({ message: "Error deleting prompt favorite", error: error.message });
     }
 });
+router.get("/list/by-section", async (req, res) => {
+    try {  
+      const sectionId = req.query.section_id;
+      const userId = req.query.user_id;
+  
+      if (!sectionId) {
+        return res.status(400).json({ message: "section_id is required" });
+      }
+  
+      let whereCondition;
+      if (sectionId === "all") {
+        whereCondition = {
+          user_id: userId,
+        };
+      } else {
+        whereCondition = {
+          '$Prompt->Category.section_id$': sectionId,  // Sửa alias đúng ở đây
+          user_id: userId,
+        };
+      }
+    
+      const data  = await PromFavorite.findAll({
+        include: [
+          {
+            model: Prompt,
+            include: [
+              {
+                model: Category,
+                as: 'Category',  // Alias cho Category
+                attributes: ["id", "name", "image", "image_card"],
+                include: {
+                  model: Section,
+                  as: 'Section',  // Alias cho Section
+                  attributes: ["id", "name", "description"],
+                },
+              },
+              {
+                model: Topic,
+                as: 'topic',  // Alias cho Topic
+                attributes: ["id", "name"],
+              },
+            ],
+          },
+        ],
+        where: whereCondition,
+      });
+    
+      res.status(200).json({
+        data: data,
+      });
+    } catch (error) {
+      console.error("Error:", error);  // Log lỗi nếu có
+      res.status(500).json({
+        message: "Error fetching favorite prompts",
+        error: error.message,
+      });
+    }
+  });
 
 module.exports = router;
