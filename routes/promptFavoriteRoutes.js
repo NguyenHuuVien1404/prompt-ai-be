@@ -79,7 +79,7 @@ router.get("/list/by-section", async (req, res) => {
         };
       } else {
         whereCondition = {
-          '$Prompt->Category.section_id$': sectionId,  // Sửa alias đúng ở đây
+          '$Prompt->Category.section_id$': sectionId,
           user_id: userId,
         };
       }
