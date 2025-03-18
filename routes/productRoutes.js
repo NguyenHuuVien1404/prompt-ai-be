@@ -48,7 +48,7 @@ router.get('/', async (req, res) => {
         const { count, rows } = await Product.findAndCountAll({
             offset,
             limit,
-            include: [{ model: Section, attributes: ['id', 'name'] }],
+            include: [{ model: Section, attributes: ['id', 'name', 'description'] }],
             order: [['created_at', 'DESC']],
         });
 
