@@ -80,7 +80,21 @@ router.post('/register', async (req, res) => {
             role: 1
 
         });
+        // Lấy ID của subscription miễn phí
+        const freeSub = await Subscription.findOne({ where: { type: 1 }, attributes: ["id"] });
+        console.log("freeSub", freeSub);
+        if (!freeSub) {
+            return res.status(404).json({ error: 'No free subscription available' });
+        }
 
+        // Tạo bản ghi mới trong bảng UserSub
+        const newUserSub = await UserSub.create({
+            user_id: newUser.id,
+            sub_id: freeSub.id,
+            status: 1,
+            start_date: new Date(),
+            end_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
+        });   
         await sendOtpEmail(email, otp);
         res.json({ message: 'OTP sent to email. Please verify your account.' });
     } catch (error) {
@@ -101,7 +115,7 @@ router.post('/verify-otp', async (req, res) => {
         user.is_verified = true;
         user.otp_code = null;
         await user.save();
-
+     
         res.json({ message: 'Account verified successfully' });
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -141,6 +155,8 @@ router.post("/login-verify", async (req, res) => {
 
         // 🟢 Xóa OTP sau khi đăng nhập
         user.otp_code = null;
+        //cập nhật đã xác thực
+        user.is_verified = 1;
         await user.save();
 
         const userSubs = await user.getUserSubs({
@@ -167,6 +183,7 @@ router.post("/login-verify", async (req, res) => {
                 email: user.email,
                 role: user.role,
                 count_prompt: user.count_promt,
+                profile_image: user.profile_image,
                 userSub: sortedUserSubs.length > 0 ? sortedUserSubs[0] : null, // Lấy userSub có type lớn nhất
             },
         });

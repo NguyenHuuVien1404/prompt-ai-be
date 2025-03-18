@@ -20,14 +20,8 @@ const app = express();
 app.use("/uploads", express.static("uploads"));
 
 app.use(cors({
-    // origin: ["https://www.prom.vn", "https://prom.vn"],
-    // origin: ["https://www.prom.vn", "https://prom.vn"],
-    // origin: ["https://www.prom.vn", "https://prom.vn"],
+    origin: ["https://www.prom.vn", "https://prom.vn"],
     // origin: "*",
-    // origin: ["https://www.prom.vn", "https://prom.vn"],
-    // origin: "*",
-    // origin: ["https://www.prom.vn", "https://prom.vn"],
-    origin: "*",
     methods: ["GET", "POST", "PUT", "DELETE"],
     allowedHeaders: ["Content-Type", "Authorization"]
 }));
