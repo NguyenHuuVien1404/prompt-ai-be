@@ -5,6 +5,11 @@ const bcrypt = require('bcryptjs');
 const { sendOtpEmail } = require('../utils/emailService');
 const UserSub = require("../models/UserSub");
 const Subscription = require("../models/Subscription");
+const DeviceLog = require("../models/DeviceLog");
+const userAgentParser = require('useragent');
+const { Sequelize } = require("sequelize");
+
+
 // Lấy tất cả users
 router.get('/', async (req, res) => {
     try {
@@ -94,7 +99,7 @@ router.post('/register', async (req, res) => {
             status: 1,
             start_date: new Date(),
             end_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
-        });   
+        });
         await sendOtpEmail(email, otp);
         res.json({ message: 'OTP sent to email. Please verify your account.' });
     } catch (error) {
@@ -115,7 +120,7 @@ router.post('/verify-otp', async (req, res) => {
         user.is_verified = true;
         user.otp_code = null;
         await user.save();
-     
+
         res.json({ message: 'Account verified successfully' });
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -147,7 +152,7 @@ router.post("/login", async (req, res) => {
 router.post("/login-verify", async (req, res) => {
     try {
         const { email, otp } = req.body;
-        const user = await User.findOne({ where: { email }, include: {model: UserSub}, nest: true });
+        const user = await User.findOne({ where: { email }, include: { model: UserSub }, nest: true });
 
         if (!user || user.otp_code !== otp || new Date() > new Date(user.otp_expires_at)) {
             return res.status(400).json({ error: "Invalid or expired OTP" });
@@ -164,17 +169,49 @@ router.post("/login-verify", async (req, res) => {
             include: [Subscription],
         });
         const sortedUserSubs = userSubs
-        .map(us => ({
-            status: us.status,
-            start_date: us.start_date,
-            end_date: us.end_date,
-            subscription: us.Subscription ? {
-                name: us.Subscription.name_sub,
-                type: us.Subscription.type,
-            } : null
-        }))
-        .sort((a, b) => b.subscription?.type - a.subscription?.type);
-        // 🟢 Trả về thông tin người dùng
+            .map(us => ({
+                status: us.status,
+                start_date: us.start_date,
+                end_date: us.end_date,
+                subscription: us.Subscription ? {
+                    name: us.Subscription.name_sub,
+                    type: us.Subscription.type,
+                } : null
+            }))
+            .sort((a, b) => b.subscription?.type - a.subscription?.type);
+
+        // Lấy thông tin thiết bị từ yêu cầu
+        const userAgent = req.headers['user-agent'];
+        const ipAddress = req.ip || req.connection.remoteAddress;  // Lấy địa chỉ IP của người dùng
+        const agent = userAgentParser.parse(userAgent);  // Phân tích User-Agent để lấy thông tin thiết bị
+
+        // Kiểm tra xem thiết bị đã đăng nhập trước đó chưa (cùng user_id và ip_address)
+        const existingDevice = await DeviceLog.findOne({
+            where: { user_id: user.id, ip_address: ipAddress }
+        });
+        console.log(existingDevice);
+        if (existingDevice) {
+            await DeviceLog.update(
+                {
+                    updated_at: Sequelize.literal('CURRENT_TIMESTAMP'),
+                    login_time: new Date()
+                },
+                { where: { id: existingDevice.id } }
+            );
+        } else {
+            // Tạo bản ghi mới nếu thiết bị chưa đăng nhập
+            await DeviceLog.create({
+                user_id: user.id,
+                ip_address: ipAddress,
+                os: agent.os.toString(),
+                browser: agent.toAgent(),
+                device: agent.device.toString(),
+                login_time: new Date(),
+                latitude: req.body.latitude || null,  // Nếu có gửi latitude từ frontend
+                longitude: req.body.longitude || null,  // Nếu có gửi longitude từ frontend
+            });
+        }
+        // Trả về thông tin người dùng
         res.json({
             message: "Login successful",
             user: {
