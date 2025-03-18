@@ -12,6 +12,7 @@ const Referral = require('./Referral');
 const Product = require('./Product');
 const Section = require('./Section');
 const PromDetails = require('./PromDetails');
+const DeviceLog = require('./DeviceLog');
 // Định nghĩa các quan hệ với tên khóa ngoại cụ thể
 User.hasMany(UserSub, {
     foreignKey: 'user_id',
@@ -162,6 +163,19 @@ PromDetails.belongsTo(Prompt, {
     foreignKeyConstraint: true,
     name: 'fk_promdetails_prompt_id'
 });
+User.hasMany(DeviceLog, {
+    foreignKey: 'user_id',
+    onDelete: 'CASCADE',
+    constraints: true,
+    foreignKeyConstraint: true,
+    name: 'fk_device_user_id'
+});
+DeviceLog.belongsTo(User, {
+    foreignKey: 'user_id',
+    constraints: true,
+    foreignKeyConstraint: true,
+    name: 'fk_device_user_id'
+});
 // Đồng bộ Models với Database
 sequelize.sync({ force: false, alter: false }).then(() => {
     console.log("All models were synchronized successfully.");
@@ -169,4 +183,4 @@ sequelize.sync({ force: false, alter: false }).then(() => {
     console.error("Error synchronizing models:", error);
 });
 
-module.exports = { User, Subscription, UserSub, Category, Prompt, Course, Payment, UserActivity, PromFavorite };
+module.exports = { User, Subscription, UserSub, Category, Prompt, Course, Payment, UserActivity, PromFavorite, DeviceLog };
