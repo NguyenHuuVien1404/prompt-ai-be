@@ -8,7 +8,39 @@ const Subscription = require("../models/Subscription");
 const DeviceLog = require("../models/DeviceLog");
 const userAgentParser = require('useragent');
 const { Sequelize } = require("sequelize");
+const multer = require("multer");
+const path = require("path");
+const fs = require("fs");
+// Cấu hình Multer để lưu file vào thư mục "uploads"
+const storage = multer.diskStorage({
+    destination: (req, file, cb) => {
+        cb(null, "uploads/"); // Lưu file vào thư mục "uploads"
+    },
+    filename: (req, file, cb) => {
+        cb(null, Date.now() + path.extname(file.originalname)); // Tạo tên file duy nhất
+    },
+});
 
+// Chỉ cho phép upload file ảnh (JPG, PNG, GIF, JPEG)
+const fileFilter = (req, file, cb) => {
+    const allowedTypes = ["image/jpeg", "image/png", "image/gif"];
+    if (allowedTypes.includes(file.mimetype)) {
+        cb(null, true); // Chấp nhận file hợp lệ
+    } else {
+        cb(
+            new Error("Invalid file type. Only JPG, PNG, and GIF are allowed."),
+            false
+        );
+    }
+};
+
+// Multer middleware: Cho phép upload tối đa 2 ảnh (image và image_card)
+const upload = multer({
+    storage: storage,
+    fileFilter: fileFilter,
+    limits: { fileSize: 5 * 1024 * 1024 }, // Giới hạn file tối đa 5MB
+});
+router.use("/upload", express.static("uploads")); // Cho phép truy cập ảnh đã upload
 
 // Lấy tất cả users
 router.get('/', async (req, res) => {
@@ -261,8 +293,97 @@ router.put('/count-prompt/:id', async (req, res) => {
     }
 });
 
-// router.post('/upload-avatar', upload.single('avatar'), (req, res) => {
-//     res.json({ message: 'Upload successful', filePath: `/uploads/${req.file.filename}` });
-// });
+router.put('/update-info/:id', upload.fields([{ name: "profile_image" }]), async (req, res) => {
+    try {
+        const userId = req.params.id;
+        const fullName = req.body.full_name;
+        
+        const user = await User.findByPk(userId);
+        
+        if (!user) return res.status(404).json({ message: "User not found" });
+        
+        // Update user information
+        if (fullName) {
+            user.full_name = fullName;
+        }
+        
+        // Handle file uploads
+        let imageUrl = null;
+        if (req.files && req.files["profile_image"] && req.files["profile_image"].length > 0) {
+            // Delete old image if it exists
+            if (user.profile_image) {
+                try {
+                    // Extract filename from the full URL
+                    const oldImageUrl = user.profile_image;
+                    const oldImagePath = oldImageUrl.split('/uploads/')[1];
+                    
+                    if (oldImagePath) {
+                        const fullPath = path.join(__dirname, '../uploads', oldImagePath);
+                        
+                        // Check if file exists before deleting
+                        if (fs.existsSync(fullPath)) {
+                            fs.unlinkSync(fullPath);
+                        }
+                    }
+                } catch (deleteErr) {
+                    console.error("Error deleting old image:", deleteErr);
+                    // Continue with the update even if delete fails
+                }
+            }
+            
+            // Save new image URL
+            const baseUrl = `${req.protocol}://${req.get("host")}`;
+            imageUrl = `${baseUrl}/uploads/${req.files["profile_image"][0].filename}`;
+            user.profile_image = imageUrl;
+        }
+        
+        // Save user changes
+        await user.save();
+        
+        res.status(200).json({
+            message: "Profile updated successfully",
+            user: {
+                id: user.id,
+                full_name: user.full_name,
+                profile_image: user.profile_image
+            }
+        });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: "Error updating profile", error: error.message });
+    }
+});
+
+router.put('/change-password/:id', async (req, res) => {
+    try {
+        const userId = req.params.id;
+        const currentPass = req.query.password;
+        const newPassword = req.query.newPassword;
+        const user = await User.findByPk(userId);
+        
+        if (!user) return res.status(404).json({ message: "Tài khoản không tồn tại" });
+        
+        // Kiểm tra mật khẩu cũ với mật khẩu đã mã hóa trong cơ sở dữ liệu
+        const isMatch = await bcrypt.compare(currentPass, user.password_hash);
+
+        if (!isMatch) {
+            return res.status(200).json({ message: "Mật khẩu hiện tại không chính xác!", type: 1 }); //type = 1: sai mật khẩu
+        }
+        // Mã hóa mật khẩu mới
+        const hashedNewPassword = await bcrypt.hash(newPassword, 10);
+
+        // Cập nhật mật khẩu mới vào cơ sở dữ liệu
+        user.password_hash = hashedNewPassword;
+        await user.save();
+
+        res.status(200).json({
+            type: 2, // OK
+            message: "Cập nhật mật khẩu thành công!",
+        });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: "Lỗi khi cập nhật mật khẩu", error: error.message });
+    }
+});
 
 module.exports = router;
