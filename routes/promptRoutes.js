@@ -368,7 +368,9 @@ router.post("/", async (req, res) => {
         const promDetailsData = promDetails.map(detail => ({
           text: detail.text,
           image: detail.image,
-          prompt_id: newPrompt.id
+          prompt_id: newPrompt.id,
+          description: detail.description,
+          type: detail.type || 1
         }));
         await PromDetails.bulkCreate(promDetailsData, { transaction: t });
       }
@@ -471,6 +473,8 @@ router.put("/:id", async (req, res) => {
             await PromDetails.create({
               text: detail.text,
               image: detail.image,
+              description: detail.description,
+              type: detail.type || 1,
               prompt_id: promptId
             }, { transaction: t });
           }

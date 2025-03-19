@@ -16,6 +16,15 @@ const PromDetails = sequelize.define('PromDetails', {
         type: DataTypes.STRING, // Lưu đường dẫn đến ảnh
         allowNull: true
     },
+    description: {
+        type: DataTypes.TEXT,
+        allowNull: true
+    },
+    type: {
+        type: DataTypes.INTEGER,
+        allowNull: false,
+        defaultValue: 1 //1 là card ảnh, 2 là example variable
+    },
     prompt_id: {
         type: DataTypes.INTEGER,
         allowNull: true,
