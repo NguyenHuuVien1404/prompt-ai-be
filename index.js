@@ -13,6 +13,7 @@ const subscriptionRotues = require("./routes/subscriptionRotues");
 const topicRoutes = require("./routes/topicRoutes");
 const promptFavorite = require("./routes/promptFavoriteRoutes.js");
 const productRoutes = require("./routes/productRoutes.js");
+const deviceLogRoutes = require("./routes/deviceLogRoutes.js");
 require('./cronJob.js');
 
 dotenv.config();
@@ -38,5 +39,6 @@ app.use("/api/subscriptions", subscriptionRotues);
 app.use("/api/topic", topicRoutes);
 app.use("/api/promptfavorite", promptFavorite);
 app.use("/api/products", productRoutes);
+app.use("/api/devicelogs", deviceLogRoutes);
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
