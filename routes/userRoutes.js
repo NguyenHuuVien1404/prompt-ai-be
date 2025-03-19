@@ -119,7 +119,6 @@ router.post('/register', async (req, res) => {
         });
         // Lấy ID của subscription miễn phí
         const freeSub = await Subscription.findOne({ where: { type: 1 }, attributes: ["id"] });
-        console.log("freeSub", freeSub);
         if (!freeSub) {
             return res.status(404).json({ error: 'No free subscription available' });
         }
@@ -183,7 +182,7 @@ router.post("/login", async (req, res) => {
 // 🟢 Xác thực OTP để đăng nhập
 router.post("/login-verify", async (req, res) => {
     try {
-        const { email, otp } = req.body;
+        const { email, otp, ip_address } = req.body;
         const user = await User.findOne({ where: { email }, include: { model: UserSub }, nest: true });
 
         if (!user || user.otp_code !== otp || new Date() > new Date(user.otp_expires_at)) {
@@ -214,14 +213,14 @@ router.post("/login-verify", async (req, res) => {
 
         // Lấy thông tin thiết bị từ yêu cầu
         const userAgent = req.headers['user-agent'];
-        const ipAddress = req.ip || req.connection.remoteAddress;  // Lấy địa chỉ IP của người dùng
+        const ipAddress = ip_address || req.connection.remoteAddress;
+        console.log("ip_address_user", ipAddress);  // Lấy địa chỉ IP của người dùng
         const agent = userAgentParser.parse(userAgent);  // Phân tích User-Agent để lấy thông tin thiết bị
 
         // Kiểm tra xem thiết bị đã đăng nhập trước đó chưa (cùng user_id và ip_address)
         const existingDevice = await DeviceLog.findOne({
             where: { user_id: user.id, ip_address: ipAddress }
         });
-        console.log(existingDevice);
         if (existingDevice) {
             await DeviceLog.update(
                 {
