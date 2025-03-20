@@ -67,7 +67,27 @@ router.get('/:id', async (req, res) => {
     try {
         const user = await User.findByPk(req.params.id);
         if (!user) return res.status(404).json({ message: "User not found" });
-        res.json(user);
+        const userSubs = await user.getUserSubs({
+            where: { status: 1 },
+            include: [Subscription],
+        });
+        const sortedUserSubs = userSubs
+            .map(us => ({
+                status: us.status,
+                start_date: us.start_date,
+                end_date: us.end_date,
+                subscription: us.Subscription ? {
+                    name: us.Subscription.name_sub,
+                    type: us.Subscription.type,
+                } : null
+            }))
+            .sort((a, b) => b.subscription?.type - a.subscription?.type);
+        res.json({
+            data: {
+                user: user,
+                userSub: sortedUserSubs.length > 0 ? sortedUserSubs[0] : null,
+            }
+        });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
@@ -251,6 +271,7 @@ router.post("/login-verify", async (req, res) => {
                 email: user.email,
                 role: user.role,
                 count_prompt: user.count_promt,
+                updated_at: user.updated_at,
                 profile_image: user.profile_image,
                 userSub: sortedUserSubs.length > 0 ? sortedUserSubs[0] : null, // Lấy userSub có type lớn nhất
             },

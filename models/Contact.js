@@ -15,6 +15,10 @@ const Contact = sequelize.define("Contact", {
         type: DataTypes.STRING(100),
         allowNull: false
     },
+    phone_number: {
+        type: DataTypes.STRING(15),
+        allowNull: true
+    },
     message: {
         type: DataTypes.TEXT,
         allowNull: false

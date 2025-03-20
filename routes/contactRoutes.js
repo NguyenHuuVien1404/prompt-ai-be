@@ -54,8 +54,8 @@ router.get("/list", async (req, res) => {
 // Tạo liên hệ mới
 router.post("/", async (req, res) => {
     try {
-        const { name, email, message } = req.body;
-        const newContact = await Contact.create({ name, email, message });
+        const { name, email, message, type, phone_number } = req.body;
+        const newContact = await Contact.create({ name, email, message, type, phone_number });
         res.status(201).json(newContact);
     } catch (error) {
         res.status(400).json({ message: error.message });
