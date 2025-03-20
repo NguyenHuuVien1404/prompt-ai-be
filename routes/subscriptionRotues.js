@@ -48,19 +48,19 @@ router.get("/by-duration", async (req, res) => {
         }
 
         // Chuyển duration thành số nguyên
-        var type = 0;
+        var durationNumber = 30;
         if (duration == "Yearly") {
-            type = 2;
+            durationNumber = 365;
         } else if (duration == "Monthly") {
-            type = 1;
+            durationNumber = 30;
         } else if (duration == "Lifetime"){ //gói trọn đời
-            type = 3;
+            durationNumber = 9999;
         }
 
 
         // Lấy danh sách subscription theo duration
         const subscriptions = await Subscription.findAll({
-            where: { type: type },
+            where: { duration: durationNumber },
             include: [
                 { model: ContentSubscription, attributes: ["id", "content", "included", "created_at", "updated_at"] },
               ],
