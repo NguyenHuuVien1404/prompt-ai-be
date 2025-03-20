@@ -47,20 +47,9 @@ router.get("/by-duration", async (req, res) => {
             return res.status(400).json({ error: "Duration is required" });
         }
 
-        // Chuyển duration thành số nguyên
-        var durationNumber = 30;
-        if (duration == "Yearly") {
-            durationNumber = 365;
-        } else if (duration == "Monthly") {
-            durationNumber = 30;
-        } else if (duration == "Lifetime"){ //gói trọn đời
-            durationNumber = 9999;
-        }
-
-
         // Lấy danh sách subscription theo duration
         const subscriptions = await Subscription.findAll({
-            where: { duration: durationNumber },
+            where: { duration: duration },
             include: [
                 { model: ContentSubscription, attributes: ["id", "content", "included", "created_at", "updated_at"] },
               ],
@@ -72,7 +61,29 @@ router.get("/by-duration", async (req, res) => {
         res.status(500).json({ error: "Lỗi khi lấy danh sách Subscription theo duration!" });
     }
 });
+//lấy theo duration và type để cập nhật
+router.get("/by-duration-and-type", async (req, res) => {
+    try {
+        const { duration, type } = req.query;
 
+        // Kiểm tra nếu duration không được cung cấp
+        if (!duration) {
+            return res.status(400).json({ error: "Duration is required" });
+        }
+        // Lấy danh sách subscription theo duration
+        const subscriptions = await Subscription.findOne({
+            where: { duration: duration, type: type },
+            include: [
+                { model: ContentSubscription, attributes: ["id", "content", "included", "created_at", "updated_at"] },
+              ],
+            order: [["updated_at", "DESC"]],
+        });
+
+        res.json(subscriptions);
+    } catch (error) {
+        res.status(500).json({ error: "Lỗi khi lấy danh sách Subscription theo duration!" });
+    }
+});
 // 📌 Lấy Subscription theo ID
 router.get("/:id", async (req, res) => {
     try {
