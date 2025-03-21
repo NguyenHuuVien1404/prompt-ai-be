@@ -298,6 +298,7 @@ router.get("/:id", async (req, res) => {
       include: [
         { model: Category, attributes: ["id", "name", "image", "image_card"], include: { model: Section, attributes: ["id", "name", "description"] } },
         { model: Topic, attributes: ["id", "name"] },
+        { model: PromDetails, attributes: ["id", "text", "image", "description", "type"]}
       ],
     });
 
