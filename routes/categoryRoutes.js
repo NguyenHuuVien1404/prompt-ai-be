@@ -6,6 +6,7 @@ const Section = require("../models/Section");
 const multer = require("multer");
 const path = require("path");
 const Prompt = require("../models/Prompt");
+const { authMiddleware, adminMiddleware } = require('../middleware/authMiddleware');
 // Cấu hình Multer để lưu file vào thư mục "uploads"
 const storage = multer.diskStorage({
     destination: (req, file, cb) => {

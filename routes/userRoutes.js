@@ -1,4 +1,5 @@
 const express = require('express');
+const jwt = require('jsonwebtoken');
 const { User } = require('../models');
 const router = express.Router();
 const bcrypt = require('bcryptjs');
@@ -11,6 +12,7 @@ const { Sequelize } = require("sequelize");
 const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
+
 // Cấu hình Multer để lưu file vào thư mục "uploads"
 const storage = multer.diskStorage({
     destination: (req, file, cb) => {
@@ -262,9 +264,22 @@ router.post("/login-verify", async (req, res) => {
                 longitude: req.body.longitude || null,  // Nếu có gửi longitude từ frontend
             });
         }
+
+        // Tạo JWT token
+        const token = jwt.sign(
+            {
+                id: user.id,
+                email: user.email,
+                role: user.role // Thêm role vào token
+            },
+            process.env.JWT_SECRET || 'your_jwt_secret_key',
+            { expiresIn: '24h' }
+        );
+
         // Trả về thông tin người dùng
         res.json({
             message: "Login successful",
+            token, // Thêm token vào response
             user: {
                 id: user.id,
                 fullName: user.full_name,
@@ -317,16 +332,16 @@ router.put('/update-info/:id', upload.fields([{ name: "profile_image" }]), async
     try {
         const userId = req.params.id;
         const fullName = req.body.full_name;
-        
+
         const user = await User.findByPk(userId);
-        
+
         if (!user) return res.status(404).json({ message: "User not found" });
-        
+
         // Update user information
         if (fullName) {
             user.full_name = fullName;
         }
-        
+
         // Handle file uploads
         let imageUrl = null;
         if (req.files && req.files["profile_image"] && req.files["profile_image"].length > 0) {
@@ -336,10 +351,10 @@ router.put('/update-info/:id', upload.fields([{ name: "profile_image" }]), async
                     // Extract filename from the full URL
                     const oldImageUrl = user.profile_image;
                     const oldImagePath = oldImageUrl.split('/uploads/')[1];
-                    
+
                     if (oldImagePath) {
                         const fullPath = path.join(__dirname, '../uploads', oldImagePath);
-                        
+
                         // Check if file exists before deleting
                         if (fs.existsSync(fullPath)) {
                             fs.unlinkSync(fullPath);
@@ -350,16 +365,16 @@ router.put('/update-info/:id', upload.fields([{ name: "profile_image" }]), async
                     // Continue with the update even if delete fails
                 }
             }
-            
+
             // Save new image URL
             const baseUrl = `${req.protocol}://${req.get("host")}`;
             imageUrl = `${baseUrl}/uploads/${req.files["profile_image"][0].filename}`;
             user.profile_image = imageUrl;
         }
-        
+
         // Save user changes
         await user.save();
-        
+
         res.status(200).json({
             message: "Profile updated successfully",
             user: {
@@ -380,9 +395,9 @@ router.put('/change-password/:id', async (req, res) => {
         const currentPass = req.query.password;
         const newPassword = req.query.newPassword;
         const user = await User.findByPk(userId);
-        
+
         if (!user) return res.status(404).json({ message: "Tài khoản không tồn tại" });
-        
+
         // Kiểm tra mật khẩu cũ với mật khẩu đã mã hóa trong cơ sở dữ liệu
         const isMatch = await bcrypt.compare(currentPass, user.password_hash);
 
@@ -395,7 +410,6 @@ router.put('/change-password/:id', async (req, res) => {
         // Cập nhật mật khẩu mới vào cơ sở dữ liệu
         user.password_hash = hashedNewPassword;
         await user.save();
-
         res.status(200).json({
             type: 2, // OK
             message: "Cập nhật mật khẩu thành công!",

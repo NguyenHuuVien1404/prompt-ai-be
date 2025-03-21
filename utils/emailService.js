@@ -2,11 +2,18 @@ const nodemailer = require('nodemailer');
 require('dotenv').config();
 
 const transporter = nodemailer.createTransport({
-    service: 'gmail',
+    host: 'smtp.gmail.com',
+    port: 587,
+    secure: false, // true cho 465, false cho 587
     auth: {
         user: process.env.EMAIL_USER,
         pass: process.env.EMAIL_PASS
-    }
+    },
+    tls: {
+        rejectUnauthorized: false // Tùy chọn nếu gặp lỗi SSL
+    },
+    // debug: true, // Bật debug
+    // logger: true // Ghi log chi tiết
 });
 
 async function sendOrderEmail(email, userName, orderId = 1) {
