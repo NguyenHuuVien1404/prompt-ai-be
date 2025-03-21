@@ -9,6 +9,7 @@ const path = require("path");
 const sequelize = require('../config/database');
 const Section = require("../models/Section");
 const PromDetails = require("../models/PromDetails");
+const { authMiddleware, adminMiddleware } = require('../middleware/authMiddleware');
 // Cấu hình Multer để lưu file vào thư mục "uploads"
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
@@ -42,7 +43,7 @@ const upload = multer({
 router.use("/upload", express.static("uploads")); // Cho phép truy cập ảnh đã upload
 
 // API Upload ảnh (tên field nào cũng được)
-router.post("/upload", upload.any(), (req, res) => {
+router.post("/upload", authMiddleware, upload.any(), (req, res) => {
   try {
     if (!req.files || req.files.length === 0) {
       return res.status(400).json({ message: "No files uploaded" });
@@ -104,6 +105,7 @@ router.get("/", async (req, res) => {
           model: Topic,
           attributes: ["id", "name"],
         },
+
       ],
       limit: pageSize,
       offset: offset,
@@ -298,6 +300,10 @@ router.get("/:id", async (req, res) => {
       include: [
         { model: Category, attributes: ["id", "name", "image", "image_card"], include: { model: Section, attributes: ["id", "name", "description"] } },
         { model: Topic, attributes: ["id", "name"] },
+        {
+          model: PromDetails,
+          attributes: ["id", "text", "image", "description", "type"],
+        },
       ],
     });
 
@@ -314,7 +320,7 @@ router.get("/:id", async (req, res) => {
 });
 
 // Create new prompt
-router.post("/", async (req, res) => {
+router.post("/", authMiddleware, adminMiddleware, async (req, res) => {
   try {
     const {
       title,
@@ -391,7 +397,7 @@ router.post("/", async (req, res) => {
 });
 
 // Update prompt with PromDetails
-router.put("/:id", async (req, res) => {
+router.put("/:id", authMiddleware, adminMiddleware, async (req, res) => {
   try {
     const promptId = req.params.id;
     const {
@@ -495,7 +501,7 @@ router.put("/:id", async (req, res) => {
 });
 
 // Delete prompt
-router.delete("/:id", async (req, res) => {
+router.delete("/:id", authMiddleware, adminMiddleware, async (req, res) => {
   try {
     const promptId = req.params.id;
     const prompt = await Prompt.findByPk(promptId);

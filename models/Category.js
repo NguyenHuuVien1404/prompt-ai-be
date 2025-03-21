@@ -11,6 +11,7 @@ const Category = sequelize.define("Category", {
     section_id: { type: DataTypes.INTEGER, allowNull: false, references: { model: Section, key: "id" } },
     created_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW },
     updated_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW },
+    is_comming_soon: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
 }, {
     tableName: "categories",
     timestamps: true,
