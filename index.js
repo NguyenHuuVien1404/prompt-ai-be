@@ -29,7 +29,7 @@ dotenv.config();
 const app = express();
 app.use("/uploads", express.static("uploads"));
 // Áp dụng rate limiter cho tất cả các request
-app.use(limiter);
+// app.use(limiter);
 
 // Sử dụng helmet để bảo vệ HTTP headers
 app.use(helmet());
