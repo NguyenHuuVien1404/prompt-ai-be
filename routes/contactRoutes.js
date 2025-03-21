@@ -2,6 +2,7 @@ const express = require("express");
 const Contact = require("../models/Contact");
 const router = express.Router();
 const nodemailer = require("nodemailer");
+const { authMiddleware, adminMiddleware } = require('../middleware/authMiddleware');
 
 // Cấu hình nodemailer
 const transporter = nodemailer.createTransport({
@@ -11,8 +12,9 @@ const transporter = nodemailer.createTransport({
         pass: 'wvxs wjwk isgm xpyn'  // Thay bằng mật khẩu email của bạn
     }
 });
-// Lấy tất cả liên hệ
-router.get("/", async (req, res) => {
+
+// Lấy tất cả liên hệ - Chỉ admin mới có quyền
+router.get("/", authMiddleware, adminMiddleware, async (req, res) => {
     try {
         const contacts = await Contact.findAll();
         res.json(contacts);
@@ -20,7 +22,9 @@ router.get("/", async (req, res) => {
         res.status(500).json({ message: error.message });
     }
 });
-router.get("/list", async (req, res) => {
+
+// Lấy danh sách liên hệ có phân trang - Chỉ admin mới có quyền
+router.get("/list", authMiddleware, adminMiddleware, async (req, res) => {
     try {
         // Lấy page và pageSize từ query params, mặc định page = 1, pageSize = 10
         let { page = 1, pageSize = 10 } = req.query;
@@ -51,7 +55,8 @@ router.get("/list", async (req, res) => {
         res.status(500).json({ error: error.message });
     }
 });
-// Tạo liên hệ mới
+
+// Tạo liên hệ mới - Không cần xác thực, ai cũng có thể gửi liên hệ
 router.post("/", async (req, res) => {
     try {
         const { name, email, message, type, phone_number } = req.body;
@@ -61,7 +66,8 @@ router.post("/", async (req, res) => {
         res.status(400).json({ message: error.message });
     }
 });
-//Thêm người dùng thông báo
+
+// Thêm người dùng thông báo - Không cần xác thực
 router.post("/add-email", async (req, res) => {
     try {
         const { email, type, name, message, reply, status } = req.body;
@@ -92,8 +98,8 @@ router.post("/add-email", async (req, res) => {
     }
 });
 
-
-router.put("/:id", async (req, res) => {
+// Cập nhật trạng thái và phản hồi - Chỉ admin mới có quyền
+router.put("/:id", authMiddleware, adminMiddleware, async (req, res) => {
     try {
         const { reply } = req.body;
         const contact = await Contact.findByPk(req.params.id);
@@ -125,7 +131,5 @@ router.put("/:id", async (req, res) => {
         res.status(400).json({ message: error.message });
     }
 });
-
-// Cập nhật trạng thái và phản hồi
 
 module.exports = router;
