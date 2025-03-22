@@ -152,7 +152,7 @@ router.get("/by-category", async (req, res) => {
     const pageSize = parseInt(req.query.pageSize) || 12;
     const offset = (page - 1) * pageSize;
     // Tạo điều kiện lọc động
-    let whereCondition = { category_id: category_id, is_type: is_type };
+    let whereCondition = { category_id: category_id };
     if (topic_id && topic_id != 0) {
       whereCondition.topic_id = topic_id;
     }
