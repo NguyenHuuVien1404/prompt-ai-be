@@ -15,7 +15,16 @@ const transporter = nodemailer.createTransport({
     // debug: true, // Bật debug
     // logger: true // Ghi log chi tiết
 });
-
+{/* <div style="margin-top: 20px; font-size: 12px; color: #666;">
+<div>
+    <a href="#"><img src="https://img.icons8.com/ios-filled/50/000000/facebook.png" alt="Facebook" style="width: 24px; margin: 0 5px; border: 1px solid gray; padding: 5px; border-radius: 50%;"></a>
+    <a href="#"><img src="https://img.icons8.com/ios-filled/50/000000/instagram-new.png" alt="Instagram" style="width: 24px; margin: 0 5px; border: 1px solid gray; padding: 5px; border-radius: 50%;"></a>
+    <a href="#"><img src="https://img.icons8.com/ios-filled/50/000000/twitter.png" alt="Twitter" style="width: 24px; margin: 0 5px; border: 1px solid gray; padding: 5px; border-radius: 50%;"></a>
+    <a href="#"><img src="https://img.icons8.com/ios-filled/50/000000/youtube-play.png" alt="YouTube" style="width: 24px; margin: 0 5px; border: 1px solid gray; padding: 5px; border-radius: 50%;"></a>
+    <a href="#"><img src="https://img.icons8.com/ios-filled/50/000000/pinterest.png" alt="Pinterest" style="width: 24px; margin: 0 5px; border: 1px solid gray; padding: 5px; border-radius: 50%;"></a>
+</div>
+<p>Copyright © 2024 by Prom</p>
+</div> */}
 async function sendOrderEmail(email, userName, orderId = 1) {
     // Template HTML với inline CSS và xử lý ảnh khác nhau giữa mobile và desktop
     const htmlTemplate = `
@@ -79,33 +88,24 @@ async function sendOrderEmail(email, userName, orderId = 1) {
                                 </a>
 
                                 <!-- Footer -->
-                                <div style="margin-top: 20px; font-size: 12px; color: #666;">
-                                    <div>
-                                        <a href="#"><img src="https://img.icons8.com/ios-filled/50/000000/facebook.png" alt="Facebook" style="width: 24px; margin: 0 5px; border: 1px solid gray; padding: 5px; border-radius: 50%;"></a>
-                                        <a href="#"><img src="https://img.icons8.com/ios-filled/50/000000/instagram-new.png" alt="Instagram" style="width: 24px; margin: 0 5px; border: 1px solid gray; padding: 5px; border-radius: 50%;"></a>
-                                        <a href="#"><img src="https://img.icons8.com/ios-filled/50/000000/twitter.png" alt="Twitter" style="width: 24px; margin: 0 5px; border: 1px solid gray; padding: 5px; border-radius: 50%;"></a>
-                                        <a href="#"><img src="https://img.icons8.com/ios-filled/50/000000/youtube-play.png" alt="YouTube" style="width: 24px; margin: 0 5px; border: 1px solid gray; padding: 5px; border-radius: 50%;"></a>
-                                        <a href="#"><img src="https://img.icons8.com/ios-filled/50/000000/pinterest.png" alt="Pinterest" style="width: 24px; margin: 0 5px; border: 1px solid gray; padding: 5px; border-radius: 50%;"></a>
-                                    </div>
-                                    <p>Copyright © 2024 by Prom</p>
-                                </div>
+                             
                             </td>
                         </tr>
                     </table>
 
                     <!-- Ad Section -->
-                    <table width="100%" style="padding: 20px; text-align: center; margin: 50px auto; border-radius: 10px;" cellpadding="0" cellspacing="0">
+                    <table width="100%" style="padding: 20px; text-align: center; margin: 0 auto; border-radius: 10px;" cellpadding="0" cellspacing="0">
                         <tr>
                             <td align="center">
                                 <!-- Desktop Image -->
                                 <div class="ad-astronaut-image">
-                                    <a href="http://prom.vn">
+                                    <a href="https://prom.vn/product">
                                         <img src="https://s3-alpha-sig.figma.com/img/0532/544b/b7f130b5db2a808e46aa0198099cf28a?Expires=1743379200&Key-Pair-Id=APKAQ4GOSFWCW27IBOMQ&Signature=GavAo1dx14lv7t51U-sbwq9PLFKN7P0zgJ2mMmXDfiBSWWLSYwFVkfWHzyqvxoOeJbj32tDABOxDi1bWEL-oRd2Vq8MKIlvQIWcwJ89L0AfSdhlu1bR3GUnCctKNxjJUXU9H3CAGPFoaI6ewVCnuXd4WDZm2ynFXNDXn5E9ZgQ4llaixMlMso-qoXGHzkv2ra1JFJ3xmqyhsQAVgX7AO91yJ~H3VbvFYGWlMG1hKvDCt2dZI0T6zm-RaODKLOE3YAm6~NtRJjIesXNpUXp3ECVEE5MRmiulCbtnm6qF-g1gC2ES-CfHuLEd~KicapcHVCemL8qxlIcJaSpJIzhAPGw__" alt="Ad Astronaut" style="max-width: 100%; height: auto; display: block;">
                                     </a>
                                 </div>
                                 <!-- Mobile Image -->
                                 <div class="ad-astronaut-image-mobile">
-                                    <a href="http://prom.vn">
+                                    <a href="https://prom.vn/product">
                                         <img src="https://s3-alpha-sig.figma.com/img/c23a/4d18/47f9c03e8deeeedfc1e1e48e834b105f?Expires=1743379200&Key-Pair-Id=APKAQ4GOSFWCW27IBOMQ&Signature=Za1m95LdvRWWB69gqXgxJHi1SIfAduR-VNQ3jj022oyXgXxYB8PmEUnsuKU6i1i7AgnfbIdptsj9Vznr-vJa3sr-lct0o0cwBdkW0JuvYRkJjaq7j0085~xQOBPZJ3R1zabrU3Ny8u6FsWDu95KchTdHI9VeprI7tytGZcs6XFL~hFvagLh6EM1NwoamWDgLDWZBH3VmuXGjTmwJ2xnlcSEUpY2XOjCytpQSCFEl7-XuhIh6ykV5T1BlEOypPMVzSASJOFzHI78-Q-uGF15XH0QGPdcumjB2y4sbgAImQZmwyovG~zifl5R-iMrbKc878N7hrse1MP~txfeuJjsGTQ__" alt="Ad Astronaut" style="max-width: 100%; height: auto; display: block;">
                                     </a>
                                 </div>
@@ -185,33 +185,24 @@ async function sendOtpEmail(email, otp) {
 
 
                                 <!-- Footer -->
-                                <div style="margin-top: 20px; font-size: 12px; color: #666;">
-                                    <div>
-                                        <a href="#"><img src="https://img.icons8.com/ios-filled/50/000000/facebook.png" alt="Facebook" style="width: 24px; margin: 0 5px; border: 1px solid gray; padding: 5px; border-radius: 50%;"></a>
-                                        <a href="#"><img src="https://img.icons8.com/ios-filled/50/000000/instagram-new.png" alt="Instagram" style="width: 24px; margin: 0 5px; border: 1px solid gray; padding: 5px; border-radius: 50%;"></a>
-                                        <a href="#"><img src="https://img.icons8.com/ios-filled/50/000000/twitter.png" alt="Twitter" style="width: 24px; margin: 0 5px; border: 1px solid gray; padding: 5px; border-radius: 50%;"></a>
-                                        <a href="#"><img src="https://img.icons8.com/ios-filled/50/000000/youtube-play.png" alt="YouTube" style="width: 24px; margin: 0 5px; border: 1px solid gray; padding: 5px; border-radius: 50%;"></a>
-                                        <a href="#"><img src="https://img.icons8.com/ios-filled/50/000000/pinterest.png" alt="Pinterest" style="width: 24px; margin: 0 5px; border: 1px solid gray; padding: 5px; border-radius: 50%;"></a>
-                                    </div>
-                                    <p>Copyright © 2024 by Prom</p>
-                                </div>
+                               
                             </td>
                         </tr>
                     </table>
 
                     <!-- Ad Section -->
-                    <table width="100%" style="padding: 20px; text-align: center; margin: 50px auto; border-radius: 10px;" cellpadding="0" cellspacing="0">
+                    <table width="100%" style="padding: 20px; text-align: center; margin: 0 auto; border-radius: 10px;" cellpadding="0" cellspacing="0">
                         <tr>
                             <td align="center">
                                 <!-- Desktop Image -->
                                 <div class="ad-astronaut-image">
-                                    <a href="http://prom.vn">
+                                    <a href="https://prom.vn/product">
                                         <img src="https://s3-alpha-sig.figma.com/img/0532/544b/b7f130b5db2a808e46aa0198099cf28a?Expires=1743379200&Key-Pair-Id=APKAQ4GOSFWCW27IBOMQ&Signature=GavAo1dx14lv7t51U-sbwq9PLFKN7P0zgJ2mMmXDfiBSWWLSYwFVkfWHzyqvxoOeJbj32tDABOxDi1bWEL-oRd2Vq8MKIlvQIWcwJ89L0AfSdhlu1bR3GUnCctKNxjJUXU9H3CAGPFoaI6ewVCnuXd4WDZm2ynFXNDXn5E9ZgQ4llaixMlMso-qoXGHzkv2ra1JFJ3xmqyhsQAVgX7AO91yJ~H3VbvFYGWlMG1hKvDCt2dZI0T6zm-RaODKLOE3YAm6~NtRJjIesXNpUXp3ECVEE5MRmiulCbtnm6qF-g1gC2ES-CfHuLEd~KicapcHVCemL8qxlIcJaSpJIzhAPGw__" alt="Ad Astronaut" style="max-width: 100%; height: auto; display: block;">
                                     </a>
                                 </div>
                                 <!-- Mobile Image -->
                                 <div class="ad-astronaut-image-mobile">
-                                    <a href="http://prom.vn">
+                                    <a href="https://prom.vn/product">
                                         <img src="https://s3-alpha-sig.figma.com/img/c23a/4d18/47f9c03e8deeeedfc1e1e48e834b105f?Expires=1743379200&Key-Pair-Id=APKAQ4GOSFWCW27IBOMQ&Signature=Za1m95LdvRWWB69gqXgxJHi1SIfAduR-VNQ3jj022oyXgXxYB8PmEUnsuKU6i1i7AgnfbIdptsj9Vznr-vJa3sr-lct0o0cwBdkW0JuvYRkJjaq7j0085~xQOBPZJ3R1zabrU3Ny8u6FsWDu95KchTdHI9VeprI7tytGZcs6XFL~hFvagLh6EM1NwoamWDgLDWZBH3VmuXGjTmwJ2xnlcSEUpY2XOjCytpQSCFEl7-XuhIh6ykV5T1BlEOypPMVzSASJOFzHI78-Q-uGF15XH0QGPdcumjB2y4sbgAImQZmwyovG~zifl5R-iMrbKc878N7hrse1MP~txfeuJjsGTQ__" alt="Ad Astronaut" style="max-width: 100%; height: auto; display: block;">
                                     </a>
                                 </div>

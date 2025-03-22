@@ -139,7 +139,7 @@ router.post('/register', async (req, res) => {
         const { full_name, email, password } = req.body;
         const hashedPassword = await bcrypt.hash(password, 10);
         const otp = generateOtp();
-
+        console.log(otp)
         const newUser = await User.create({
             full_name,
             email,
@@ -310,6 +310,7 @@ router.post("/login-verify", async (req, res) => {
 router.post("/login-password", async (req, res) => {
     try {
         const { email, password, ip_address } = req.body;
+        console.log(email, password)
         const user = await User.findOne({
             where: { email, is_verified: true },
             include: { model: UserSub },
