@@ -25,12 +25,23 @@ const storage = multer.diskStorage({
 
 // Chỉ cho phép upload file ảnh (JPG, PNG, GIF, JPEG)
 const fileFilter = (req, file, cb) => {
-    const allowedTypes = ["image/jpeg", "image/png", "image/gif"];
+    const allowedTypes = [
+        "image/jpeg",  // JPG, JPEG
+        "image/png",   // PNG
+        "image/gif",   // GIF
+        "image/bmp",   // BMP
+        "image/webp",  // WebP
+        "image/tiff",  // TIFF
+        "image/svg+xml", // SVG
+        "image/heic",  // HEIC (High-Efficiency Image Container)
+        "image/heif"   // HEIF (High-Efficiency Image File Format)
+    ];
+
     if (allowedTypes.includes(file.mimetype)) {
         cb(null, true); // Chấp nhận file hợp lệ
     } else {
         cb(
-            new Error("Invalid file type. Only JPG, PNG, and GIF are allowed."),
+            new Error("Invalid file type. Only common image formats (JPG, PNG, GIF, BMP, WebP, TIFF, SVG, HEIC, HEIF) are allowed."),
             false
         );
     }
@@ -295,7 +306,101 @@ router.post("/login-verify", async (req, res) => {
         res.status(500).json({ error: error.message });
     }
 });
+// Đăng nhập bằng mật khẩu
+router.post("/login-password", async (req, res) => {
+    try {
+        const { email, password, ip_address } = req.body;
+        const user = await User.findOne({
+            where: { email, is_verified: true },
+            include: { model: UserSub },
+            nest: true
+        });
 
+        if (!user) {
+            return res.status(400).json({ error: "Email không hợp lệ hoặc tài khoản chưa được xác thực" });
+        }
+
+        // Kiểm tra mật khẩu
+        const isMatch = await bcrypt.compare(password, user.password_hash);
+        if (!isMatch) {
+            return res.status(400).json({ error: "Mật khẩu không đúng" });
+        }
+
+        // Lấy thông tin user subscriptions
+        const userSubs = await user.getUserSubs({
+            where: { status: 1 },
+            include: [Subscription],
+        });
+        const sortedUserSubs = userSubs
+            .map(us => ({
+                status: us.status,
+                start_date: us.start_date,
+                end_date: us.end_date,
+                subscription: us.Subscription ? {
+                    name: us.Subscription.name_sub,
+                    type: us.Subscription.type,
+                } : null
+            }))
+            .sort((a, b) => b.subscription?.type - a.subscription?.type);
+
+        // Ghi log thiết bị
+        const userAgent = req.headers['user-agent'];
+        const ipAddress = ip_address || req.connection.remoteAddress;
+        const agent = userAgentParser.parse(userAgent);
+
+        const existingDevice = await DeviceLog.findOne({
+            where: { user_id: user.id, ip_address: ipAddress }
+        });
+        if (existingDevice) {
+            await DeviceLog.update(
+                {
+                    updated_at: Sequelize.literal('CURRENT_TIMESTAMP'),
+                    login_time: new Date()
+                },
+                { where: { id: existingDevice.id } }
+            );
+        } else {
+            await DeviceLog.create({
+                user_id: user.id,
+                ip_address: ipAddress,
+                os: agent.os.toString(),
+                browser: agent.toAgent(),
+                device: agent.device.toString(),
+                login_time: new Date(),
+                latitude: req.body.latitude || null,
+                longitude: req.body.longitude || null,
+            });
+        }
+
+        // Tạo JWT token
+        const token = jwt.sign(
+            {
+                id: user.id,
+                email: user.email,
+                role: user.role
+            },
+            process.env.JWT_SECRET || 'your_jwt_secret_key',
+            { expiresIn: '24h' }
+        );
+
+        res.json({
+            message: "Đăng nhập thành công",
+            token,
+            user: {
+                id: user.id,
+                fullName: user.full_name,
+                email: user.email,
+                role: user.role,
+                count_prompt: user.count_promt,
+                updated_at: user.updated_at,
+                profile_image: user.profile_image,
+                userSub: sortedUserSubs.length > 0 ? sortedUserSubs[0] : null,
+            },
+        });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
 // Cập nhật count_promt giảm 1 cho user theo id
 router.put('/count-prompt/:id', async (req, res) => {
     try {

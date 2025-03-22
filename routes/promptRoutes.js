@@ -22,12 +22,23 @@ const storage = multer.diskStorage({
 
 // Chỉ cho phép upload file ảnh (JPG, PNG, GIF, JPEG)
 const fileFilter = (req, file, cb) => {
-  const allowedTypes = ["image/jpeg", "image/png", "image/gif"];
+  const allowedTypes = [
+    "image/jpeg",  // JPG, JPEG
+    "image/png",   // PNG
+    "image/gif",   // GIF
+    "image/bmp",   // BMP
+    "image/webp",  // WebP
+    "image/tiff",  // TIFF
+    "image/svg+xml", // SVG
+    "image/heic",  // HEIC (High-Efficiency Image Container)
+    "image/heif"   // HEIF (High-Efficiency Image File Format)
+  ];
+
   if (allowedTypes.includes(file.mimetype)) {
     cb(null, true); // Chấp nhận file hợp lệ
   } else {
     cb(
-      new Error("Invalid file type. Only JPG, PNG, and GIF are allowed."),
+      new Error("Invalid file type. Only common image formats (JPG, PNG, GIF, BMP, WebP, TIFF, SVG, HEIC, HEIF) are allowed."),
       false
     );
   }
@@ -89,7 +100,9 @@ router.get("/", async (req, res) => {
     if (req.query.status !== undefined) {
       where.status = req.query.status;
     }
-
+    if (req.query.topic_id !== undefined) {
+      where.topic_id = req.query.topic_id;
+    }
     if (req.query.search) {
       where.title = {
         [Op.like]: `%${req.query.search}%`
