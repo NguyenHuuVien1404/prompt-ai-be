@@ -223,8 +223,15 @@ router.get("/by-sectionId/:sectionId", async (req, res) => {
             group: ["Category.id"], // Nhóm theo Category để COUNT hoạt động chính xác
             order: [["created_at", "DESC"]],
         });
+        const modifiedCategories = categories.map(category => {
+            const categoryData = category.toJSON(); // Chuyển instance Sequelize thành object
+            if (categoryData.section_id === 3) {
+                categoryData.prompt_count = categoryData.prompt_count * 10;
+            }
+            return categoryData;
+        });
 
-        res.json({ categories });
+        res.json({ categories: modifiedCategories });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
