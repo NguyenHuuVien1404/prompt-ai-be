@@ -201,14 +201,21 @@ router.delete("/:id", async (req, res) => {
 router.get("/by-sectionId/:sectionId", async (req, res) => {
     try {
         const { sectionId } = req.params;
-
+        const searchTxt = req.query.searchTxt;
         if (!sectionId) {
             return res.status(400).json({ error: "sectionId is required" });
         }
-
+        let whereCondition = { section_id: sectionId };
+        if (searchTxt && searchTxt != null && searchTxt != "") {
+            whereCondition[Op.or] = [
+              { name: { [Op.like]: `%${searchTxt}%` } },
+              { name: { [Op.like]: `%${searchTxt.toLowerCase()}%` } },
+              { name: { [Op.like]: `%${searchTxt.toUpperCase()}%` } },
+            ];
+          }
         // Lấy danh sách categories theo sectionId và đếm số lượng prompts trong mỗi category
         const categories = await Category.findAll({
-            where: { section_id: sectionId },
+            where: whereCondition,
             include: [
                 {
                     model: Prompt,
