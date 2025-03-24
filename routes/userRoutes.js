@@ -22,7 +22,7 @@ const storage = multer.diskStorage({
         cb(null, Date.now() + path.extname(file.originalname)); // Tạo tên file duy nhất
     },
 });
-
+const crypto = require("crypto"); // Để tạo token ngẫu nhiên
 // Chỉ cho phép upload file ảnh (JPG, PNG, GIF, JPEG)
 const fileFilter = (req, file, cb) => {
     const allowedTypes = [
@@ -137,24 +137,32 @@ const generateOtp = () => Math.floor(100000 + Math.random() * 900000).toString()
 router.post('/register', async (req, res) => {
     try {
         const { full_name, email, password } = req.body;
-        console.log("register", req.full_name, req.email, req.password);
+        console.log("register", full_name, email, password); // Sửa req.full_name -> full_name
+
+        // Kiểm tra xem email đã tồn tại chưa
+        const existingUser = await User.findOne({ where: { email } });
+        if (existingUser) {
+            return res.status(400).json({ error: 'Email đã được sử dụng. Vui lòng chọn email khác.' });
+        }
+
         const hashedPassword = await bcrypt.hash(password, 10);
         const otp = generateOtp();
         console.log("register-otp", otp);
+
         const newUser = await User.create({
             full_name,
             email,
             password_hash: hashedPassword,
             otp_code: otp,
-            otp_expires_at: new Date(Date.now() + 10 * 60 * 1000), // OTP hết hạn sau 10 phút,
+            otp_expires_at: new Date(Date.now() + 10 * 60 * 1000), // OTP hết hạn sau 10 phút
             account_status: 1,
             role: 1
-
         });
+
         // Lấy ID của subscription miễn phí
         const freeSub = await Subscription.findOne({ where: { type: 4 }, attributes: ["id"] });
         if (!freeSub) {
-            return res.status(404).json({ error: 'No free subscription available' });
+            return res.status(404).json({ error: 'Không có subscription miễn phí' });
         }
 
         // Tạo bản ghi mới trong bảng UserSub
@@ -165,12 +173,12 @@ router.post('/register', async (req, res) => {
             start_date: new Date(),
             end_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
         });
+
         await sendOtpEmail(email, otp);
-        res.json({ message: 'OTP sent to email. Please verify your account.' });
+        res.json({ message: 'Mã OTP đã được gửi đến email. Vui lòng xác thực tài khoản.' });
     } catch (error) {
-        console.log(error)
-        res.status(500).json({ error: error.message });
         console.log("error", error);
+        res.status(500).json({ error: error.message });
     }
 });
 
@@ -181,14 +189,14 @@ router.post('/verify-otp', async (req, res) => {
         const user = await User.findOne({ where: { email } });
 
         if (!user || user.otp_code !== otp || new Date() > new Date(user.otp_expires_at)) {
-            return res.status(400).json({ error: 'Invalid or expired OTP' });
+            return res.status(400).json({ error: 'Mã OTP không hợp lệ hoặc đã hết hạn' });
         }
 
         user.is_verified = true;
         user.otp_code = null;
         await user.save();
 
-        res.json({ message: 'Account verified successfully' });
+        res.json({ message: 'Tài khoản đã được xác thực thành công' });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
@@ -201,7 +209,7 @@ router.post("/login", async (req, res) => {
         const user = await User.findOne({ where: { email, is_verified: true } });
 
         if (!user) {
-            return res.status(400).json({ error: "Invalid email or unverified account" });
+            return res.status(400).json({ error: "Email không hợp lệ hoặc tài khoản chưa được xác thực" });
         }
 
         const otp = generateOtp();
@@ -210,7 +218,7 @@ router.post("/login", async (req, res) => {
         await user.save();
 
         await sendOtpEmail(email, otp);
-        res.json({ message: "OTP sent for login verification" });
+        res.json({ message: "Mã OTP đã được gửi đến email" });
     } catch (error) {
         console.log("error-login", error);
         res.status(500).json({ error: error.message });
@@ -224,7 +232,7 @@ router.post("/login-verify", async (req, res) => {
         const user = await User.findOne({ where: { email }, include: { model: UserSub }, nest: true });
         console.log("email", email, "otp", otp, "ip_address", ip_address);
         if (!user || user.otp_code !== otp || new Date() > new Date(user.otp_expires_at)) {
-            return res.status(400).json({ error: "Invalid or expired OTP" });
+            return res.status(400).json({ error: "Mã OTP không hợp lệ hoặc đã hết hạn" });
         }
 
         // 🟢 Xóa OTP sau khi đăng nhập
@@ -294,7 +302,7 @@ router.post("/login-verify", async (req, res) => {
 
         // Trả về thông tin người dùng
         res.json({
-            message: "Login successful",
+            message: "Đăng nhập thành công",
             token, // Thêm token vào response
             user: {
                 id: user.id,
@@ -531,5 +539,57 @@ router.put('/change-password/:id', async (req, res) => {
         res.status(500).json({ message: "Lỗi khi cập nhật mật khẩu", error: error.message });
     }
 });
+// Gửi email đặt lại mật khẩu
+router.post("/forgot-password", async (req, res) => {
+    try {
+        const { email } = req.body;
+        const user = await User.findOne({ where: { email } });
 
+        if (!user) {
+            return res.status(400).json({ error: "Email không tồn tại" });
+        }
+
+        // Tạo mã OTP
+        const otp = generateOtp();
+        user.otp_code = otp;
+        user.otp_expires_at = new Date(Date.now() + 10 * 60 * 1000); // Hết hạn sau 10 phút
+        await user.save();
+
+        // Gửi email chứa mã OTP
+        await sendOtpEmail(email, otp);
+
+        res.json({ message: "Yêu cầu đặt lại mật khẩu đã được gửi" });
+    } catch (error) {
+        console.log("error-forgot-password", error);
+        res.status(500).json({ error: error.message });
+    }
+});
+// Đặt lại mật khẩu
+router.post("/reset-password", async (req, res) => {
+    try {
+        const { email, otp, newPassword } = req.body; // Thay token bằng otp
+        const user = await User.findOne({ where: { email } });
+        console.log("hiii", email, otp, newPassword)
+        if (
+            !user ||
+            user.otp_code !== otp ||
+            new Date() > new Date(user.otp_expires_at)
+        ) {
+            console.log("hi", new Date(), new Date(user.otp_expires_at))
+            return res.status(400).json({ error: "Mã OTP không hợp lệ hoặc đã hết hạn" });
+        }
+
+        // Mã hóa mật khẩu mới
+        const hashedPassword = await bcrypt.hash(newPassword, 10);
+        user.password_hash = hashedPassword;
+        user.otp_code = null; // Xóa mã OTP sau khi sử dụng
+        user.otp_expires_at = null;
+        await user.save();
+
+        res.json({ message: "Đặt lại mật khẩu thành công" });
+    } catch (error) {
+        console.log("error-reset-password", error);
+        res.status(500).json({ error: error.message });
+    }
+});
 module.exports = router;
