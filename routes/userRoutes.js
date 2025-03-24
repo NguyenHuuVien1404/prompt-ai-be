@@ -137,9 +137,10 @@ const generateOtp = () => Math.floor(100000 + Math.random() * 900000).toString()
 router.post('/register', async (req, res) => {
     try {
         const { full_name, email, password } = req.body;
+        console.log("register", req.full_name, req.email, req.password);
         const hashedPassword = await bcrypt.hash(password, 10);
         const otp = generateOtp();
-        console.log(otp)
+        console.log("register-otp", otp);
         const newUser = await User.create({
             full_name,
             email,
@@ -151,7 +152,7 @@ router.post('/register', async (req, res) => {
 
         });
         // Lấy ID của subscription miễn phí
-        const freeSub = await Subscription.findOne({ where: { type: 1 }, attributes: ["id"] });
+        const freeSub = await Subscription.findOne({ where: { type: 4 }, attributes: ["id"] });
         if (!freeSub) {
             return res.status(404).json({ error: 'No free subscription available' });
         }
@@ -169,6 +170,7 @@ router.post('/register', async (req, res) => {
     } catch (error) {
         console.log(error)
         res.status(500).json({ error: error.message });
+        console.log("error", error);
     }
 });
 
@@ -195,6 +197,7 @@ router.post('/verify-otp', async (req, res) => {
 router.post("/login", async (req, res) => {
     try {
         const { email } = req.body;
+        console.log("login-email", email);
         const user = await User.findOne({ where: { email, is_verified: true } });
 
         if (!user) {
@@ -209,6 +212,7 @@ router.post("/login", async (req, res) => {
         await sendOtpEmail(email, otp);
         res.json({ message: "OTP sent for login verification" });
     } catch (error) {
+        console.log("error-login", error);
         res.status(500).json({ error: error.message });
     }
 });
@@ -218,7 +222,7 @@ router.post("/login-verify", async (req, res) => {
     try {
         const { email, otp, ip_address } = req.body;
         const user = await User.findOne({ where: { email }, include: { model: UserSub }, nest: true });
-
+        console.log("email", email, "otp", otp, "ip_address", ip_address);
         if (!user || user.otp_code !== otp || new Date() > new Date(user.otp_expires_at)) {
             return res.status(400).json({ error: "Invalid or expired OTP" });
         }
@@ -304,6 +308,7 @@ router.post("/login-verify", async (req, res) => {
             },
         });
     } catch (error) {
+        console.log("error-login-verify", error);
         res.status(500).json({ error: error.message });
     }
 });
