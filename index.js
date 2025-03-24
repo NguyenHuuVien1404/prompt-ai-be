@@ -4,6 +4,8 @@ const helmet = require('helmet');
 const ddosProtection = require('./middleware/ddosProtection');
 const dotenv = require('dotenv');
 const cors = require("cors");
+const multer = require('multer');
+const mammoth = require('mammoth');
 
 const userRoutes = require('./routes/userRoutes');
 const promptRoutes = require('./routes/promptRoutes');
@@ -37,13 +39,31 @@ app.use(helmet());
 // Sử dụng middleware chống DDoS
 app.use(ddosProtection);
 app.use(cors({
-    origin: ["https://www.prom.vn", "https://prom.vn"],
-    // origin: "*",
+    // origin: ["https://www.prom.vn", "https://prom.vn"],
+    origin: "*",
     methods: ["GET", "POST", "PUT", "DELETE"],
     allowedHeaders: ["Content-Type", "Authorization"]
 }));
 app.use(express.json());
+const upload = multer({ dest: 'uploads/' });
+app.post('/api/upload-word', upload.single('file'), async (req, res) => {
+    try {
+        if (!req.file) {
+            return res.status(400).json({ error: 'No file uploaded' });
+        }
+        console.log(req.file)
+        // Đọc file Word và chuyển đổi sang HTML
+        const result = await mammoth.convertToHtml({ path: req.file.path });
+        console.log(result)
+        const htmlContent = result.value; // Nội dung HTML
 
+        // Trả về HTML cho frontend
+        res.status(200).json({ html: htmlContent });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ error: 'Error processing the file' });
+    }
+});
 app.use('/api/users', userRoutes);
 app.use('/api/prompts', promptRoutes);
 app.use("/api/categories", categoryRoutes);

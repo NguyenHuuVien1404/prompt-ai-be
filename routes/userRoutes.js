@@ -167,6 +167,7 @@ router.post('/register', async (req, res) => {
         await sendOtpEmail(email, otp);
         res.json({ message: 'OTP sent to email. Please verify your account.' });
     } catch (error) {
+        console.log(error)
         res.status(500).json({ error: error.message });
     }
 });
