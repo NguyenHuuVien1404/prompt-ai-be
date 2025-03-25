@@ -80,6 +80,7 @@ router.post("/upload", authMiddleware, upload.any(), (req, res) => {
 });
 
 // Get all prompts with pagination
+
 router.get("/", async (req, res) => {
   try {
     const page = parseInt(req.query.page) || 1;
@@ -100,25 +101,42 @@ router.get("/", async (req, res) => {
     if (req.query.status !== undefined) {
       where.status = req.query.status;
     }
+
     if (req.query.topic_id !== undefined) {
       where.topic_id = req.query.topic_id;
     }
+
+    // Full-text search across multiple fields
     if (req.query.search) {
-      where.title = {
-        [Op.like]: `%${req.query.search}%`
-      };
+      const searchTerm = `%${req.query.search}%`;
+      where[Op.or] = [
+        { title: { [Op.like]: searchTerm } },
+        { content: { [Op.like]: searchTerm } },
+        { short_description: { [Op.like]: searchTerm } },
+        { what: { [Op.like]: searchTerm } },
+        { tips: { [Op.like]: searchTerm } },
+        { text: { [Op.like]: searchTerm } },
+        { how: { [Op.like]: searchTerm } },
+        { input: { [Op.like]: searchTerm } },
+        { output: { [Op.like]: searchTerm } },
+        { OptimationGuide: { [Op.like]: searchTerm } },
+        { addtip: { [Op.like]: searchTerm } },
+        { addinformation: { [Op.like]: searchTerm } },
+      ];
     }
 
     const { count, rows } = await Prompt.findAndCountAll({
       where,
       include: [
-        { model: Category, attributes: ["id", "name", "image", "image_card", "section_id"], include: { model: Section, attributes: ["id", "name", "description"] } },
-
+        {
+          model: Category,
+          attributes: ["id", "name", "image", "image_card", "section_id"],
+          include: { model: Section, attributes: ["id", "name", "description"] },
+        },
         {
           model: Topic,
           attributes: ["id", "name"],
         },
-
       ],
       limit: pageSize,
       offset: offset,

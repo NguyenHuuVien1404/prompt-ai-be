@@ -3,7 +3,7 @@ const Contact = require("../models/Contact");
 const router = express.Router();
 const nodemailer = require("nodemailer");
 const { authMiddleware, adminMiddleware } = require('../middleware/authMiddleware');
-
+const { sendReplyEmail } = require('../utils/emailService');
 // Cấu hình nodemailer
 const transporter = nodemailer.createTransport({
     service: 'gmail',
@@ -27,7 +27,7 @@ router.get("/", authMiddleware, adminMiddleware, async (req, res) => {
 router.get("/list", authMiddleware, adminMiddleware, async (req, res) => {
     try {
         // Lấy page và pageSize từ query params, mặc định page = 1, pageSize = 10
-        let { page = 1, pageSize = 10 } = req.query;
+        let { page = 1, pageSize = 10, status, type } = req.query;
 
         // Chuyển đổi sang số nguyên
         page = parseInt(page);
@@ -37,10 +37,52 @@ router.get("/list", authMiddleware, adminMiddleware, async (req, res) => {
         const offset = (page - 1) * pageSize;
         const limit = pageSize;
 
-        // Lấy danh sách categories với phân trang
+        // Build where clause based on filters
+        const where = {};
+
+        // Lọc theo status nếu có
+        if (status !== "") {
+            console.log("hii", status);
+            where.status = status;
+        }
+
+        // Lọc theo type nếu có
+        if (type !== null) {
+            where.type = type;
+        }
+
+        // Lấy danh sách contacts với phân trang, lọc và sắp xếp
         const { count, rows } = await Contact.findAndCountAll({
+            where,
             limit,
             offset,
+            order: [["created_at", "DESC"]], // Sắp xếp theo created_at từ mới nhất đến cũ
+        });
+
+        // Tính toán thời gian còn lại đến deadline (24 giờ sau created_at)
+        const currentTime = new Date(); // Thời gian hiện tại
+        const rowsWithDeadline = rows.map(contact => {
+            const createdAt = new Date(contact.created_at);
+            const deadline = new Date(createdAt.getTime() + 24 * 60 * 60 * 1000); // Deadline = created_at + 24 giờ
+            const timeRemaining = deadline - currentTime; // Thời gian còn lại (tính bằng milliseconds)
+
+            // Chuyển đổi thời gian còn lại thành định dạng dễ đọc (giờ, phút, giây)
+            let timeRemainingFormatted = "";
+            if (timeRemaining <= 0) {
+                timeRemainingFormatted = "Hết hạn";
+            } else {
+                const hours = Math.floor(timeRemaining / (1000 * 60 * 60));
+                const minutes = Math.floor((timeRemaining % (1000 * 60 * 60)) / (1000 * 60));
+                const seconds = Math.floor((timeRemaining % (1000 * 60)) / 1000);
+                timeRemainingFormatted = `${hours}h ${minutes}m `;
+            }
+
+            // Trả về bản ghi với thêm trường timeRemaining
+            return {
+                ...contact.toJSON(), // Chuyển đổi bản ghi Sequelize thành JSON
+                timeRemaining: timeRemainingFormatted, // Thêm trường timeRemaining
+                deadline: deadline.toISOString(), // Thêm trường deadline (thời điểm hết hạn)
+            };
         });
 
         // Trả về dữ liệu phân trang
@@ -49,7 +91,7 @@ router.get("/list", authMiddleware, adminMiddleware, async (req, res) => {
             totalPages: Math.ceil(count / pageSize),
             currentPage: page,
             pageSize,
-            data: rows,
+            data: rowsWithDeadline, // Dữ liệu đã được bổ sung timeRemaining và deadline
         });
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -106,25 +148,26 @@ router.put("/:id", authMiddleware, adminMiddleware, async (req, res) => {
         if (!contact) {
             return res.status(404).json({ message: "Contact not found" });
         }
+        await sendReplyEmail(contact.email, reply);
         contact.status = 2;
         contact.reply = reply;
         await contact.save();
 
-        // Gửi email phản hồi
-        const mailOptions = {
-            from: 'duong270302@gmail.com',
-            to: contact.email,
-            subject: 'Phản hồi từ hệ thống',
-            text: reply
-        };
+        // // Gửi email phản hồi
+        // const mailOptions = {
+        //     from: 'duong270302@gmail.com',
+        //     to: contact.email,
+        //     subject: 'Phản hồi từ hệ thống',
+        //     text: reply
+        // };
 
-        transporter.sendMail(mailOptions, function (error, info) {
-            if (error) {
-                console.log(error);
-            } else {
-                console.log('Email sent: ' + info.response);
-            }
-        });
+        // transporter.sendMail(mailOptions, function (error, info) {
+        //     if (error) {
+        //         console.log(error);
+        //     } else {
+        //         console.log('Email sent: ' + info.response);
+        //     }
+        // });
 
         res.json(contact);
     } catch (error) {

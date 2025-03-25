@@ -276,21 +276,34 @@ router.post("/login", async (req, res) => {
         // Kiểm tra xác thực
         if (user.is_verified) {
             // Tạo token và đăng nhập thành công
-            const token = jwt.sign(
-                { id: user.id, email: user.email, role: user.role },
-                process.env.JWT_SECRET,
-                { expiresIn: '24h' }
-            );
+            // const token = jwt.sign(
+            //     { id: user.id, email: user.email, role: user.role },
+            //     process.env.JWT_SECRET,
+            //     { expiresIn: '24h' }
+            // );
 
-            return res.json({
-                message: "Đăng nhập thành công",
-                token,
-                user: {
-                    id: user.id,
-                    email: user.email,
-                    full_name: user.full_name,
-                    role: user.role
-                }
+            // return res.json({
+            //     message: "Đăng nhập thành công",
+            //     token,
+            //     user: {
+            //         id: user.id,
+            //         email: user.email,
+            //         full_name: user.full_name,
+            //         role: user.role
+            //     }
+            // });
+            const otp = generateOtp();
+            user.otp_code = otp;
+            user.otp_expires_at = new Date(Date.now() + 10 * 60 * 1000);
+            await user.save();
+
+            await sendOtpEmail(email, otp);
+
+            // Trả về mã trạng thái 202 Accepted với flag requireVerification
+            return res.status(200).json({
+                message: "Mã OTP đã được gửi đến email của bạn.",
+                // requireVerification: true,
+                email: user.email
             });
         } else {
             // Tài khoản chưa xác thực - tạo OTP mới và gửi
