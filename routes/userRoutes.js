@@ -12,6 +12,7 @@ const { Sequelize } = require("sequelize");
 const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
+const { authMiddleware, adminMiddleware } = require('../middleware/authMiddleware');
 
 // Cấu hình Multer để lưu file vào thư mục "uploads"
 const storage = multer.diskStorage({
@@ -56,17 +57,33 @@ const upload = multer({
 router.use("/upload", express.static("uploads")); // Cho phép truy cập ảnh đã upload
 
 // Lấy tất cả users
-router.get('/', async (req, res) => {
+router.get('/', authMiddleware, adminMiddleware, async (req, res) => {
     try {
-        const users = await User.findAll();
-        res.json(users);
+        const { page = 1, pageSize = 10 } = req.query; // Mặc định page = 1, pageSize = 10
+        const offset = (page - 1) * pageSize;
+        const limit = parseInt(pageSize);
+
+        const { count, rows } = await User.findAndCountAll({
+            attributes: { exclude: ['password_hash'] },
+            offset,
+            limit,
+            order: [['created_at', 'DESC']], // Sắp xếp theo ngày tạo giảm dần (tùy chọn)
+        });
+
+        res.json({
+            data: rows,
+            total: count,
+            currentPage: parseInt(page),
+            pageSize: parseInt(pageSize),
+            totalPages: Math.ceil(count / pageSize),
+        });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
 });
 
 // Tạo user mới
-router.post('/', async (req, res) => {
+router.post('/', authMiddleware, adminMiddleware, async (req, res) => {
     try {
         const user = await User.create(req.body);
         res.status(201).json(user);
@@ -120,7 +137,7 @@ router.put('/:id', async (req, res) => {
 });
 
 // Xóa user
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', authMiddleware, adminMiddleware, async (req, res) => {
     try {
         const user = await User.findByPk(req.params.id);
         if (!user) return res.status(404).json({ message: "User not found" });
@@ -181,7 +198,46 @@ router.post('/register', async (req, res) => {
         res.status(500).json({ error: error.message });
     }
 });
+// Gửi lại mã OTP
+router.post('/resend-otp', async (req, res) => {
+    try {
+        const { email } = req.body;
 
+        if (!email) {
+            return res.status(400).json({ error: 'Vui lòng cung cấp địa chỉ email' });
+        }
+
+        // Tìm user theo email
+        const user = await User.findOne({ where: { email } });
+
+        // Kiểm tra người dùng tồn tại
+        if (!user) {
+            return res.status(404).json({ error: 'Không tìm thấy tài khoản với email này' });
+        }
+
+        // Kiểm tra nếu tài khoản đã được xác thực
+        // if (user.is_verified) {
+        //     return res.status(400).json({ error: 'Tài khoản này đã được xác thực. Vui lòng đăng nhập.' });
+        // }
+
+        // Tạo mã OTP mới
+        const otp = generateOtp();
+
+        // Cập nhật OTP và thời gian hết hạn trong database
+        user.otp_code = otp;
+        user.otp_expires_at = new Date(Date.now() + 10 * 60 * 1000); // 10 phút
+        await user.save();
+
+        // Gửi email chứa OTP
+        await sendOtpEmail(email, otp);
+
+        // Trả về thông báo thành công
+        res.status(200).json({ message: 'Mã OTP đã được gửi lại đến email. Vui lòng xác thực tài khoản.' });
+    } catch (error) {
+        console.error('Lỗi khi gửi lại OTP:', error);
+        res.status(500).json({ error: 'Đã xảy ra lỗi khi gửi lại mã OTP' });
+    }
+});
 // Xác thực OTP
 router.post('/verify-otp', async (req, res) => {
     try {
@@ -205,20 +261,53 @@ router.post('/verify-otp', async (req, res) => {
 router.post("/login", async (req, res) => {
     try {
         const { email } = req.body;
-        console.log("login-email", email);
-        const user = await User.findOne({ where: { email, is_verified: true } });
+        const user = await User.findOne({ where: { email } });
 
         if (!user) {
-            return res.status(400).json({ error: "Email không hợp lệ hoặc tài khoản chưa được xác thực" });
+            return res.status(400).json({ error: "Email không tồn tại" });
         }
 
-        const otp = generateOtp();
-        user.otp_code = otp;
-        user.otp_expires_at = new Date(Date.now() + 10 * 60 * 1000);
-        await user.save();
+        // Kiểm tra mật khẩu
+        // const isValidPassword = await bcrypt.compare(password, user.password_hash);
+        // if (!isValidPassword) {
+        //     return res.status(400).json({ error: "Mật khẩu không đúng" });
+        // }
 
-        await sendOtpEmail(email, otp);
-        res.json({ message: "Mã OTP đã được gửi đến email" });
+        // Kiểm tra xác thực
+        if (user.is_verified) {
+            // Tạo token và đăng nhập thành công
+            const token = jwt.sign(
+                { id: user.id, email: user.email, role: user.role },
+                process.env.JWT_SECRET,
+                { expiresIn: '24h' }
+            );
+
+            return res.json({
+                message: "Đăng nhập thành công",
+                token,
+                user: {
+                    id: user.id,
+                    email: user.email,
+                    full_name: user.full_name,
+                    role: user.role
+                }
+            });
+        } else {
+            // Tài khoản chưa xác thực - tạo OTP mới và gửi
+            const otp = generateOtp();
+            user.otp_code = otp;
+            user.otp_expires_at = new Date(Date.now() + 10 * 60 * 1000);
+            await user.save();
+
+            await sendOtpEmail(email, otp);
+
+            // Trả về mã trạng thái 202 Accepted với flag requireVerification
+            return res.status(202).json({
+                message: "Tài khoản chưa được xác thực. Mã OTP đã được gửi đến email của bạn.",
+                requireVerification: true,
+                email: user.email
+            });
+        }
     } catch (error) {
         console.log("error-login", error);
         res.status(500).json({ error: error.message });
@@ -326,92 +415,110 @@ router.post("/login-password", async (req, res) => {
         const { email, password, ip_address } = req.body;
         console.log(email, password)
         const user = await User.findOne({
-            where: { email, is_verified: true },
+            where: { email },
             include: { model: UserSub },
             nest: true
         });
-
         if (!user) {
-            return res.status(400).json({ error: "Email không hợp lệ hoặc tài khoản chưa được xác thực" });
+            return res.status(400).json({ error: "Email không tồn tại, hãy tiến hành đăng ký" });
         }
+        if (user.is_verified) {
+            // Kiểm tra mật khẩu
+            const isMatch = await bcrypt.compare(password, user.password_hash);
+            if (!isMatch) {
+                return res.status(400).json({ error: "Mật khẩu không đúng" });
+            }
 
-        // Kiểm tra mật khẩu
-        const isMatch = await bcrypt.compare(password, user.password_hash);
-        if (!isMatch) {
-            return res.status(400).json({ error: "Mật khẩu không đúng" });
-        }
+            // Lấy thông tin user subscriptions
+            const userSubs = await user.getUserSubs({
+                where: { status: 1 },
+                include: [Subscription],
+            });
+            const sortedUserSubs = userSubs
+                .map(us => ({
+                    status: us.status,
+                    start_date: us.start_date,
+                    end_date: us.end_date,
+                    subscription: us.Subscription ? {
+                        name: us.Subscription.name_sub,
+                        type: us.Subscription.type,
+                    } : null
+                }))
+                .sort((a, b) => b.subscription?.type - a.subscription?.type);
 
-        // Lấy thông tin user subscriptions
-        const userSubs = await user.getUserSubs({
-            where: { status: 1 },
-            include: [Subscription],
-        });
-        const sortedUserSubs = userSubs
-            .map(us => ({
-                status: us.status,
-                start_date: us.start_date,
-                end_date: us.end_date,
-                subscription: us.Subscription ? {
-                    name: us.Subscription.name_sub,
-                    type: us.Subscription.type,
-                } : null
-            }))
-            .sort((a, b) => b.subscription?.type - a.subscription?.type);
+            // Ghi log thiết bị
+            const userAgent = req.headers['user-agent'];
+            const ipAddress = ip_address || req.connection.remoteAddress;
+            const agent = userAgentParser.parse(userAgent);
 
-        // Ghi log thiết bị
-        const userAgent = req.headers['user-agent'];
-        const ipAddress = ip_address || req.connection.remoteAddress;
-        const agent = userAgentParser.parse(userAgent);
+            const existingDevice = await DeviceLog.findOne({
+                where: { user_id: user.id, ip_address: ipAddress }
+            });
+            if (existingDevice) {
+                await DeviceLog.update(
+                    {
+                        updated_at: Sequelize.literal('CURRENT_TIMESTAMP'),
+                        login_time: new Date()
+                    },
+                    { where: { id: existingDevice.id } }
+                );
+            } else {
+                await DeviceLog.create({
+                    user_id: user.id,
+                    ip_address: ipAddress,
+                    os: agent.os.toString(),
+                    browser: agent.toAgent(),
+                    device: agent.device.toString(),
+                    login_time: new Date(),
+                    latitude: req.body.latitude || null,
+                    longitude: req.body.longitude || null,
+                });
+            }
 
-        const existingDevice = await DeviceLog.findOne({
-            where: { user_id: user.id, ip_address: ipAddress }
-        });
-        if (existingDevice) {
-            await DeviceLog.update(
+            // Tạo JWT token
+            const token = jwt.sign(
                 {
-                    updated_at: Sequelize.literal('CURRENT_TIMESTAMP'),
-                    login_time: new Date()
+                    id: user.id,
+                    email: user.email,
+                    role: user.role
                 },
-                { where: { id: existingDevice.id } }
+                process.env.JWT_SECRET || 'your_jwt_secret_key',
+                { expiresIn: '24h' }
             );
-        } else {
-            await DeviceLog.create({
-                user_id: user.id,
-                ip_address: ipAddress,
-                os: agent.os.toString(),
-                browser: agent.toAgent(),
-                device: agent.device.toString(),
-                login_time: new Date(),
-                latitude: req.body.latitude || null,
-                longitude: req.body.longitude || null,
+
+            res.json({
+                message: "Đăng nhập thành công",
+                token,
+                user: {
+                    id: user.id,
+                    fullName: user.full_name,
+                    email: user.email,
+                    role: user.role,
+                    count_prompt: user.count_promt,
+                    updated_at: user.updated_at,
+                    profile_image: user.profile_image,
+                    userSub: sortedUserSubs.length > 0 ? sortedUserSubs[0] : null,
+                },
+            });
+        }
+        else {
+            // Tài khoản chưa xác thực - tạo OTP mới và gửi
+            const otp = generateOtp();
+            user.otp_code = otp;
+            user.otp_expires_at = new Date(Date.now() + 10 * 60 * 1000);
+            await user.save();
+
+            await sendOtpEmail(email, otp);
+
+            // Trả về mã trạng thái 202 Accepted với flag requireVerification
+            return res.status(202).json({
+                message: "Tài khoản chưa được xác thực. Mã OTP đã được gửi đến email của bạn.",
+                requireVerification: true,
+                email: user.email
             });
         }
 
-        // Tạo JWT token
-        const token = jwt.sign(
-            {
-                id: user.id,
-                email: user.email,
-                role: user.role
-            },
-            process.env.JWT_SECRET || 'your_jwt_secret_key',
-            { expiresIn: '24h' }
-        );
 
-        res.json({
-            message: "Đăng nhập thành công",
-            token,
-            user: {
-                id: user.id,
-                fullName: user.full_name,
-                email: user.email,
-                role: user.role,
-                count_prompt: user.count_promt,
-                updated_at: user.updated_at,
-                profile_image: user.profile_image,
-                userSub: sortedUserSubs.length > 0 ? sortedUserSubs[0] : null,
-            },
-        });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
@@ -589,6 +696,117 @@ router.post("/reset-password", async (req, res) => {
         res.json({ message: "Đặt lại mật khẩu thành công" });
     } catch (error) {
         console.log("error-reset-password", error);
+        res.status(500).json({ error: error.message });
+    }
+});
+// Cập nhật gói đăng ký của user (Cho phép thay đổi sub_id)
+router.put('/:id/subscriptions/:subId', authMiddleware, adminMiddleware, async (req, res) => {
+    try {
+        const { new_sub_id, status, start_date, end_date } = req.body;
+        const userSub = await UserSub.findOne({
+            where: { user_id: req.params.id, id: req.params.subId }
+        });
+
+        if (!userSub) return res.status(404).json({ message: "User subscription not found" });
+
+        if (new_sub_id && new_sub_id !== userSub.sub_id) {
+            const newSubscription = await Subscription.findByPk(new_sub_id);
+            if (!newSubscription) return res.status(404).json({ message: "New subscription not found" });
+            userSub.sub_id = new_sub_id;
+            userSub.end_date = new Date(new Date(start_date || userSub.start_date).getTime() + newSubscription.duration * 24 * 60 * 60 * 1000);
+        }
+        await userSub.update({
+            sub_id: new_sub_id || userSub.sub_id,
+            status: status !== undefined ? status : userSub.status,
+            start_date: start_date || userSub.start_date,
+            end_date: end_date || userSub.end_date
+        });
+        await userSub.reload();
+        res.json({ message: 'Subscription updated successfully', subscription: userSub });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+// Xem danh sách gói đăng ký của user
+router.get('/:id/subscriptions', authMiddleware, adminMiddleware, async (req, res) => {
+    try {
+        const subscriptions = await UserSub.findAll({
+            where: { user_id: req.params.id },
+            include: [{ model: Subscription, attributes: ['id', 'name_sub', 'type', 'duration', 'price', 'description'] }]
+        });
+        res.json(subscriptions);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Thêm gói đăng ký mới cho user
+router.post('/:id/subscriptions', authMiddleware, adminMiddleware, async (req, res) => {
+    try {
+        const { sub_id, start_date, end_date } = req.body;
+        const user = await User.findByPk(req.params.id);
+        if (!user) return res.status(404).json({ message: "User not found" });
+
+        const subscription = await Subscription.findByPk(sub_id);
+        if (!subscription) return res.status(404).json({ message: "Subscription not found" });
+
+        const userSub = await UserSub.create({
+            user_id: req.params.id,
+            sub_id,
+            start_date: start_date || new Date(),
+            end_date: end_date || new Date(new Date().setDate(new Date().getDate() + subscription.duration)),
+            status: 1
+        });
+        res.json({ message: 'Subscription added successfully', subscription: userSub });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+// Xóa gói đăng ký của user
+router.delete('/:id/subscriptions/:subId', authMiddleware, adminMiddleware, async (req, res) => {
+    try {
+        const userSub = await UserSub.findOne({
+            where: { user_id: req.params.id, id: req.params.subId }
+        });
+
+        if (!userSub) return res.status(404).json({ message: "User subscription not found" });
+
+        await userSub.destroy();
+        res.json({ message: 'Subscription deleted successfully' });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+// Thay đổi gói đăng ký (Chuyển sang gói mới và vô hiệu hóa gói cũ)
+router.patch('/:id/subscriptions/:subId/change', authMiddleware, adminMiddleware, async (req, res) => {
+    try {
+        const { new_sub_id, start_date } = req.body;
+        const user = await User.findByPk(req.params.id);
+        if (!user) return res.status(404).json({ message: "User not found" });
+
+        const currentUserSub = await UserSub.findOne({
+            where: { user_id: req.params.id, id: req.params.subId }
+        });
+        if (!currentUserSub) return res.status(404).json({ message: "Current subscription not found" });
+
+        const newSubscription = await Subscription.findByPk(new_sub_id);
+        if (!newSubscription) return res.status(404).json({ message: "New subscription not found" });
+
+        // Vô hiệu hóa gói hiện tại
+        currentUserSub.status = 2; // 2 = Không hoạt động
+        await currentUserSub.save();
+
+        // Tạo gói mới
+        const newUserSub = await UserSub.create({
+            user_id: req.params.id,
+            sub_id: new_sub_id,
+            start_date: start_date || new Date(),
+            end_date: new Date(new Date(start_date || new Date()).getTime() + newSubscription.duration * 24 * 60 * 60 * 1000),
+            status: 1
+        });
+
+        res.json({ message: 'Subscription changed successfully', newSubscription: newUserSub });
+    } catch (error) {
         res.status(500).json({ error: error.message });
     }
 });
