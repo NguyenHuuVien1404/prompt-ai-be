@@ -202,6 +202,7 @@ router.get("/by-sectionId/:sectionId", async (req, res) => {
     try {
         const { sectionId } = req.params;
         const searchTxt = req.query.searchTxt;
+        const listCategory = req.query.listCategory;
         if (!sectionId) {
             return res.status(400).json({ error: "sectionId is required" });
         }
@@ -213,6 +214,17 @@ router.get("/by-sectionId/:sectionId", async (req, res) => {
               { name: { [Op.like]: `%${searchTxt.toUpperCase()}%` } },
             ];
           }
+          if (listCategory && listCategory != null && listCategory != "" && listCategory != "null") {
+            // Tách chuỗi thành mảng số nguyên
+            const categoryIds = listCategory.split(',').map(id => parseInt(id.trim(), 10));
+
+            // Nếu là mảng id của category
+            if (categoryIds.length > 0) {
+                whereCondition.id = {
+                    [Op.in]: categoryIds
+                };
+            }
+        }
         // Lấy danh sách categories theo sectionId và đếm số lượng prompts trong mỗi category
         const categories = await Category.findAll({
             where: whereCondition,
