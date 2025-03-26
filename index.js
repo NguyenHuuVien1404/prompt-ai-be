@@ -19,6 +19,8 @@ const topicRoutes = require("./routes/topicRoutes");
 const promptFavorite = require("./routes/promptFavoriteRoutes.js");
 const productRoutes = require("./routes/productRoutes.js");
 const deviceLogRoutes = require("./routes/deviceLogRoutes.js");
+const paymentRouters = require("./routes/paymentRouters.js");
+
 require('./cronJob.js');
 const limiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 phút
@@ -39,8 +41,8 @@ app.use(helmet());
 // Sử dụng middleware chống DDoS
 app.use(ddosProtection);
 app.use(cors({
-    origin: ["https://www.prom.vn", "https://prom.vn"],
-    // origin: "*",
+    // origin: ["https://www.prom.vn", "https://prom.vn"],
+    origin: "*",
     methods: ["GET", "POST", "PUT", "DELETE"],
     allowedHeaders: ["Content-Type", "Authorization"]
 }));
@@ -76,6 +78,7 @@ app.use("/api/topic", topicRoutes);
 app.use("/api/promptfavorite", promptFavorite);
 app.use("/api/products", productRoutes);
 app.use("/api/devicelogs", deviceLogRoutes);
+app.use("/api/payment", paymentRouters);
 const PORT = process.env.PORT || 5000;
 // Cấu hình rate limiter
 
