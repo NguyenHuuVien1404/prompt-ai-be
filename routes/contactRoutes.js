@@ -3,7 +3,8 @@ const Contact = require("../models/Contact");
 const router = express.Router();
 const nodemailer = require("nodemailer");
 const { authMiddleware, adminMiddleware } = require('../middleware/authMiddleware');
-const { sendReplyEmail } = require('../utils/emailService');
+const { sendReplyEmail, sendSurveyEmail } = require('../utils/emailService');
+const { User } = require('../models');
 // Cấu hình nodemailer
 const transporter = nodemailer.createTransport({
     service: 'gmail',
@@ -172,6 +173,85 @@ router.put("/:id", authMiddleware, adminMiddleware, async (req, res) => {
         res.json(contact);
     } catch (error) {
         res.status(400).json({ message: error.message });
+    }
+});
+
+router.post("/survey", async (req, res) => {
+    try {
+        const { reply } = req.body;
+
+        // Lấy danh sách tất cả email từ bảng users
+        const users = await User.findAll({ attributes: ["email"] });
+
+        if (!users || users.length === 0) {
+            return res.status(404).json({ message: "No users found" });
+        }
+
+        // Danh sách email của tất cả users
+        const emailList = users.map(user => user.email);
+        let failedEmails = [];
+
+        // Gửi email từng user, cách nhau 10 giây
+        for (let i = 0; i < emailList.length; i++) {
+            await new Promise(resolve => setTimeout(resolve, 10000)); // Chờ 10 giây
+
+            try {
+                await sendSurveyEmail(emailList[i], reply);
+                console.log(`✅ Email sent to: ${emailList[i]}`);
+            } catch (error) {
+                console.error(`❌ Failed to send email to: ${emailList[i]} - Error: ${error.message}`);
+                failedEmails.push(emailList[i]); // Lưu email bị lỗi
+            }
+        }
+
+        res.json({
+            message: "All emails have been processed",
+            success: true,
+            failedEmails: failedEmails.length > 0 ? failedEmails : "No failed emails"
+        });
+    } catch (error) {
+        res.status(500).json({ message: "Server error", error: error.message });
+    }
+});
+router.post("/survey-test", async (req, res) => {
+    try {
+        const { reply } = req.body;
+
+        // Lấy danh sách tất cả email từ bảng users
+        const users = await User.findAll({ attributes: ["email"] });
+
+        if (!users || users.length === 0) {
+            return res.status(404).json({ message: "No users found" });
+        }
+
+        // Danh sách email của tất cả users
+        const emailList = [
+            "duong270302@gmail.com",
+            "meomeomex1@gmail.com",
+            "quocdat.asean@gmail.com"
+        ];
+        let failedEmails = [];
+
+        // Gửi email từng user, cách nhau 10 giây
+        for (let i = 0; i < emailList.length; i++) {
+            await new Promise(resolve => setTimeout(resolve, 10000)); // Chờ 10 giây
+
+            try {
+                await sendSurveyEmail(emailList[i], reply);
+                console.log(`✅ Email sent to: ${emailList[i]}`);
+            } catch (error) {
+                console.error(`❌ Failed to send email to: ${emailList[i]} - Error: ${error.message}`);
+                failedEmails.push(emailList[i]); // Lưu email bị lỗi
+            }
+        }
+
+        res.json({
+            message: "All emails have been processed",
+            success: true,
+            failedEmails: failedEmails.length > 0 ? failedEmails : "No failed emails"
+        });
+    } catch (error) {
+        res.status(500).json({ message: "Server error", error: error.message });
     }
 });
 
