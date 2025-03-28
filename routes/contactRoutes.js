@@ -176,38 +176,55 @@ router.put("/:id", authMiddleware, adminMiddleware, async (req, res) => {
     }
 });
 
+// Hàm gửi email bất đồng bộ
+const sendEmailsAsync = async (emailList, reply) => {
+    const failedEmails = [];
+
+    // Gửi tất cả email song song
+    const emailPromises = emailList.map(async (email) => {
+        try {
+            await sendSurveyEmail(email, reply);
+            console.log(`✅ Email sent to: ${email}`);
+        } catch (error) {
+            console.error(`❌ Failed to send email to: ${email} - Error: ${error.message}`);
+            failedEmails.push(email);
+        }
+    });
+
+    // Chờ tất cả email hoàn tất (ở background)
+    await Promise.all(emailPromises);
+    return failedEmails;
+};
+
 router.post("/survey", async (req, res) => {
     try {
         const { reply } = req.body;
 
-        // Lấy danh sách tất cả email từ bảng users
+        // Lấy danh sách email từ DB
         const users = await User.findAll({ attributes: ["email"] });
-
         if (!users || users.length === 0) {
             return res.status(404).json({ message: "No users found" });
         }
 
-        // Danh sách email của tất cả users
         const emailList = users.map(user => user.email);
-        let failedEmails = [];
 
-        // Gửi email từng user, cách nhau 10 giây
-        for (let i = 0; i < emailList.length; i++) {
-            await new Promise(resolve => setTimeout(resolve, 10000)); // Chờ 10 giây
+        // Khởi động quá trình gửi email bất đồng bộ
+        sendEmailsAsync(emailList, reply)
+            .then(failedEmails => {
+                console.log("Email sending completed:", {
+                    totalSent: emailList.length - failedEmails.length,
+                    failedEmails
+                });
+            })
+            .catch(err => {
+                console.error("Error in email sending process:", err);
+            });
 
-            try {
-                await sendSurveyEmail(emailList[i], reply);
-                console.log(`✅ Email sent to: ${emailList[i]}`);
-            } catch (error) {
-                console.error(`❌ Failed to send email to: ${emailList[i]} - Error: ${error.message}`);
-                failedEmails.push(emailList[i]); // Lưu email bị lỗi
-            }
-        }
-
+        // Trả về phản hồi ngay lập tức
         res.json({
-            message: "All emails have been processed",
+            message: "Email sending process started",
             success: true,
-            failedEmails: failedEmails.length > 0 ? failedEmails : "No failed emails"
+            totalEmails: emailList.length
         });
     } catch (error) {
         res.status(500).json({ message: "Server error", error: error.message });
