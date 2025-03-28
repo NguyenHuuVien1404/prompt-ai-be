@@ -11,7 +11,11 @@ const transporter = nodemailer.createTransport({
     },
     tls: {
         rejectUnauthorized: false // Tùy chọn nếu gặp lỗi SSL
-    }
+    },
+    pool: true, // Dùng connection pool để tái sử dụng kết nối
+    maxMessages: 100, // Giới hạn số email mỗi kết nối
+    rateLimit: 10, // Giới hạn 10 email/giây
+    rateDelta: 1000 // Thời gian tính rate (1 giây)
 });
 {/* <div style="margin-top: 20px; font-size: 12px; color: #666;">
                         <div>

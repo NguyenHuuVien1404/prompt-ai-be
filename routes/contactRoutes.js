@@ -176,23 +176,36 @@ router.put("/:id", authMiddleware, adminMiddleware, async (req, res) => {
     }
 });
 
-// Hàm gửi email bất đồng bộ
-const sendEmailsAsync = async (emailList, reply) => {
+// Gửi email theo lô với retry
+const sendEmailsInBatches = async (emailList, reply, batchSize = 10, delayMs = 3000) => {
     const failedEmails = [];
-
-    // Gửi tất cả email song song
-    const emailPromises = emailList.map(async (email) => {
-        try {
-            await sendSurveyEmail(email, reply);
-            console.log(`✅ Email sent to: ${email}`);
-        } catch (error) {
-            console.error(`❌ Failed to send email to: ${email} - Error: ${error.message}`);
-            failedEmails.push(email);
+    for (let i = 0; i < emailList.length; i += batchSize) {
+        const batch = emailList.slice(i, i + batchSize);
+        const emailPromises = batch.map(async (email) => {
+            let retries = 3; // Thử lại tối đa 3 lần
+            while (retries > 0) {
+                try {
+                    await sendSurveyEmail(email, reply);
+                    console.log(`✅ Email sent to: ${email}`);
+                    return; // Thành công thì thoát vòng lặp
+                } catch (error) {
+                    console.error(`❌ Failed to send to ${email} - Error: ${error.message}`);
+                    retries--;
+                    if (retries === 0) {
+                        failedEmails.push(email);
+                    } else {
+                        console.log(`Retrying ${email} (${3 - retries}/3)...`);
+                        await new Promise(resolve => setTimeout(resolve, 5000)); // Chờ 5 giây trước khi thử lại
+                    }
+                }
+            }
+        });
+        await Promise.all(emailPromises);
+        if (i + batchSize < emailList.length) {
+            console.log(`Waiting ${delayMs / 1000}s before next batch...`);
+            await new Promise(resolve => setTimeout(resolve, delayMs)); // Delay 3 giây giữa các lô
         }
-    });
-
-    // Chờ tất cả email hoàn tất (ở background)
-    await Promise.all(emailPromises);
+    }
     return failedEmails;
 };
 
@@ -200,7 +213,6 @@ router.post("/survey", async (req, res) => {
     try {
         const { reply } = req.body;
 
-        // Lấy danh sách email từ DB
         const users = await User.findAll({ attributes: ["email"] });
         if (!users || users.length === 0) {
             return res.status(404).json({ message: "No users found" });
@@ -208,19 +220,15 @@ router.post("/survey", async (req, res) => {
 
         const emailList = users.map(user => user.email);
 
-        // Khởi động quá trình gửi email bất đồng bộ
-        sendEmailsAsync(emailList, reply)
+        sendEmailsInBatches(emailList, reply, 10, 3000)
             .then(failedEmails => {
-                console.log("Email sending completed:", {
+                console.log("Email sending_completed:", {
                     totalSent: emailList.length - failedEmails.length,
                     failedEmails
                 });
             })
-            .catch(err => {
-                console.error("Error in email sending process:", err);
-            });
+            .catch(err => console.error("Error in email sending:", err));
 
-        // Trả về phản hồi ngay lập tức
         res.json({
             message: "Email sending process started",
             success: true,
