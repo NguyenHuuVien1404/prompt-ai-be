@@ -6,6 +6,7 @@ const Prompt = require("../models/Prompt");
 const Section = require("../models/Section");
 const Category = require("../models/Category");
 const Topic = require("../models/Topic");
+const { authMiddleware, adminMiddleware } = require('../middleware/authMiddleware');
 router.get("/:userId", async (req, res) => {
     try {
         const userId = req.params.userId;

@@ -2,7 +2,7 @@ const express = require("express");
 const router = express.Router();
 const DeviceLog = require("../models/DeviceLog");
 const { Sequelize } = require("sequelize");
-
+const { authMiddleware, adminMiddleware } = require('../middleware/authMiddleware');
 router.get("/:userId", async (req, res) => {
     try {
         const user_id = req.params.userId;

@@ -1,7 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const Section = require("../models/Section")
-
+const { authMiddleware, adminMiddleware } = require('../middleware/authMiddleware');
 // Lấy danh sách section
 router.get("/", async (req, res) => {
     try {

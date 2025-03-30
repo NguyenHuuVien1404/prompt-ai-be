@@ -27,7 +27,8 @@
     "nodemailer": "^6.10.0",
     "request": "^2.88.2",
     "sequelize": "^6.37.5",
-    "useragent": "^2.3.0"
+    "useragent": "^2.3.0",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "nodemon": "^3.1.9"

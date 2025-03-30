@@ -54,7 +54,6 @@ router.get("/list", authMiddleware, adminMiddleware, async (req, res) => {
 
         // Lấy danh sách contacts với phân trang, lọc và sắp xếp
         const { count, rows } = await Contact.findAndCountAll({
-            where,
             limit,
             offset,
             order: [["created_at", "DESC"]], // Sắp xếp theo created_at từ mới nhất đến cũ
