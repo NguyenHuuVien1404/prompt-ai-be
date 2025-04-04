@@ -22,9 +22,12 @@ const promptFavorite = require("./routes/promptFavoriteRoutes.js");
 const productRoutes = require("./routes/productRoutes.js");
 const deviceLogRoutes = require("./routes/deviceLogRoutes.js");
 const paymentRouters = require("./routes/paymentRouters.js");
+const referralRoutes = require("./routes/referralRoutes.js");
 const Prompt = require('./models/Prompt.js');
 const Topic = require('./models/Topic.js');
 const Category = require('./models/Category.js');
+const Referral = require('./models/Referral.js');
+const chatGPTRoutes = require("./routes/chatGPTRoutes.js");
 require('./cronJob.js');
 const limiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 phút
@@ -208,6 +211,8 @@ app.use("/api/promptfavorite", promptFavorite);
 app.use("/api/products", productRoutes);
 app.use("/api/devicelogs", deviceLogRoutes);
 app.use("/api/payment", paymentRouters);
+app.use("/api/referral", referralRoutes);
+app.use("/api/chat", chatGPTRoutes);
 const PORT = process.env.PORT || 5000;
 // Cấu hình rate limiter
 

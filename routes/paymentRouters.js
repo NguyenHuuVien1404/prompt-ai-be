@@ -51,9 +51,11 @@ router.post('/create_payment_url', function (req, res, next) {
     let vnpUrl = process.env.vnp_Url;
     let returnUrl = process.env.vnp_ReturnUrl;
     console.log(tmnCode, secretKey, vnpUrl, returnUrl);
-    let orderId = moment(date).format('DDHHmmss');
+    let orderId = moment(date).format('DDHHmmss') + Math.floor(100000 + Math.random() * 900000);
+
     let amount = req.body.amount;
     let bankCode = req.body.bankCode;
+    let orderInfo = req.body.orderInfo;
 
     let locale = req.body.language;
     if (locale === null || locale === '') {
@@ -67,7 +69,7 @@ router.post('/create_payment_url', function (req, res, next) {
     vnp_Params['vnp_Locale'] = locale;
     vnp_Params['vnp_CurrCode'] = currCode;
     vnp_Params['vnp_TxnRef'] = orderId;
-    vnp_Params['vnp_OrderInfo'] = 'Thanh toan cho ma GD:' + orderId;
+    vnp_Params['vnp_OrderInfo'] = orderInfo;
     vnp_Params['vnp_OrderType'] = 'other';
     vnp_Params['vnp_Amount'] = amount * 100;
     vnp_Params['vnp_ReturnUrl'] = returnUrl;
@@ -76,7 +78,7 @@ router.post('/create_payment_url', function (req, res, next) {
     if (bankCode !== null && bankCode !== '') {
         vnp_Params['vnp_BankCode'] = bankCode;
     }
-
+    console.log(vnp_Params['vnp_OrderInfo']);
     vnp_Params = sortObject(vnp_Params);
 
     let querystring = require('qs');

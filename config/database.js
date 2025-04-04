@@ -9,12 +9,16 @@ const sequelize = new Sequelize(
     host: process.env.DB_HOST,
     port: process.env.DB_PORT,
     dialect: process.env.DB_DIALECT,
-    logging: false, // Tắt logging nếu không cần thiết
+    logging: false,
+    define: {
+      timestamps: true
+    }
   }
 );
 
+// Test the connection
 sequelize.authenticate()
-  .then(() => console.log('Database connected...'))
-  .catch(err => console.log('Error: ' + err));
+  .then(() => console.log('Database connected successfully.'))
+  .catch(err => console.error('Unable to connect to the database:', err));
 
 module.exports = sequelize;
