@@ -13,6 +13,7 @@ const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
 const { authMiddleware, adminMiddleware } = require('../middleware/authMiddleware');
+const { Op } = require("sequelize");
 
 // Cấu hình Multer để lưu file vào thư mục "uploads"
 const storage = multer.diskStorage({
@@ -56,28 +57,77 @@ const upload = multer({
 });
 router.use("/upload", express.static("uploads")); // Cho phép truy cập ảnh đã upload
 
-// Lấy tất cả users
-router.get('/', authMiddleware, adminMiddleware, async (req, res) => {
+// Lấy tất cả users (chuyển từ GET thành POST)
+router.post('/list', authMiddleware, adminMiddleware, async (req, res) => {
     try {
-        const { page = 1, pageSize = 10 } = req.query; // Mặc định page = 1, pageSize = 10
+        // Lấy tham số từ request body thay vì query
+        let { page = 1, pageSize = 10, search, account_status, is_verified, role } = req.body;
+
+        // Đảm bảo các tham số số nguyên không bị NaN
+        page = parseInt(page) || 1; // Mặc định là 1 nếu không phải số
+        pageSize = parseInt(pageSize) || 10; // Mặc định là 10 nếu không phải số
+
         const offset = (page - 1) * pageSize;
-        const limit = parseInt(pageSize);
+        const limit = pageSize;
+
+        // Xây dựng điều kiện tìm kiếm
+        const whereConditions = {};
+
+        // Tìm kiếm theo tên hoặc email
+        if (search) {
+            whereConditions[Op.or] = [
+                { full_name: { [Op.like]: `%${search}%` } },
+                { email: { [Op.like]: `%${search}%` } }
+            ];
+        }
+
+        // Lọc theo trạng thái
+        if (account_status !== undefined && account_status !== null) {
+            const parsedStatus = parseInt(account_status);
+            // Chỉ thêm nếu là số hợp lệ
+            if (!isNaN(parsedStatus)) {
+                whereConditions.account_status = parsedStatus;
+            }
+        }
+
+        // Lọc theo tình trạng xác thực
+        if (is_verified !== undefined && is_verified !== null) {
+            if (typeof is_verified === 'string') {
+                whereConditions.is_verified = is_verified === 'true';
+            } else {
+                whereConditions.is_verified = !!is_verified;
+            }
+        }
+
+        // Lọc theo vai trò
+        if (role !== undefined && role !== null) {
+            const parsedRole = parseInt(role);
+            // Chỉ thêm nếu là số hợp lệ
+            if (!isNaN(parsedRole)) {
+                whereConditions.role = parsedRole;
+            }
+        }
+
+        // Log để debug
+        console.log('POST params:', { page, pageSize, offset, limit, whereConditions });
 
         const { count, rows } = await User.findAndCountAll({
             attributes: { exclude: ['password_hash'] },
+            where: whereConditions,
             offset,
             limit,
-            order: [['created_at', 'DESC']], // Sắp xếp theo ngày tạo giảm dần (tùy chọn)
+            order: [['created_at', 'DESC']], // Sắp xếp theo ngày tạo giảm dần
         });
 
         res.json({
             data: rows,
             total: count,
-            currentPage: parseInt(page),
-            pageSize: parseInt(pageSize),
+            currentPage: page,
+            pageSize,
             totalPages: Math.ceil(count / pageSize),
         });
     } catch (error) {
+        console.error('Error fetching users:', error);
         res.status(500).json({ error: error.message });
     }
 });
