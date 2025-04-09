@@ -255,7 +255,7 @@ router.get("/newest", async (req, res) => {
 
     // Lấy ngày hiện tại và ngày cách đây 30 ngày
     const thirtyDaysAgo = new Date();
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 90);
 
     // Lấy danh sách content mới nhất trong vòng 30 ngày
     const newest_prompts = await Prompt.findAll({
