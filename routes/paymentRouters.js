@@ -40,18 +40,24 @@ router.post('/create_payment_url', async function (req, res, next) {
             req.socket.remoteAddress ||
             req.connection.socket.remoteAddress;
 
-        let tmnCode = process.env.vnp_TmnCode;
-        let secretKey = process.env.vnp_HashSecret;
-        let vnpUrl = process.env.vnp_Url;
-        let returnUrl = process.env.vnp_ReturnUrl;
+        // let config = require('config');
 
+        let tmnCode = process.env.VNP_TMNCODE;
+        let secretKey = process.env.VNP_HASHSECRET;
+        let vnpUrl = process.env.VNP_URL;
+        let returnUrl = process.env.VNP_RETURNURL;
+        console.log(tmnCode, secretKey, vnpUrl, returnUrl);
         let orderId = moment(date).format('DDHHmmss') + Math.floor(100000 + Math.random() * 900000);
-        let amount = req.body.amount;
-        let bankCode = req.body.bankCode || '';
-        let orderInfo = req.body.orderInfo || 'Thanh toan don hang';
-        let locale = req.body.language || 'vn';
-        let currCode = 'VND';
 
+        let amount = req.body.amount;
+        let bankCode = req.body.bankCode;
+        let orderInfo = req.body.orderInfo;
+
+        let locale = req.body.language;
+        if (locale === null || locale === '') {
+            locale = 'vn';
+        }
+        let currCode = 'VND';
         let vnp_Params = {};
         vnp_Params['vnp_Version'] = '2.1.0';
         vnp_Params['vnp_Command'] = 'pay';
@@ -65,11 +71,10 @@ router.post('/create_payment_url', async function (req, res, next) {
         vnp_Params['vnp_ReturnUrl'] = returnUrl;
         vnp_Params['vnp_IpAddr'] = ipAddr;
         vnp_Params['vnp_CreateDate'] = createDate;
-
-        if (bankCode) {
+        if (bankCode !== null && bankCode !== '') {
             vnp_Params['vnp_BankCode'] = bankCode;
         }
-
+        console.log(vnp_Params['vnp_OrderInfo']);
         vnp_Params = sortObject(vnp_Params);
 
         let signData = querystring.stringify(vnp_Params, { encode: false });
@@ -104,7 +109,7 @@ router.get('/vnpay_return', async function (req, res, next) {
         delete vnp_Params['vnp_SecureHashType'];
 
         vnp_Params = sortObject(vnp_Params);
-        let secretKey = process.env.vnp_HashSecret;
+        let secretKey = process.env.VNP_HASHSECRET;
         let signData = querystring.stringify(vnp_Params, { encode: false });
         let hmac = crypto.createHmac("sha512", secretKey);
         let signed = hmac.update(new Buffer.from(signData, 'utf-8')).digest("hex");
@@ -213,9 +218,9 @@ router.post('/querydr', async function (req, res, next) {
             return res.json(JSON.parse(cachedResult));
         }
 
-        let vnp_TmnCode = process.env.vnp_TmnCode;
-        let secretKey = process.env.vnp_HashSecret;
-        let vnp_Api = process.env.vnp_Api;
+        let vnp_TmnCode = process.env.VNP_TMNCODE;
+        let secretKey = process.env.VNP_HASHSECRET;
+        let vnp_Api = process.env.VNP_API;
 
         let vnp_RequestId = moment(date).format('HHmmss');
         let vnp_Version = '2.1.0';
@@ -269,9 +274,9 @@ router.post('/refund', async function (req, res, next) {
         process.env.TZ = 'Asia/Ho_Chi_Minh';
         let date = new Date();
 
-        let vnp_TmnCode = process.env.vnp_TmnCode;
-        let secretKey = process.env.vnp_HashSecret;
-        let vnp_Api = process.env.vnp_Api;
+        let vnp_TmnCode = process.env.VNP_TMNCODE;
+        let secretKey = process.env.VNP_HASHSECRET;
+        let vnp_Api = process.env.VNP_API;
 
         let vnp_TxnRef = req.body.orderId;
         let vnp_TransactionDate = req.body.transDate;

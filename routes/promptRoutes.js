@@ -339,19 +339,23 @@ router.get("/topics/by-category", async (req, res) => {
 // lấy list prompts mới nhất
 router.get("/newest", async (req, res) => {
   try {
-    const limit = parseInt(req.query.limit) || 10;
-
-    // Create cache key
-    const cacheKey = `prompts_newest_${limit}`;
-
-    // Try to get from cache first
-    const cachedData = await cache.getCache(cacheKey);
-    if (cachedData) {
-      return res.status(200).json(JSON.parse(cachedData));
+    const category_id = req.query.category_id;
+    if (!category_id) {
+      return res.status(400).json({ message: "category_id is required" });
     }
 
-    const prompts = await Prompt.findAll({
-      attributes: ["id", "title", "image", "content", "short_description", "what", "how", "created_at"],
+    // Lấy ngày hiện tại và ngày cách đây 30 ngày
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 90);
+
+    // Lấy danh sách content mới nhất trong vòng 30 ngày
+    const newest_prompts = await Prompt.findAll({
+      where: {
+        category_id: category_id,
+        created_at: {
+          [Op.gte]: thirtyDaysAgo, // Lọc các prompt có created_at >= 30 ngày trước
+        },
+      },
       include: [
         { model: Category, attributes: ["id", "name", "image"] },
         { model: Topic, attributes: ["id", "name"] }
@@ -361,7 +365,7 @@ router.get("/newest", async (req, res) => {
     });
 
     const result = {
-      data: prompts
+      data: newest_prompts
     };
 
     // Cache newest prompts for 5 minutes

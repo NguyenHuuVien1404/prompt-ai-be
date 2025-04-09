@@ -49,8 +49,8 @@ app.use(helmet());
 app.use(ddosProtection);
 
 app.use(cors({
-    // origin: ["https://www.prom.vn", "https://prom.vn"],
-    origin: "*",
+    origin: ["https://www.prom.vn", "https://prom.vn"],
+    // origin: "*",
     methods: ["GET", "POST", "PUT", "DELETE"],
     allowedHeaders: ["Content-Type", "Authorization"]
 }));
