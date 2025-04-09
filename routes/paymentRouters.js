@@ -46,11 +46,10 @@ router.post('/create_payment_url', function (req, res, next) {
 
     // let config = require('config');
 
-    let tmnCode = process.env.vnp_TmnCode;
-    let secretKey = process.env.vnp_HashSecret;
-    let vnpUrl = process.env.vnp_Url;
-    let returnUrl = process.env.vnp_ReturnUrl;
-    console.log(tmnCode, secretKey, vnpUrl, returnUrl);
+    let tmnCode = process.env.VNP_TMNCODE;
+    let secretKey = process.env.VNP_HASHSECRET;
+    let vnpUrl = process.env.VNP_URL;
+    let returnUrl = process.env.VNP_RETURNURL;
     let orderId = moment(date).format('DDHHmmss') + Math.floor(100000 + Math.random() * 900000);
 
     let amount = req.body.amount;
@@ -78,7 +77,6 @@ router.post('/create_payment_url', function (req, res, next) {
     if (bankCode !== null && bankCode !== '') {
         vnp_Params['vnp_BankCode'] = bankCode;
     }
-    console.log(vnp_Params['vnp_OrderInfo']);
     vnp_Params = sortObject(vnp_Params);
 
     let querystring = require('qs');
