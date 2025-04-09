@@ -381,7 +381,7 @@ router.get("/newest", async (req, res) => {
 router.get("/:id", async (req, res) => {
   try {
     const { id } = req.params;
-
+    console.log("id", id)
     // Create cache key for single prompt
     const cacheKey = `prompt_detail_${id}`;
 
@@ -393,7 +393,7 @@ router.get("/:id", async (req, res) => {
 
     const prompt = await Prompt.findByPk(id, {
       include: [
-        { model: Category, attributes: ["id", "name", "image"] },
+        { model: Category, attributes: ["id", "name"] },
         { model: Topic, attributes: ["id", "name"] }
       ]
     });
@@ -408,7 +408,7 @@ router.get("/:id", async (req, res) => {
         category_id: prompt.category_id,
         id: { [Op.ne]: id } // Not this prompt
       },
-      attributes: ["id", "title", "image", "short_description"],
+      attributes: ["id", "title", "short_description"],
       include: [
         { model: Category, attributes: ["id", "name"] }
       ],
@@ -423,7 +423,7 @@ router.get("/:id", async (req, res) => {
     // Cache individual prompt details for 30 minutes (longer since details change less often)
     await cache.setCache(cacheKey, JSON.stringify(result), 1800);
 
-    res.status(200).json(result);
+    res.status(200).json(prompt);
   } catch (error) {
     res.status(500).json({ message: "Error fetching prompt", error: error.message });
   }
