@@ -1,7 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const BlogCategory = require("../models/BlogCategory");
-
+const { authMiddleware, adminMiddleware } = require('../middleware/authMiddleware');
 // Lấy tất cả danh mục
 router.get("/", async (req, res) => {
     try {

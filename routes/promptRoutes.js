@@ -117,11 +117,11 @@ router.get("/", async (req, res) => {
         { tips: { [Op.like]: searchTerm } },
         { text: { [Op.like]: searchTerm } },
         { how: { [Op.like]: searchTerm } },
-        { input: { [Op.like]: searchTerm } },
-        { output: { [Op.like]: searchTerm } },
+        // { input: { [Op.like]: searchTerm } },
+        // { output: { [Op.like]: searchTerm } },
         { OptimationGuide: { [Op.like]: searchTerm } },
-        { addtip: { [Op.like]: searchTerm } },
-        { addinformation: { [Op.like]: searchTerm } },
+        // { addtip: { [Op.like]: searchTerm } },
+        // { addinformation: { [Op.like]: searchTerm } },
       ];
     }
 

@@ -16,6 +16,20 @@ const Referral = sequelize.define("Referral", {
         type: DataTypes.FLOAT, // Giá trị giảm giá, có thể là số thập phân
         allowNull: false,
     },
+    count: {
+        type: DataTypes.INTEGER, // Giá trị giảm giá, có thể là số thập phân
+        allowNull: false,
+        defaultValue: 1
+    },
+    status: {
+        type: DataTypes.INTEGER, // Giá trị giảm giá, có thể là số thập phân
+        allowNull: false,
+        defaultValue: 1
+    },
+    endDate: {
+        type: DataTypes.DATE, // Giá trị giảm giá, có thể là số thập phân
+        allowNull: true,
+    }
 }, {
     tableName: "referrals",
     timestamps: true, // Thêm createdAt và updatedAt

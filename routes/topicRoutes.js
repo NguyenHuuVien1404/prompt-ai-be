@@ -2,7 +2,7 @@ const express = require("express");
 const router = express.Router();
 const Topic = require("../models/Topic");
 const { Sequelize } = require("sequelize");
-
+const { authMiddleware, adminMiddleware } = require('../middleware/authMiddleware');
 // Lấy danh sách chủ đề
 router.get("/", async (req, res) => {
     try {

@@ -3,7 +3,8 @@ const Contact = require("../models/Contact");
 const router = express.Router();
 const nodemailer = require("nodemailer");
 const { authMiddleware, adminMiddleware } = require('../middleware/authMiddleware');
-const { sendReplyEmail } = require('../utils/emailService');
+const { sendReplyEmail, sendSurveyEmail } = require('../utils/emailService');
+const { User } = require('../models');
 // Cấu hình nodemailer
 const transporter = nodemailer.createTransport({
     service: 'gmail',
@@ -53,7 +54,6 @@ router.get("/list", authMiddleware, adminMiddleware, async (req, res) => {
 
         // Lấy danh sách contacts với phân trang, lọc và sắp xếp
         const { count, rows } = await Contact.findAndCountAll({
-            where,
             limit,
             offset,
             order: [["created_at", "DESC"]], // Sắp xếp theo created_at từ mới nhất đến cũ
@@ -172,6 +172,110 @@ router.put("/:id", authMiddleware, adminMiddleware, async (req, res) => {
         res.json(contact);
     } catch (error) {
         res.status(400).json({ message: error.message });
+    }
+});
+
+// Gửi email theo lô với retry
+const sendEmailsInBatches = async (emailList, reply, batchSize = 10, delayMs = 3000) => {
+    const failedEmails = [];
+    for (let i = 0; i < emailList.length; i += batchSize) {
+        const batch = emailList.slice(i, i + batchSize);
+        const emailPromises = batch.map(async (email) => {
+            let retries = 3; // Thử lại tối đa 3 lần
+            while (retries > 0) {
+                try {
+                    await sendSurveyEmail(email, reply);
+                    console.log(`✅ Email sent to: ${email}`);
+                    return; // Thành công thì thoát vòng lặp
+                } catch (error) {
+                    console.error(`❌ Failed to send to ${email} - Error: ${error.message}`);
+                    retries--;
+                    if (retries === 0) {
+                        failedEmails.push(email);
+                    } else {
+                        console.log(`Retrying ${email} (${3 - retries}/3)...`);
+                        await new Promise(resolve => setTimeout(resolve, 5000)); // Chờ 5 giây trước khi thử lại
+                    }
+                }
+            }
+        });
+        await Promise.all(emailPromises);
+        if (i + batchSize < emailList.length) {
+            console.log(`Waiting ${delayMs / 1000}s before next batch...`);
+            await new Promise(resolve => setTimeout(resolve, delayMs)); // Delay 3 giây giữa các lô
+        }
+    }
+    return failedEmails;
+};
+
+router.post("/survey", async (req, res) => {
+    try {
+        const { reply } = req.body;
+
+        const users = await User.findAll({ attributes: ["email"] });
+        if (!users || users.length === 0) {
+            return res.status(404).json({ message: "No users found" });
+        }
+
+        const emailList = users.map(user => user.email);
+
+        sendEmailsInBatches(emailList, reply, 10, 3000)
+            .then(failedEmails => {
+                console.log("Email sending_completed:", {
+                    totalSent: emailList.length - failedEmails.length,
+                    failedEmails
+                });
+            })
+            .catch(err => console.error("Error in email sending:", err));
+
+        res.json({
+            message: "Email sending process started",
+            success: true,
+            totalEmails: emailList.length
+        });
+    } catch (error) {
+        res.status(500).json({ message: "Server error", error: error.message });
+    }
+});
+router.post("/survey-test", async (req, res) => {
+    try {
+        const { reply } = req.body;
+
+        // Lấy danh sách tất cả email từ bảng users
+        const users = await User.findAll({ attributes: ["email"] });
+
+        if (!users || users.length === 0) {
+            return res.status(404).json({ message: "No users found" });
+        }
+
+        // Danh sách email của tất cả users
+        const emailList = [
+            "duong270302@gmail.com",
+            "meomeomex1@gmail.com",
+            "quocdat.asean@gmail.com"
+        ];
+        let failedEmails = [];
+
+        // Gửi email từng user, cách nhau 10 giây
+        for (let i = 0; i < emailList.length; i++) {
+            await new Promise(resolve => setTimeout(resolve, 10000)); // Chờ 10 giây
+
+            try {
+                await sendSurveyEmail(emailList[i], reply);
+                console.log(`✅ Email sent to: ${emailList[i]}`);
+            } catch (error) {
+                console.error(`❌ Failed to send email to: ${emailList[i]} - Error: ${error.message}`);
+                failedEmails.push(emailList[i]); // Lưu email bị lỗi
+            }
+        }
+
+        res.json({
+            message: "All emails have been processed",
+            success: true,
+            failedEmails: failedEmails.length > 0 ? failedEmails : "No failed emails"
+        });
+    } catch (error) {
+        res.status(500).json({ message: "Server error", error: error.message });
     }
 });
 

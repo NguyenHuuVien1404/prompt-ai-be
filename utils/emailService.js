@@ -11,7 +11,11 @@ const transporter = nodemailer.createTransport({
     },
     tls: {
         rejectUnauthorized: false // Tùy chọn nếu gặp lỗi SSL
-    }
+    },
+    pool: true, // Dùng connection pool để tái sử dụng kết nối
+    maxMessages: 100, // Giới hạn số email mỗi kết nối
+    rateLimit: 10, // Giới hạn 10 email/giây
+    rateDelta: 1000 // Thời gian tính rate (1 giây)
 });
 {/* <div style="margin-top: 20px; font-size: 12px; color: #666;">
                         <div>
@@ -318,4 +322,96 @@ async function sendReplyEmail(email, reply) {
         throw error;
     }
 }
-module.exports = { sendOtpEmail, sendOrderEmail, sendReplyEmail };
+async function sendSurveyEmail(email, reply) {
+    const htmlTemplate = `
+    <!DOCTYPE html>
+    <html lang="vi">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Mã xác thực OTP</title>
+        <style type="text/css">
+            body { font-family: Arial, sans-serif; background-color: #f5f5ff; margin: 0; padding: 0; }
+            table { border-collapse: collapse; }
+            img { display: block; max-width: 100%; height: auto; }
+            .container { width: 100%; max-width: 600px; margin: 0 auto; height: 700px; } /* Fix cứng chiều cao */
+            .content { background-color: #fff; padding: 20px; border-radius: 10px; box-shadow: 0 0 10px rgba(0, 0, 0, 0.1); }
+            .ad-desktop { display: block; }
+            .ad-mobile { display: none; }
+            @media only screen and (max-width: 600px) {
+                .container { width: 100%; padding: 10px; height: 600px; } /* Chiều cao nhỏ hơn cho mobile */
+                .content { padding: 15px; }
+                .ad-desktop { display: none; }
+                .ad-mobile { display: block; }
+            }
+        </style>
+    </head>
+    <body>
+        <table class="container" cellpadding="0" cellspacing="0" align="center" style="background-color: #f5f5ff;">
+            <tr>
+                <td align="center" style="padding: 20px; vertical-align: top;">
+                    <!-- Logo -->
+                    <img src="https://s3-alpha-sig.figma.com/img/c9e6/61f6/a057c97fc6850110c478f8cb0d421ed8?Expires=1743379200&Key-Pair-Id=APKAQ4GOSFWCW27IBOMQ&Signature=jVtY6Ugqb7mB3SAXocs0WOp~CCkgkmgqHrnSZC7jx0IANiw7rHVXBCIyutOi9kmwWTrMo7-3Kr7DKTGK1W3Hxt8hqKg1AuWxwXKdfxnYvB3chzA1RkllmfnqtSF4KnpheSzBi3MxypjGwl1LRFxMGHcG1B15K5jSm5Surw22zvwFpRjvqNZhm7WaoQPFvQxwKM~VJSmKtU1k~TwqvHHP7KrVN9-9kIxQLjts0yLfGHNkEpuc5GoptCRC9AtES6g4qhIxZETpsR0xKy6FrAKgiWg0xif5NDYP7qxCzTipSRzZ3-Govy8WK9v92adDKz6-bYqrsBxTb2LjFB2DVtNdDg__" alt="Prom Logo" style="max-width: 150px;">
+
+                    <!-- Greeting -->
+                    <div style="font-size: 24px; font-weight: bold; margin: 20px 0 10px; color: #333;">
+                        Xin chào bạn, dưới đây là Survey / Phiếu Khảo Sát
+                    </div>
+
+                    <!-- Content -->
+                    <table class="content" cellpadding="0" cellspacing="0" style="width: 100%;">
+                        <tr>
+                            <td align="center">
+                                <div style="font-size: 16px; color: #333; margin-bottom: 20px;">
+                                    ${reply}
+                                </div>
+                                <div style="font-size: 18px; font-weight: bold; color: #4b0082; margin-bottom: 20px;">
+                                    Trân trọng,<br>Prom
+                                </div>
+                            </td>
+                        </tr>
+                    </table>
+
+                    <!-- Ad Section -->
+                    <table cellpadding="0" cellspacing="0" style="margin-top: 20px; width: 100%;">
+                        <tr>
+                            <td align="center">
+                                <div class="ad-desktop">
+                                    <a href="https://prom.vn/product">
+                                        <img src="https://s3-alpha-sig.figma.com/img/0532/544b/b7f130b5db2a808e46aa0198099cf28a?Expires=1743379200&Key-Pair-Id=APKAQ4GOSFWCW27IBOMQ&Signature=GavAo1dx14lv7t51U-sbwq9PLFKN7P0zgJ2mMmXDfiBSWWLSYwFVkfWHzyqvxoOeJbj32tDABOxDi1bWEL-oRd2Vq8MKIlvQIWcwJ89L0AfSdhlu1bR3GUnCctKNxjJUXU9H3CAGPFoaI6ewVCnuXd4WDZm2ynFXNDXn5E9ZgQ4llaixMlMso-qoXGHzkv2ra1JFJ3xmqyhsQAVgX7AO91yJ~H3VbvFYGWlMG1hKvDCt2dZI0T6zm-RaODKLOE3YAm6~NtRJjIesXNpUXp3ECVEE5MRmiulCbtnm6qF-g1gC2ES-CfHuLEd~KicapcHVCemL8qxlIcJaSpJIzhAPGw__" alt="Ad Astronaut" style="max-width: 500px;">
+                                    </a>
+                                </div>
+                                <div class="ad-mobile">
+                                    <a href="https://prom.vn/product">
+                                        <img src="https://s3-alpha-sig.figma.com/img/c23a/4d18/47f9c03e8deeeedfc1e1e48e834b105f?Expires=1743379200&Key-Pair-Id=APKAQ4GOSFWCW27IBOMQ&Signature=Za1m95LdvRWWB69gqXgxJHi1SIfAduR-VNQ3jj022oyXgXxYB8PmEUnsuKU6i1i7AgnfbIdptsj9Vznr-vJa3sr-lct0o0cwBdkW0JuvYRkJjaq7j0085~xQOBPZJ3R1zabrU3Ny8u6FsWDu95KchTdHI9VeprI7tytGZcs6XFL~hFvagLh6EM1NwoamWDgLDWZBH3VmuXGjTmwJ2xnlcSEUpY2XOjCytpQSCFEl7-XuhIh6ykV5T1BlEOypPMVzSASJOFzHI78-Q-uGF15XH0QGPdcumjB2y4sbgAImQZmwyovG~zifl5R-iMrbKc878N7hrse1MP~txfeuJjsGTQ__" alt="Ad Astronaut" style="max-width: 300px;">
+                                    </a>
+                                </div>
+                            </td>
+                        </tr>
+                    </table>
+
+                    <!-- Footer -->
+                    
+                </td>
+            </tr>
+        </table>
+    </body>
+    </html>
+    `;
+
+    const mailOptions = {
+        from: process.env.EMAIL_USER,
+        to: email,
+        subject: `Survey / Phiếu Khảo Sát`,
+        html: htmlTemplate
+    };
+
+    try {
+        await transporter.sendMail(mailOptions);
+        console.log('Email sent successfully to', email);
+    } catch (error) {
+        console.error('Error sending email:', error);
+        throw error;
+    }
+}
+module.exports = { sendOtpEmail, sendOrderEmail, sendReplyEmail, sendSurveyEmail };

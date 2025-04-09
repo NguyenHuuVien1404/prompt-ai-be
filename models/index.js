@@ -183,4 +183,4 @@ sequelize.sync({ force: false, alter: false }).then(() => {
     console.error("Error synchronizing models:", error);
 });
 
-module.exports = { User, Subscription, UserSub, Category, Prompt, Course, Payment, UserActivity, PromFavorite, DeviceLog };
+module.exports = { User, Subscription, UserSub, Category, Prompt, Course, Payment, UserActivity, PromFavorite, DeviceLog, Referral };

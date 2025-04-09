@@ -7,7 +7,7 @@ const Blog = require("../models/Blog");
 const BlogCategory = require("../models/BlogCategory");
 const { Sequelize } = require("sequelize");
 const { Op } = require('sequelize');
-
+const { authMiddleware, adminMiddleware } = require('../middleware/authMiddleware');
 // Cấu hình storage cho multer
 const storage = multer.diskStorage({
     destination: (req, file, cb) => {
