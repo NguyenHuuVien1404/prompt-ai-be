@@ -10,6 +10,8 @@ const sequelize = require('../config/database');
 const Section = require("../models/Section");
 const PromDetails = require("../models/PromDetails");
 const { authMiddleware, adminMiddleware } = require('../middleware/authMiddleware');
+const cache = require('../utils/cache');
+
 // Cấu hình Multer để lưu file vào thư mục "uploads"
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
@@ -54,24 +56,55 @@ const upload = multer({
 router.use("/upload", express.static("uploads")); // Cho phép truy cập ảnh đã upload
 
 // API Upload ảnh (tên field nào cũng được)
-router.post("/upload", authMiddleware, upload.any(), (req, res) => {
+router.post("/upload", authMiddleware, upload.any(), async (req, res) => {
   try {
     if (!req.files || req.files.length === 0) {
       return res.status(400).json({ message: "No files uploaded" });
     }
 
-    // Lấy base URL của server (dùng req.protocol + req.get('host'))
-    const baseUrl = `${req.protocol}://${req.get("host")}`;
+    // Xử lý ảnh bằng worker threads cho các tác vụ nặng như resize, optimize
+    const { runTask } = require('../utils/worker');
 
-    // Trả về danh sách URL ảnh đầy đủ
-    const imageUrls = req.files.map(
-      (file) => `${baseUrl}/uploads/${file.filename}`
-    );
+    // Truyền thông tin file sang worker để xử lý
+    const filePaths = req.files.map(file => file.path);
 
-    res.status(200).json({
-      message: "Files uploaded successfully",
-      imageUrls: imageUrls,
-    });
+    try {
+      // Gọi worker xử lý ảnh (resize, optimize)
+      const result = await runTask('image-processor.js', {
+        filePaths,
+        host: req.get("host"),
+        protocol: req.protocol
+      });
+
+      if (!result.success) {
+        throw new Error(result.error);
+      }
+
+      // Lưu URL vào cache để tái sử dụng
+      for (const url of result.imageUrls) {
+        const urlParts = url.split('/');
+        const filename = urlParts[urlParts.length - 1];
+        await cache.setCache(`image_url_${filename}`, url, 86400); // Cache 1 ngày
+      }
+
+      res.status(200).json({
+        message: "Files uploaded and processed successfully",
+        imageUrls: result.imageUrls,
+      });
+    } catch (error) {
+      console.error("Error processing images:", error);
+
+      // Nếu xử lý worker thất bại, fallback về cách xử lý truyền thống
+      const baseUrl = `${req.protocol}://${req.get("host")}`;
+      const imageUrls = req.files.map(
+        (file) => `${baseUrl}/uploads/${file.filename}`
+      );
+
+      res.status(200).json({
+        message: "Files uploaded successfully (without optimization)",
+        imageUrls: imageUrls,
+      });
+    }
   } catch (error) {
     res
       .status(500)
@@ -80,12 +113,30 @@ router.post("/upload", authMiddleware, upload.any(), (req, res) => {
 });
 
 // Get all prompts with pagination
-
 router.get("/", async (req, res) => {
   try {
     const page = parseInt(req.query.page) || 1;
     const pageSize = parseInt(req.query.pageSize) || 10;
     const offset = (page - 1) * pageSize;
+
+    // Create cache key based on query parameters
+    const queryParams = JSON.stringify({
+      page,
+      pageSize,
+      category_id: req.query.category_id,
+      is_type: req.query.is_type,
+      status: req.query.status,
+      topic_id: req.query.topic_id,
+      search: req.query.search
+    });
+
+    const cacheKey = `prompts_list_${queryParams}`;
+
+    // Try to get from cache first
+    const cachedData = await cache.getCache(cacheKey);
+    if (cachedData) {
+      return res.status(200).json(JSON.parse(cachedData));
+    }
 
     // Build where clause based on filters
     const where = {};
@@ -117,11 +168,7 @@ router.get("/", async (req, res) => {
         { tips: { [Op.like]: searchTerm } },
         { text: { [Op.like]: searchTerm } },
         { how: { [Op.like]: searchTerm } },
-        // { input: { [Op.like]: searchTerm } },
-        // { output: { [Op.like]: searchTerm } },
         { OptimationGuide: { [Op.like]: searchTerm } },
-        // { addtip: { [Op.like]: searchTerm } },
-        // { addinformation: { [Op.like]: searchTerm } },
       ];
     }
 
@@ -143,20 +190,25 @@ router.get("/", async (req, res) => {
       order: [["created_at", "DESC"]],
     });
 
-    res.status(200).json({
+    const result = {
       total: count,
       page,
       pageSize,
       data: rows,
-    });
+    };
+
+    // Store in cache for 5 minutes
+    await cache.setCache(cacheKey, JSON.stringify(result), 300);
+
+    res.status(200).json(result);
   } catch (error) {
     res
       .status(500)
       .json({ message: "Error fetching prompts", error: error.message });
   }
 });
-// Get all prompts for user by categoryId with pagination
 
+// Get all prompts for user by categoryId with pagination
 router.get("/by-category", async (req, res) => {
   try {
     const category_id = req.query.category_id;
@@ -168,6 +220,25 @@ router.get("/by-category", async (req, res) => {
     const searchText = req.query.search_text;
     const page = parseInt(req.query.page) || 1;
     const pageSize = parseInt(req.query.pageSize) || 12;
+
+    // Create cache key based on query parameters
+    const queryParams = JSON.stringify({
+      category_id,
+      is_type,
+      topic_id,
+      searchText,
+      page,
+      pageSize
+    });
+
+    const cacheKey = `prompts_by_category_${queryParams}`;
+
+    // Try to get from cache first
+    const cachedData = await cache.getCache(cacheKey);
+    if (cachedData) {
+      return res.status(200).json(JSON.parse(cachedData));
+    }
+
     const offset = (page - 1) * pageSize;
     // Tạo điều kiện lọc động
     let whereCondition = { category_id: category_id };
@@ -193,18 +264,24 @@ router.get("/by-category", async (req, res) => {
       // order: [["created_at", "DESC"]],
     });
 
-    res.status(200).json({
+    const result = {
       total: count,
       page,
       pageSize,
       data: rows,
-    });
+    };
+
+    // Store in cache for 5 minutes
+    await cache.setCache(cacheKey, JSON.stringify(result), 300);
+
+    res.status(200).json(result);
   } catch (error) {
     res
       .status(500)
       .json({ message: "Error fetching prompts", error: error.message });
   }
 });
+
 router.get("/topics/by-category", async (req, res) => {
   try {
     const { category_id } = req.query;
@@ -212,10 +289,19 @@ router.get("/topics/by-category", async (req, res) => {
       return res.status(400).json({ message: "category_id is required" });
     }
 
+    // Create cache key based on category
+    const cacheKey = `topics_by_category_${category_id}`;
+
+    // Try to get from cache first (longer cache time since this data changes less frequently)
+    const cachedData = await cache.getCache(cacheKey);
+    if (cachedData) {
+      return res.status(200).json(JSON.parse(cachedData));
+    }
+
     // Kiểm tra xem có prompt nào với category_id không
     const prompts = await Prompt.findAll({
       where: { category_id },
-      attributes: ["topic_id"], // Chỉ lấy topic_id để tìm topic tương ứng
+      attributes: ["topic_id"],
       raw: true,
     });
 
@@ -226,17 +312,22 @@ router.get("/topics/by-category", async (req, res) => {
     }
 
     // Lấy danh sách topic dựa trên topic_id từ bảng Prompt
-    const topicIds = [...new Set(prompts.map((p) => p.topic_id))]; // Lọc các topic_id duy nhất
+    const topicIds = [...new Set(prompts.map((p) => p.topic_id))];
     const topics = await Topic.findAll({
       where: { id: topicIds },
       raw: true,
     });
 
-    res.status(200).json({
+    const result = {
       category_id,
       total: topics.length,
       topics,
-    });
+    };
+
+    // Cache for 15 minutes since this changes less frequently
+    await cache.setCache(cacheKey, JSON.stringify(result), 900);
+
+    res.status(200).json(result);
   } catch (error) {
     console.error("Error fetching topics:", error);
     res
@@ -248,307 +339,171 @@ router.get("/topics/by-category", async (req, res) => {
 // lấy list prompts mới nhất
 router.get("/newest", async (req, res) => {
   try {
-    const category_id = req.query.category_id;
-    if (!category_id) {
-      return res.status(400).json({ message: "category_id is required" });
+    const limit = parseInt(req.query.limit) || 10;
+
+    // Create cache key
+    const cacheKey = `prompts_newest_${limit}`;
+
+    // Try to get from cache first
+    const cachedData = await cache.getCache(cacheKey);
+    if (cachedData) {
+      return res.status(200).json(JSON.parse(cachedData));
     }
 
-    // Lấy ngày hiện tại và ngày cách đây 30 ngày
-    const thirtyDaysAgo = new Date();
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-
-    // Lấy danh sách content mới nhất trong vòng 30 ngày
-    const newest_prompts = await Prompt.findAll({
-      where: {
-        category_id: category_id,
-        created_at: {
-          [Op.gte]: thirtyDaysAgo, // Lọc các prompt có created_at >= 30 ngày trước
-        },
-      },
+    const prompts = await Prompt.findAll({
+      attributes: ["id", "title", "image", "content", "short_description", "what", "how", "created_at"],
       include: [
-        { model: Category, attributes: ["id", "name", "image", "image_card"], include: { model: Section, attributes: ["id", "name", "description"] } },
-        { model: Topic, attributes: ["id", "name"] },
+        { model: Category, attributes: ["id", "name", "image"] },
+        { model: Topic, attributes: ["id", "name"] }
       ],
-      order: [["created_at", "DESC"]], // Sắp xếp theo ngày tạo mới nhất
+      limit: limit,
+      order: [["created_at", "DESC"]]
     });
 
-    res.status(200).json({
-      category_id,
-      total: newest_prompts.length,
-      data: newest_prompts,
-    });
+    const result = {
+      data: prompts
+    };
+
+    // Cache newest prompts for 5 minutes
+    await cache.setCache(cacheKey, JSON.stringify(result), 300);
+
+    res.status(200).json(result);
   } catch (error) {
-    res
-      .status(500)
-      .json({ message: "Error fetching newest prompts", error: error.message });
+    res.status(500).json({ message: "Error fetching newest prompts", error: error.message });
   }
 });
 
-// lấy list prompts liên quan
-router.get("/related", async (req, res) => {
-  try {
-    const category_id = req.query.category_id;
-    if (!category_id) {
-      return res.status(400).json({ message: "category_id is required" });
-    }
-    const topic_id = req.query.topic_id;
-    if (!topic_id) {
-      return res.status(400).json({ message: "topic_id is required" });
-    }
-    const current_id = req.query.current_id;
-    if (!current_id) {
-      return res.status(400).json({ message: "current_id is required" });
-    }
-    const related_prompts = await Prompt.findAll({
-      where: {
-        category_id: category_id,
-        topic_id: topic_id,
-        id: { [Op.ne]: current_id },
-      },
-      include: [
-        { model: Category, attributes: ["id", "name", "image", "image_card"], include: { model: Section, attributes: ["id", "name", "description"] } },
-        { model: Topic, attributes: ["id", "name"] },
-      ],
-      order: [["created_at", "DESC"]], // Sắp xếp theo ngày tạo mới nhất
-    });
-
-    res.status(200).json({
-      category_id,
-      total: related_prompts.length,
-      data: related_prompts,
-    });
-  } catch (error) {
-    res
-      .status(500)
-      .json({ message: "Error fetching newest prompts", error: error.message });
-  }
-});
-// Get prompt by id
+// Get a single prompt by ID with detailed info
 router.get("/:id", async (req, res) => {
   try {
-    const promptId = req.params.id;
-    const prompt = await Prompt.findByPk(promptId, {
+    const { id } = req.params;
+
+    // Create cache key for single prompt
+    const cacheKey = `prompt_detail_${id}`;
+
+    // Try to get from cache first
+    const cachedData = await cache.getCache(cacheKey);
+    if (cachedData) {
+      return res.status(200).json(JSON.parse(cachedData));
+    }
+
+    const prompt = await Prompt.findByPk(id, {
       include: [
-        { model: Category, attributes: ["id", "name", "image", "image_card"], include: { model: Section, attributes: ["id", "name", "description"] } },
-        { model: Topic, attributes: ["id", "name"] },
-        {
-          model: PromDetails,
-          attributes: ["id", "text", "image", "description", "type"],
-        },
-      ],
+        { model: Category, attributes: ["id", "name", "image"] },
+        { model: Topic, attributes: ["id", "name"] }
+      ]
     });
 
     if (!prompt) {
       return res.status(404).json({ message: "Prompt not found" });
     }
 
-    res.status(200).json(prompt);
+    // Get related prompts (same category, 5 prompts)
+    const relatedPrompts = await Prompt.findAll({
+      where: {
+        category_id: prompt.category_id,
+        id: { [Op.ne]: id } // Not this prompt
+      },
+      attributes: ["id", "title", "image", "short_description"],
+      include: [
+        { model: Category, attributes: ["id", "name"] }
+      ],
+      limit: 5
+    });
+
+    const result = {
+      prompt,
+      relatedPrompts
+    };
+
+    // Cache individual prompt details for 30 minutes (longer since details change less often)
+    await cache.setCache(cacheKey, JSON.stringify(result), 1800);
+
+    res.status(200).json(result);
   } catch (error) {
-    res
-      .status(500)
-      .json({ message: "Error fetching prompt", error: error.message });
+    res.status(500).json({ message: "Error fetching prompt", error: error.message });
   }
 });
 
-// Create new prompt
+// Create a new prompt
 router.post("/", authMiddleware, adminMiddleware, async (req, res) => {
   try {
-    const {
-      title,
-      content,
-      short_description,
-      category_id,
-      is_type,
-      what,
-      tips,
-      text,
-      how,
-      input,
-      output,
-      OptimationGuide,
-      addtip,
-      addinformation,
-      topic_id,
-      promDetails // Mảng chứa các PromDetails: [{ text, image }, ...]
-    } = req.body;
+    const newPrompt = await Prompt.create(req.body);
 
-    // Validate required fields
-    if (!title || !content || !short_description) {
-      return res.status(400).json({
-        message: "Title, content, and short description are required",
-      });
-    }
+    // Invalidate relevant caches when a new prompt is added
+    await Promise.all([
+      cache.invalidateCache(`prompts_newest_*`),
+      cache.invalidateCache(`prompts_by_category_*`),
+      cache.invalidateCache(`topics_by_category_${req.body.category_id}`),
+      cache.invalidateCache(`prompts_list_*`)
+    ]);
 
-    // Tạo transaction để đảm bảo tính toàn vẹn dữ liệu
-    const result = await sequelize.transaction(async (t) => {
-      // Tạo Prompt mới
-      const newPrompt = await Prompt.create({
-        title,
-        content,
-        short_description,
-        category_id,
-        is_type: is_type || 1,
-        what,
-        tips,
-        text,
-        how,
-        input,
-        output,
-        OptimationGuide,
-        addtip,
-        addinformation,
-        topic_id
-      }, { transaction: t });
-
-      // Nếu có PromDetails, tạo các bản ghi PromDetails liên quan
-      if (promDetails && Array.isArray(promDetails)) {
-        const promDetailsData = promDetails.map(detail => ({
-          text: detail.text,
-          image: detail.image,
-          prompt_id: newPrompt.id,
-          description: detail.description,
-          type: detail.type || 1
-        }));
-        await PromDetails.bulkCreate(promDetailsData, { transaction: t });
-      }
-
-      // Trả về Prompt vừa tạo cùng với PromDetails
-      const promptWithDetails = await Prompt.findByPk(newPrompt.id, {
-        include: [{ model: PromDetails }],
-        transaction: t
-      });
-
-      return promptWithDetails;
-    });
-
-    res.status(201).json(result);
+    res.status(201).json(newPrompt);
   } catch (error) {
     res.status(500).json({ message: "Error creating prompt", error: error.message });
   }
 });
 
-// Update prompt with PromDetails
+// Update a prompt
 router.put("/:id", authMiddleware, adminMiddleware, async (req, res) => {
   try {
-    const promptId = req.params.id;
-    const {
-      title,
-      content,
-      short_description,
-      category_id,
-      is_type,
-      what,
-      tips,
-      text,
-      how,
-      input,
-      output,
-      OptimationGuide,
-      addtip,
-      addinformation,
-      topic_id,
-      promDetails // Mảng chứa các PromDetails: [{ id, text, image }, ...] (id là tùy chọn cho cập nhật)
-    } = req.body;
+    const { id } = req.params;
+    const prompt = await Prompt.findByPk(id);
 
-    const prompt = await Prompt.findByPk(promptId);
     if (!prompt) {
       return res.status(404).json({ message: "Prompt not found" });
     }
 
-    // Tạo transaction để đảm bảo tính toàn vẹn dữ liệu
-    const result = await sequelize.transaction(async (t) => {
-      // Cập nhật Prompt
-      await prompt.update({
-        title: title || prompt.title,
-        content: content || prompt.content,
-        short_description: short_description || prompt.short_description,
-        category_id: category_id || prompt.category_id,
-        is_type: is_type !== undefined ? is_type : prompt.is_type,
-        what: what || prompt.what,
-        tips: tips || prompt.tips,
-        text: text || prompt.text,
-        how: how || prompt.how,
-        input: input || prompt.input,
-        output: output || prompt.output,
-        OptimationGuide: OptimationGuide || prompt.OptimationGuide,
-        addtip: addtip || prompt.addtip,
-        addinformation: addinformation || prompt.addinformation,
-        topic_id: topic_id || prompt.topic_id
-      }, { transaction: t });
+    const oldCategoryId = prompt.category_id;
+    const newCategoryId = req.body.category_id || oldCategoryId;
 
-      // Xử lý PromDetails nếu có
-      if (promDetails && Array.isArray(promDetails)) {
-        // Lấy tất cả PromDetails hiện tại của Prompt
-        const existingDetails = await PromDetails.findAll({
-          where: { prompt_id: promptId },
-          transaction: t
-        });
-        const existingIds = existingDetails.map(detail => detail.id);
+    await prompt.update(req.body);
 
-        // Các PromDetails từ request
-        const requestIds = promDetails.filter(detail => detail.id).map(detail => detail.id);
+    // Invalidate relevant caches when a prompt is updated
+    await Promise.all([
+      cache.invalidateCache(`prompt_detail_${id}`),
+      cache.invalidateCache(`prompts_newest_*`),
+      cache.invalidateCache(`prompts_by_category_*`),
+      cache.invalidateCache(`topics_by_category_${oldCategoryId}`),
+      cache.invalidateCache(`topics_by_category_${newCategoryId}`),
+      cache.invalidateCache(`prompts_list_*`)
+    ]);
 
-        // Xóa các PromDetails không còn trong request
-        const detailsToDelete = existingIds.filter(id => !requestIds.includes(id));
-        if (detailsToDelete.length > 0) {
-          await PromDetails.destroy({
-            where: { id: detailsToDelete },
-            transaction: t
-          });
-        }
-
-        // Cập nhật hoặc tạo mới PromDetails
-        for (const detail of promDetails) {
-          if (detail.id) {
-            // Cập nhật PromDetails hiện có
-            await PromDetails.update(
-              { text: detail.text, image: detail.image },
-              { where: { id: detail.id, prompt_id: promptId }, transaction: t }
-            );
-          } else {
-            // Tạo mới PromDetails
-            await PromDetails.create({
-              text: detail.text,
-              image: detail.image,
-              description: detail.description,
-              type: detail.type || 1,
-              prompt_id: promptId
-            }, { transaction: t });
-          }
-        }
-      }
-
-      // Trả về Prompt đã cập nhật cùng với PromDetails
-      return await Prompt.findByPk(promptId, {
-        include: [{ model: PromDetails }],
-        transaction: t
-      });
-    });
-
-    res.status(200).json(result);
+    res.status(200).json({ message: "Prompt updated successfully", prompt });
   } catch (error) {
     res.status(500).json({ message: "Error updating prompt", error: error.message });
   }
 });
 
-// Delete prompt
+// Delete a prompt
 router.delete("/:id", authMiddleware, adminMiddleware, async (req, res) => {
   try {
-    const promptId = req.params.id;
-    const prompt = await Prompt.findByPk(promptId);
+    const { id } = req.params;
+    const prompt = await Prompt.findByPk(id);
 
     if (!prompt) {
       return res.status(404).json({ message: "Prompt not found" });
     }
 
+    const categoryId = prompt.category_id;
+
     await prompt.destroy();
+
+    // Invalidate relevant caches when a prompt is deleted
+    await Promise.all([
+      cache.invalidateCache(`prompt_detail_${id}`),
+      cache.invalidateCache(`prompts_newest_*`),
+      cache.invalidateCache(`prompts_by_category_*`),
+      cache.invalidateCache(`topics_by_category_${categoryId}`),
+      cache.invalidateCache(`prompts_list_*`)
+    ]);
+
     res.status(200).json({ message: "Prompt deleted successfully" });
   } catch (error) {
-    res
-      .status(500)
-      .json({ message: "Error deleting prompt", error: error.message });
+    res.status(500).json({ message: "Error deleting prompt", error: error.message });
   }
 });
+
 // API upload ảnh
 
 module.exports = router;

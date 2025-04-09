@@ -7,6 +7,8 @@ const multer = require("multer");
 const path = require("path");
 const Prompt = require("../models/Prompt");
 const { authMiddleware, adminMiddleware } = require('../middleware/authMiddleware');
+const cache = require('../utils/cache');
+
 // Cấu hình Multer để lưu file vào thư mục "uploads"
 const storage = multer.diskStorage({
     destination: (req, file, cb) => {
@@ -80,6 +82,16 @@ router.get("/", async (req, res) => {
     try {
         const page = parseInt(req.query.page) || 1;
         const pageSize = parseInt(req.query.pageSize) || 10;
+
+        // Create cache key based on query parameters
+        const cacheKey = `categories_list_${page}_${pageSize}`;
+
+        // Try to get from cache first
+        const cachedData = await cache.getCache(cacheKey);
+        if (cachedData) {
+            return res.status(200).json(JSON.parse(cachedData));
+        }
+
         const offset = (page - 1) * pageSize;
 
         const { count, rows } = await Category.findAndCountAll({
@@ -89,12 +101,17 @@ router.get("/", async (req, res) => {
             order: [["created_at", "DESC"]],
         });
 
-        res.status(200).json({
+        const result = {
             total: count,
             page,
             pageSize,
             data: rows,
-        });
+        };
+
+        // Store in cache for 10 minutes (categories change less frequently)
+        await cache.setCache(cacheKey, JSON.stringify(result), 600);
+
+        res.status(200).json(result);
     } catch (error) {
         res.status(500).json({ message: "Error fetching categories", error: error.message });
     }
@@ -104,6 +121,16 @@ router.get("/", async (req, res) => {
 router.get("/:id", async (req, res) => {
     try {
         const categoryId = req.params.id;
+
+        // Create cache key
+        const cacheKey = `category_detail_${categoryId}`;
+
+        // Try to get from cache first
+        const cachedData = await cache.getCache(cacheKey);
+        if (cachedData) {
+            return res.status(200).json(JSON.parse(cachedData));
+        }
+
         const category = await Category.findByPk(categoryId, {
             include: [{ model: Section, attributes: ["id", "name"] }],
         });
@@ -111,6 +138,9 @@ router.get("/:id", async (req, res) => {
         if (!category) {
             return res.status(404).json({ message: "Category not found" });
         }
+
+        // Store in cache for 30 minutes (category details change less frequently)
+        await cache.setCache(cacheKey, JSON.stringify(category), 1800);
 
         res.status(200).json(category);
     } catch (error) {
@@ -145,6 +175,12 @@ router.post("/", upload.fields([{ name: "image" }, { name: "image_card" }]), asy
             section_id,
         });
 
+        // Invalidate relevant caches
+        await Promise.all([
+            cache.invalidateCache(`categories_list_*`),
+            cache.invalidateCache(`categories_by_section_${section_id}*`),
+        ]);
+
         res.status(201).json(newCategory);
     } catch (error) {
         res.status(500).json({ message: "Error creating category", error: error.message });
@@ -162,6 +198,9 @@ router.put("/:id", upload.fields([{ name: "image" }, { name: "image_card" }]), a
             return res.status(404).json({ message: "Category not found" });
         }
 
+        const oldSectionId = category.section_id;
+        const newSectionId = section_id || oldSectionId;
+
         // Lấy URL của ảnh từ req.files (nếu có)
         const baseUrl = `${req.protocol}://${req.get("host")}`;
         const image = req.files["image"] ? `${baseUrl}/uploads/${req.files["image"][0].filename}` : category.image;
@@ -172,8 +211,16 @@ router.put("/:id", upload.fields([{ name: "image" }, { name: "image_card" }]), a
             image,
             description: description || category.description,
             image_card,
-            section_id: section_id || category.section_id,
+            section_id: newSectionId,
         });
+
+        // Invalidate relevant caches
+        await Promise.all([
+            cache.invalidateCache(`category_detail_${categoryId}`),
+            cache.invalidateCache(`categories_list_*`),
+            cache.invalidateCache(`categories_by_section_${oldSectionId}*`),
+            cache.invalidateCache(`categories_by_section_${newSectionId}*`),
+        ]);
 
         res.status(200).json(category);
     } catch (error) {
@@ -191,7 +238,17 @@ router.delete("/:id", async (req, res) => {
             return res.status(404).json({ message: "Category not found" });
         }
 
+        const sectionId = category.section_id;
+
         await category.destroy();
+
+        // Invalidate relevant caches
+        await Promise.all([
+            cache.invalidateCache(`category_detail_${categoryId}`),
+            cache.invalidateCache(`categories_list_*`),
+            cache.invalidateCache(`categories_by_section_${sectionId}*`),
+        ]);
+
         res.status(200).json({ message: "Category deleted successfully" });
     } catch (error) {
         res.status(500).json({ message: "Error deleting category", error: error.message });
@@ -203,18 +260,30 @@ router.get("/by-sectionId/:sectionId", async (req, res) => {
         const { sectionId } = req.params;
         const searchTxt = req.query.searchTxt;
         const listCategory = req.query.listCategory;
+
         if (!sectionId) {
             return res.status(400).json({ error: "sectionId is required" });
         }
+
+        // Create cache key based on parameters
+        const cacheKey = `categories_by_section_${sectionId}_${searchTxt || ''}_${listCategory || ''}`;
+
+        // Try to get from cache first
+        const cachedData = await cache.getCache(cacheKey);
+        if (cachedData) {
+            return res.status(200).json(JSON.parse(cachedData));
+        }
+
         let whereCondition = { section_id: sectionId };
         if (searchTxt && searchTxt != null && searchTxt != "") {
             whereCondition[Op.or] = [
-              { name: { [Op.like]: `%${searchTxt}%` } },
-              { name: { [Op.like]: `%${searchTxt.toLowerCase()}%` } },
-              { name: { [Op.like]: `%${searchTxt.toUpperCase()}%` } },
+                { name: { [Op.like]: `%${searchTxt}%` } },
+                { name: { [Op.like]: `%${searchTxt.toLowerCase()}%` } },
+                { name: { [Op.like]: `%${searchTxt.toUpperCase()}%` } },
             ];
-          }
-          if (listCategory && listCategory != null && listCategory != "" && listCategory != "null") {
+        }
+
+        if (listCategory && listCategory != null && listCategory != "" && listCategory != "null") {
             // Tách chuỗi thành mảng số nguyên
             const categoryIds = listCategory.split(',').map(id => parseInt(id.trim(), 10));
 
@@ -225,6 +294,7 @@ router.get("/by-sectionId/:sectionId", async (req, res) => {
                 };
             }
         }
+
         // Lấy danh sách categories theo sectionId và đếm số lượng prompts trong mỗi category
         const categories = await Category.findAll({
             where: whereCondition,
@@ -242,6 +312,7 @@ router.get("/by-sectionId/:sectionId", async (req, res) => {
             group: ["Category.id"], // Nhóm theo Category để COUNT hoạt động chính xác
             order: [["created_at", "DESC"]],
         });
+
         const modifiedCategories = categories.map(category => {
             const categoryData = category.toJSON(); // Chuyển instance Sequelize thành object
             if (categoryData.section_id === 3) {
@@ -250,9 +321,19 @@ router.get("/by-sectionId/:sectionId", async (req, res) => {
             return categoryData;
         });
 
-        res.json({ categories: modifiedCategories });
+        const result = {
+            section_id: sectionId,
+            total: modifiedCategories.length,
+            data: modifiedCategories,
+        };
+
+        // Cache for 10 minutes
+        await cache.setCache(cacheKey, JSON.stringify(result), 600);
+
+        res.status(200).json(result);
     } catch (error) {
-        res.status(500).json({ error: error.message });
+        res.status(500).json({ message: "Error fetching categories by section", error: error.message });
     }
 });
+
 module.exports = router;

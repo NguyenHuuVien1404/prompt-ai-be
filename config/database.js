@@ -12,6 +12,15 @@ const sequelize = new Sequelize(
     logging: false,
     define: {
       timestamps: true
+    },
+    pool: {
+      max: 20, // Tối đa 20 connections
+      min: 5, // Tối thiểu 5 connections
+      acquire: 30000, // Thời gian tối đa để lấy connection (ms)
+      idle: 10000 // Thời gian connection không hoạt động trước khi đóng (ms)
+    },
+    retry: {
+      max: 3 // Số lần thử lại kết nối tối đa nếu kết nối thất bại
     }
   }
 );
