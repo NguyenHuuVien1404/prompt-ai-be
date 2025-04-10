@@ -8,9 +8,15 @@ const Payment = sequelize.define("Payment", {
     user_id: { type: DataTypes.INTEGER, allowNull: false, references: { model: User, key: "id" } },
     subscription_id: { type: DataTypes.INTEGER, allowNull: false, references: { model: Subscription, key: "id" } },
     amount: { type: DataTypes.DECIMAL(10, 2), allowNull: false },
-    payment_method: { type: DataTypes.ENUM("paypal", "credit_card", "bank_transfer"), allowNull: false },
+    payment_method: {
+        type: DataTypes.STRING,
+        allowNull: true,
+    },
     transaction_id: { type: DataTypes.STRING(255), unique: true, allowNull: false },
-    payment_status: { type: DataTypes.ENUM("pending", "completed", "failed", "refunded"), defaultValue: "pending" },
+    payment_status: {
+        type: DataTypes.STRING,
+        allowNull: true,
+    },
     payment_date: { type: DataTypes.DATE, defaultValue: DataTypes.NOW },
     notes: { type: DataTypes.TEXT, allowNull: true },
 }, {

@@ -136,12 +136,14 @@ router.get('/vnpay_ipn', async function (req, res, next) {
         let secureHash = vnp_Params['vnp_SecureHash'];
         let orderId = vnp_Params['vnp_TxnRef'];
         let rspCode = vnp_Params['vnp_ResponseCode'];
-
+        console.log(vnp_Params['vnp_OrderInfo'])
+        console.log("alooo")
         // Check if we've already processed this IPN
-        const processedIPN = await cache.getCache(`ipn_processed_${orderId}`);
-        if (processedIPN) {
-            return res.status(200).json({ RspCode: '02', Message: 'This order has been updated to the payment status' });
-        }
+        // const processedIPN = await cache.getCache(`ipn_processed_${orderId}`);
+        console.log(orderId, rspCode)
+        // if (processedIPN) {
+        //     return res.status(200).json({ RspCode: '02', Message: 'This order has been updated to the payment status' });
+        // }
 
         delete vnp_Params['vnp_SecureHash'];
         delete vnp_Params['vnp_SecureHashType'];
