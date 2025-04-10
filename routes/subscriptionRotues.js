@@ -41,19 +41,18 @@ router.get("/list", async (req, res) => {
 });
 router.get("/by-duration", async (req, res) => {
     try {
-        const { duration } = req.query;
+        // const { duration } = req.query;
 
-        // Kiểm tra nếu duration không được cung cấp
-        if (!duration) {
-            return res.status(400).json({ error: "Duration is required" });
-        }
+        // // Kiểm tra nếu duration không được cung cấp
+        // if (!duration) {
+        //     return res.status(400).json({ error: "Duration is required" });
+        // }
 
         // Lấy danh sách subscription theo duration
         const subscriptions = await Subscription.findAll({
-            where: { duration: duration },
             include: [
                 { model: ContentSubscription, attributes: ["id", "content", "included", "created_at", "updated_at"] },
-              ],
+            ],
             order: [["updated_at", "DESC"]],
         });
 
@@ -76,7 +75,7 @@ router.get("/by-duration-and-type", async (req, res) => {
             where: { duration: duration, type: type },
             include: [
                 { model: ContentSubscription, attributes: ["id", "content", "included", "created_at", "updated_at"] },
-              ],
+            ],
             order: [["updated_at", "DESC"]],
         });
 

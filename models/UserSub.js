@@ -20,6 +20,7 @@ const UserSub = sequelize.define("UserSub", {
     status: { type: DataTypes.INTEGER, defaultValue: 1 }, //1- Hoạt động 2- Không hoạt động
     start_date: { type: DataTypes.DATE, allowNull: true },
     end_date: { type: DataTypes.DATE, allowNull: true },
+    token: { type: DataTypes.INTEGER, defaultValue: 0 }, //1- Hoạt động 2- Không hoạt động
 }, {
     tableName: "usersubs",
     timestamps: false,
