@@ -394,7 +394,7 @@ router.get("/:id", async (req, res) => {
 
     const prompt = await Prompt.findByPk(id, {
       include: [
-        { model: Category, attributes: ["id", "name"] },
+        { model: Category, attributes: ["id", "name"], include: { model: Section, attributes: ["id", "name", "description"] }},
         { model: Topic, attributes: ["id", "name"] }
       ]
     });
