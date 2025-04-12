@@ -52,7 +52,7 @@ router.post('/create_payment_url', async function (req, res, next) {
         let amount = req.body.amount;
         let bankCode = req.body.bankCode;
         let orderInfo = req.body.orderInfo;
-
+        console.log(orderInfo)
         let locale = req.body.language;
         if (locale === null || locale === '') {
             locale = 'vn';

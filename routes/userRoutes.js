@@ -14,6 +14,8 @@ const path = require("path");
 const fs = require("fs");
 const { authMiddleware, adminMiddleware } = require('../middleware/authMiddleware');
 const { Op } = require("sequelize");
+const { OAuth2Client } = require('google-auth-library');
+const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
 // Cấu hình Multer để lưu file vào thư mục "uploads"
 const storage = multer.diskStorage({
@@ -873,4 +875,68 @@ router.patch('/:id/subscriptions/:subId/change', authMiddleware, adminMiddleware
         res.status(500).json({ error: error.message });
     }
 });
+router.post("/auth/google", async (req, res) => {
+    try {
+        const { credential } = req.body;
+        const ticket = await client.verifyIdToken({
+            idToken: credential,
+            audience: process.env.GOOGLE_CLIENT_ID,
+        });
+
+        const payload = ticket.getPayload();
+        const google_id = payload['sub'];
+        const email = payload['email'];
+        const name = payload['name'] || 'Unknown';
+        const picture = payload['picture'];
+        let user = await User.findOne({ where: { google_id } });
+        if (!user) {
+            user = await User.findOne({ where: { email } });
+            if (user) {
+                user.google_id = google_id;
+                user.profile_image = picture;
+                await user.save();
+            } else {
+                user = await User.create({
+                    google_id: google_id,
+                    email,
+                    full_name: name,
+                    profile_image: picture,
+                    role: 1,
+                    is_verified: true,
+                });
+            }
+        }
+
+        // Tạo JWT
+        const token = jwt.sign(
+            {
+                id: user.id,
+                email: user.email,
+                role: user.role // Thêm role vào token
+            },
+            process.env.JWT_SECRET || 'your_jwt_secret_key',
+            { expiresIn: '24h' }
+        );
+
+
+        // Trả về response
+        return res.json({
+            message: "Đăng nhập thành công",
+            token,
+            user: {
+                id: user.id,
+                fullName: user.full_name,
+                email: user.email,
+                role: user.role,
+                count_prompt: user.count_promt,
+                updated_at: user.updated_at,
+                profile_image: user.profile_image,
+                userSub: null,
+            },
+        });
+    } catch (error) {
+        console.error('Google login error:', error);
+        return res.status(401).json({ error: 'Google login failed' });
+    }
+})
 module.exports = router;
