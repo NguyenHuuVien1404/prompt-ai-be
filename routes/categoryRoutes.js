@@ -263,18 +263,18 @@ router.get("/by-sectionId/:sectionId", async (req, res) => {
         const searchTxt = req.query.searchTxt;
         const listCategory = req.query.listCategory;
 
-        if (!sectionId) {
-            return res.status(400).json({ error: "sectionId is required" });
-        }
+        // if (!sectionId) {
+        //     return res.status(400).json({ error: "sectionId is required" });
+        // }
 
-        // Create cache key based on parameters
-        const cacheKey = `categories_by_section_${sectionId}_${searchTxt || ''}_${listCategory || ''}`;
+        // // Create cache key based on parameters
+        // const cacheKey = `categories_by_section_${sectionId}_${searchTxt || ''}_${listCategory || ''}`;
 
-        // Try to get from cache first
-        const cachedData = await cache.getCache(cacheKey);
-        if (cachedData) {
-            return res.status(200).json(JSON.parse(cachedData));
-        }
+        // // Try to get from cache first
+        // const cachedData = await cache.getCache(cacheKey);
+        // if (cachedData) {
+        //     return res.status(200).json(JSON.parse(cachedData));
+        // }
 
         let whereCondition = { section_id: sectionId };
         if (searchTxt && searchTxt != null && searchTxt != "") {
@@ -330,7 +330,7 @@ router.get("/by-sectionId/:sectionId", async (req, res) => {
         };
 
         // Cache for 10 minutes
-        await cache.setCache(cacheKey, JSON.stringify(result), 600);
+        // await cache.setCache(cacheKey, JSON.stringify(result), 600);
 
         res.status(200).json(result);
     } catch (error) {

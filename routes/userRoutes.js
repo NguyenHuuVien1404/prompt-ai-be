@@ -225,7 +225,8 @@ router.post('/register', async (req, res) => {
             otp_code: otp,
             otp_expires_at: new Date(Date.now() + 10 * 60 * 1000), // OTP hết hạn sau 10 phút
             account_status: 1,
-            role: 1
+            role: 1,
+            count_promt: 5
         });
 
         // Lấy ID của subscription miễn phí
@@ -903,6 +904,7 @@ router.post("/auth/google", async (req, res) => {
                     profile_image: picture,
                     role: 1,
                     is_verified: true,
+                    count_promt: 5
                 });
             }
         }

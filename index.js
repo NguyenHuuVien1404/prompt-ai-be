@@ -49,8 +49,8 @@ app.use(helmet());
 app.use(ddosProtection);
 
 app.use(cors({
-    origin: ["https://www.prom.vn", "https://prom.vn"],
-    // origin: "*",
+    // origin: ["https://www.prom.vn", "https://prom.vn"],
+    origin: "*",
     methods: ["GET", "POST", "PUT", "DELETE"],
     allowedHeaders: ["Content-Type", "Authorization"]
 }));
@@ -211,7 +211,7 @@ app.post('/api/upload-excel', upload.single('file'), async (req, res) => {
 
                 // Add categoryId and topicId to promptData
                 promptData.category_id = categoryId;
-                promptData.topic_id = topicId;
+                promptData.topic_id = topic.id;
                 promptData.is_type = 1;
                 prompts.push(promptData);
             }

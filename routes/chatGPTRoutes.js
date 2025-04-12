@@ -1,6 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const axios = require("axios");
+const User = require("../models/User"); // Không destructure
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const { authMiddleware, adminMiddleware } = require('../middleware/authMiddleware');
 
@@ -82,14 +83,29 @@ function delay(ms) {
 
 router.post("/gpt", authMiddleware, async (req, res) => {
     try {
-        const { userPrompt, model, language } = req.body;
+        const { userPrompt, model, language, id } = req.body;
 
         if (!userPrompt) {
             return res.status(400).json({ error: "Thiếu userPrompt trong yêu cầu!" });
         }
 
         const result = await callGPT(userPrompt, model, language);
-        res.json({ result });
+        const userId = req.user.id;
+        console.log(userId)
+        const user = await User.findByPk(userId);
+
+        if (!user) {
+            return res.status(404).json({ error: "Không tìm thấy người dùng." });
+        }
+
+        if (user.count_prompt <= 0) {
+            return res.status(403).json({ error: "Hết lượt sử dụng GPT." });
+        }
+        console.log(user)
+        user.count_promt -= 1;
+        console.log(user.count_promt)
+        await user.save();
+        res.json({ result, count: user.count_promt });
     } catch (error) {
         console.error("🚨 Lỗi server:", error.message);
         res.status(500).json({ error: error.message || "Lỗi server" });
