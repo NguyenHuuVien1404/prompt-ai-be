@@ -146,21 +146,7 @@ router.get('/vnpay_ipn', async function (req, res, next) {
         let orderId = vnp_Params['vnp_TxnRef'];
         let rspCode = vnp_Params['vnp_ResponseCode'];
 
-        // 1. Kiểm tra xem giao dịch đã được xử lý chưa (dựa vào transaction_id trong bảng Payment)
-        const existingPayment = await Payment.findOne({
-            where: { transaction_id: vnp_Params['vnp_TransactionNo'] },
-        });
 
-        if (existingPayment) {
-            return res.status(200).json({
-                RspCode: '02',
-                Message: 'This order has been updated to the payment status',
-                TerminalId: null,
-                OrderId: null,
-                Localdate: null,
-                Signature: null,
-            });
-        }
 
         // 2. Xác thực SecureHash
         delete vnp_Params['vnp_SecureHash'];
@@ -214,7 +200,21 @@ router.get('/vnpay_ipn', async function (req, res, next) {
                 Signature: null,
             });
         }
+        // 1. Kiểm tra xem giao dịch đã được xử lý chưa (dựa vào transaction_id trong bảng Payment)
+        const existingPayment = await Payment.findOne({
+            where: { transaction_id: vnp_Params['vnp_TransactionNo'] },
+        });
 
+        if (existingPayment) {
+            return res.status(200).json({
+                RspCode: '02',
+                Message: 'This order has been updated to the payment status',
+                TerminalId: null,
+                OrderId: null,
+                Localdate: null,
+                Signature: null,
+            });
+        }
         // 5. Kiểm tra paymentStatus (dựa trên trạng thái trong Payment)
         if (order.payment_status !== 'PENDING') {
             return res.status(200).json({
