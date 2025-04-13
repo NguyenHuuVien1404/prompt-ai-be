@@ -76,7 +76,6 @@ async function callGPT(userPrompt, model = "gpt-4o-mini", language = "en") {
     throw new Error("🚨 Không thể gọi OpenAI API sau nhiều lần thử!");
 }
 
-
 function delay(ms) {
     return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -89,22 +88,24 @@ router.post("/gpt", authMiddleware, async (req, res) => {
             return res.status(400).json({ error: "Thiếu userPrompt trong yêu cầu!" });
         }
 
-        const result = await callGPT(userPrompt, model, language);
         const userId = req.user.id;
-        console.log(userId)
         const user = await User.findByPk(userId);
-
+        console.log(user)
         if (!user) {
             return res.status(404).json({ error: "Không tìm thấy người dùng." });
         }
 
-        if (user.count_prompt <= 0) {
+        if (user.count_promt <= 0) {
             return res.status(403).json({ error: "Hết lượt sử dụng GPT." });
         }
-        console.log(user)
+
+        // Gọi API GPT
+        const result = await callGPT(userPrompt, model, language);
+
+        // Chỉ trừ count_prompt khi API call thành công
         user.count_promt -= 1;
-        console.log(user.count_promt)
         await user.save();
+
         res.json({ result, count: user.count_promt });
     } catch (error) {
         console.error("🚨 Lỗi server:", error.message);
