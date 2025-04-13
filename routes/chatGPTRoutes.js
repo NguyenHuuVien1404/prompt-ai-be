@@ -1,6 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const axios = require("axios");
+const User = require("../models/User"); // Không destructure
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const { authMiddleware, adminMiddleware } = require('../middleware/authMiddleware');
 
@@ -75,21 +76,37 @@ async function callGPT(userPrompt, model = "gpt-4o-mini", language = "en") {
     throw new Error("🚨 Không thể gọi OpenAI API sau nhiều lần thử!");
 }
 
-
 function delay(ms) {
     return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 router.post("/gpt", authMiddleware, async (req, res) => {
     try {
-        const { userPrompt, model, language } = req.body;
+        const { userPrompt, model, language, id } = req.body;
 
         if (!userPrompt) {
             return res.status(400).json({ error: "Thiếu userPrompt trong yêu cầu!" });
         }
 
+        const userId = req.user.id;
+        const user = await User.findByPk(userId);
+        console.log(user)
+        if (!user) {
+            return res.status(404).json({ error: "Không tìm thấy người dùng." });
+        }
+
+        if (user.count_promt <= 0) {
+            return res.status(403).json({ error: "Hết lượt sử dụng GPT." });
+        }
+
+        // Gọi API GPT
         const result = await callGPT(userPrompt, model, language);
-        res.json({ result });
+
+        // Chỉ trừ count_prompt khi API call thành công
+        user.count_promt -= 1;
+        await user.save();
+
+        res.json({ result, count: user.count_promt });
     } catch (error) {
         console.error("🚨 Lỗi server:", error.message);
         res.status(500).json({ error: error.message || "Lỗi server" });

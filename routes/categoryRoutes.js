@@ -84,13 +84,13 @@ router.get("/", async (req, res) => {
         const pageSize = parseInt(req.query.pageSize) || 10;
 
         // Create cache key based on query parameters
-        const cacheKey = `categories_list_${page}_${pageSize}`;
+        // const cacheKey = `categories_list_${page}_${pageSize}`;
 
-        // Try to get from cache first
-        const cachedData = await cache.getCache(cacheKey);
-        if (cachedData) {
-            return res.status(200).json(JSON.parse(cachedData));
-        }
+        // // Try to get from cache first
+        // const cachedData = await cache.getCache(cacheKey);
+        // if (cachedData) {
+        //     return res.status(200).json(JSON.parse(cachedData));
+        // }
 
         const offset = (page - 1) * pageSize;
 
@@ -109,7 +109,7 @@ router.get("/", async (req, res) => {
         };
 
         // Store in cache for 10 minutes (categories change less frequently)
-        await cache.setCache(cacheKey, JSON.stringify(result), 600);
+        // await cache.setCache(cacheKey, JSON.stringify(result), 600);
 
         res.status(200).json(result);
     } catch (error) {
@@ -151,7 +151,7 @@ router.get("/:id", async (req, res) => {
 // Create new category
 router.post("/", upload.fields([{ name: "image" }, { name: "image_card" }]), async (req, res) => {
     try {
-        const { name, description, section_id } = req.body;
+        const { name, description, section_id, is_comming_soon } = req.body;
 
         // Validate required fields
         if (!name || !section_id) {
@@ -173,13 +173,14 @@ router.post("/", upload.fields([{ name: "image" }, { name: "image_card" }]), asy
             description,
             image_card,
             section_id,
+            is_comming_soon
         });
 
         // Invalidate relevant caches
-        await Promise.all([
-            cache.invalidateCache(`categories_list_*`),
-            cache.invalidateCache(`categories_by_section_${section_id}*`),
-        ]);
+        // await Promise.all([
+        //     cache.invalidateCache(`categories_list_*`),
+        //     cache.invalidateCache(`categories_by_section_${section_id}*`),
+        // ]);
 
         res.status(201).json(newCategory);
     } catch (error) {
@@ -191,7 +192,7 @@ router.post("/", upload.fields([{ name: "image" }, { name: "image_card" }]), asy
 router.put("/:id", upload.fields([{ name: "image" }, { name: "image_card" }]), async (req, res) => {
     try {
         const categoryId = req.params.id;
-        const { name, description, section_id } = req.body;
+        const { name, description, section_id, is_comming_soon } = req.body;
 
         const category = await Category.findByPk(categoryId);
         if (!category) {
@@ -212,15 +213,16 @@ router.put("/:id", upload.fields([{ name: "image" }, { name: "image_card" }]), a
             description: description || category.description,
             image_card,
             section_id: newSectionId,
+            is_comming_soon: is_comming_soon || category.name
         });
 
         // Invalidate relevant caches
-        await Promise.all([
-            cache.invalidateCache(`category_detail_${categoryId}`),
-            cache.invalidateCache(`categories_list_*`),
-            cache.invalidateCache(`categories_by_section_${oldSectionId}*`),
-            cache.invalidateCache(`categories_by_section_${newSectionId}*`),
-        ]);
+        // await Promise.all([
+        //     cache.invalidateCache(`category_detail_${categoryId}`),
+        //     cache.invalidateCache(`categories_list_*`),
+        //     cache.invalidateCache(`categories_by_section_${oldSectionId}*`),
+        //     cache.invalidateCache(`categories_by_section_${newSectionId}*`),
+        // ]);
 
         res.status(200).json(category);
     } catch (error) {
@@ -261,18 +263,18 @@ router.get("/by-sectionId/:sectionId", async (req, res) => {
         const searchTxt = req.query.searchTxt;
         const listCategory = req.query.listCategory;
 
-        if (!sectionId) {
-            return res.status(400).json({ error: "sectionId is required" });
-        }
+        // if (!sectionId) {
+        //     return res.status(400).json({ error: "sectionId is required" });
+        // }
 
-        // Create cache key based on parameters
-        const cacheKey = `categories_by_section_${sectionId}_${searchTxt || ''}_${listCategory || ''}`;
+        // // Create cache key based on parameters
+        // const cacheKey = `categories_by_section_${sectionId}_${searchTxt || ''}_${listCategory || ''}`;
 
-        // Try to get from cache first
-        const cachedData = await cache.getCache(cacheKey);
-        if (cachedData) {
-            return res.status(200).json(JSON.parse(cachedData));
-        }
+        // // Try to get from cache first
+        // const cachedData = await cache.getCache(cacheKey);
+        // if (cachedData) {
+        //     return res.status(200).json(JSON.parse(cachedData));
+        // }
 
         let whereCondition = { section_id: sectionId };
         if (searchTxt && searchTxt != null && searchTxt != "") {
@@ -333,7 +335,7 @@ router.get("/by-sectionId/:sectionId", async (req, res) => {
         };
 
         // Cache for 10 minutes
-        await cache.setCache(cacheKey, JSON.stringify(result), 600);
+        // await cache.setCache(cacheKey, JSON.stringify(result), 600);
 
         res.status(200).json(result);
     } catch (error) {

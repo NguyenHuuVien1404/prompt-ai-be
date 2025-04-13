@@ -49,8 +49,8 @@ app.use(helmet());
 app.use(ddosProtection);
 
 app.use(cors({
-    origin: ["https://www.prom.vn", "https://prom.vn"],
-    // origin: "*",
+    // origin: ["https://www.prom.vn", "https://prom.vn"],
+    origin: "*",
     methods: ["GET", "POST", "PUT", "DELETE"],
     allowedHeaders: ["Content-Type", "Authorization"]
 }));
@@ -136,19 +136,41 @@ app.post('/api/upload-excel', upload.single('file'), async (req, res) => {
             if (!text) return ''; // Handle empty cells
 
             // Check if the header is 'category' or 'topic'
-            if (header === 'category' || header === 'topic' || header === 'title') {
+            if (header === 'category' || header === 'topic' || header === 'title' || header === 'short_description' || header === 'text') {
                 return text.trim(); // Return plain text without <p> tags
             }
 
-            if (text.includes('●')) {
-                // Split by bullet points and wrap each in <p> tags
-                const items = text.split('●').filter(item => item.trim()).map(item => `<p>${item.trim()}</p>`);
+            // Handle line breaks (\n) while preserving all characters
+            if (text.includes('\n')) {
+                const items = text.split('\n').filter(item => item.trim()).map(item => `<p>${item.trim()}</p>`);
                 return items.join('');
             }
+
+            // Handle sentences ending with ':'
+            if (text.includes(':')) {
+                const items = text.split(':').filter(item => item.trim()).map(item => `<p>${item.trim()}${item.endsWith(':') ? ':' : ''}</p>`);
+                return items.join('');
+            }
+
+            // Handle bullet points with '-'
+            if (text.includes('-')) {
+                const items = text.split('-').filter(item => item.trim()).map(item => `<p>${item.trim()}</p>`);
+                return items.join('');
+            }
+
+            // Handle bullet points with '#'
+            if (text.includes('#')) {
+                const items = text.split('#').filter(item => item.trim()).map(item => `<p>${item.trim()}</p>`);
+                return items.join('');
+            }
+
             // Single-line content gets wrapped in <p>
             return `<p>${text.trim()}</p>`;
         };
-
+        const capitalizeFirstLetter = (str) => {
+            if (!str) return str; // Trả về nguyên nếu str rỗng hoặc undefined
+            return str.charAt(0).toUpperCase() + str.slice(1);
+        };
         // Prepare data for database insertion
         const prompts = [];
         const transaction = await sequelize.transaction(); // Bật transaction
@@ -166,8 +188,9 @@ app.post('/api/upload-excel', upload.single('file'), async (req, res) => {
                     transaction
                 });
                 if (!category) {
+                    const capitalizedCategoryName = capitalizeFirstLetter(promptData?.category);
                     category = await Category.create(
-                        { name: promptData?.category },
+                        { name: capitalizedCategoryName },
                         { transaction }
                     );
                 }
@@ -179,16 +202,16 @@ app.post('/api/upload-excel', upload.single('file'), async (req, res) => {
                     transaction
                 });
                 if (!topic) {
+                    const capitalizedTopicName = capitalizeFirstLetter(promptData?.topic);
                     topic = await Topic.create(
-                        { name: promptData?.topic },
+                        { name: capitalizedTopicName },
                         { transaction }
                     );
                 }
-                const topicId = topic.id;
 
                 // Add categoryId and topicId to promptData
                 promptData.category_id = categoryId;
-                promptData.topic_id = topicId;
+                promptData.topic_id = topic.id;
                 promptData.is_type = 1;
                 prompts.push(promptData);
             }

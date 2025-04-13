@@ -8,24 +8,26 @@ const request = require('request-promise-native');
 const moment = require('moment');
 const crypto = require("crypto");
 const querystring = require('qs');
-const cache = require('../utils/cache');
+const UserSub = require('../models/UserSub');
+const Payment = require('../models/Payment');
+const Subscription = require('../models/Subscription'); // Thêm model Subscription để lấy thông tin duration, token
 
 router.get('/', function (req, res, next) {
-    res.render('orderlist', { title: 'Danh sách đơn hàng' })
+    res.render('orderlist', { title: 'Danh sách đơn hàng' });
 });
 
 router.get('/create_payment_url', function (req, res, next) {
-    res.render('order', { title: 'Tạo mới đơn hàng', amount: 10000 })
+    res.render('order', { title: 'Tạo mới đơn hàng', amount: 10000 });
 });
 
 router.get('/querydr', function (req, res, next) {
     let desc = 'truy van ket qua thanh toan';
-    res.render('querydr', { title: 'Truy vấn kết quả thanh toán' })
+    res.render('querydr', { title: 'Truy vấn kết quả thanh toán' });
 });
 
 router.get('/refund', function (req, res, next) {
     let desc = 'Hoan tien GD thanh toan';
-    res.render('refund', { title: 'Hoàn tiền giao dịch thanh toán' })
+    res.render('refund', { title: 'Hoàn tiền giao dịch thanh toán' });
 });
 
 router.post('/create_payment_url', async function (req, res, next) {
@@ -40,23 +42,42 @@ router.post('/create_payment_url', async function (req, res, next) {
             req.socket.remoteAddress ||
             req.connection.socket.remoteAddress;
 
-        // let config = require('config');
-
         let tmnCode = process.env.VNP_TMNCODE;
         let secretKey = process.env.VNP_HASHSECRET;
         let vnpUrl = process.env.VNP_URL;
         let returnUrl = process.env.VNP_RETURNURL;
-        console.log(tmnCode, secretKey, vnpUrl, returnUrl);
+
+        // Tạo orderId (vnp_TxnRef) duy nhất
         let orderId = moment(date).format('DDHHmmss') + Math.floor(100000 + Math.random() * 900000);
 
-        let amount = req.body.amount;
+        let amount = parseFloat(req.body.amount); // Số tiền từ request
         let bankCode = req.body.bankCode;
-        let orderInfo = req.body.orderInfo;
+        let orderInfo = req.body.orderInfo; // Dạng userId-subscriptionId (ví dụ: "42-1")
 
-        let locale = req.body.language;
-        if (locale === null || locale === '') {
-            locale = 'vn';
+        // Kiểm tra orderInfo hợp lệ
+        if (!orderInfo || !orderInfo.includes('-')) {
+            return res.status(400).json({ error: 'Invalid orderInfo format' });
         }
+
+        const [userId, subscriptionId] = orderInfo.split('-').map(Number);
+        if (!userId || !subscriptionId) {
+            return res.status(400).json({ error: 'Invalid user_id or subscription_id' });
+        }
+
+        // Lưu bản ghi tạm thời vào Payment với trạng thái PENDING
+        const payment = await Payment.create({
+            user_id: userId,
+            subscription_id: subscriptionId,
+            amount: amount, // Lưu dưới dạng giá trị thực (ví dụ: 190.00)
+            payment_method: bankCode || 'VNPAY',
+            transaction_id: null, // Chưa có transaction_id
+            payment_status: 'PENDING',
+            payment_date: new Date(),
+            orderId: orderId,
+            notes: `VNPay Transaction: ${orderId}`,
+        });
+
+        let locale = req.body.language || 'vn';
         let currCode = 'VND';
         let vnp_Params = {};
         vnp_Params['vnp_Version'] = '2.1.0';
@@ -67,24 +88,21 @@ router.post('/create_payment_url', async function (req, res, next) {
         vnp_Params['vnp_TxnRef'] = orderId;
         vnp_Params['vnp_OrderInfo'] = orderInfo;
         vnp_Params['vnp_OrderType'] = 'other';
-        vnp_Params['vnp_Amount'] = amount * 100;
+        vnp_Params['vnp_Amount'] = amount * 100; // Nhân 100 cho VNPay
         vnp_Params['vnp_ReturnUrl'] = returnUrl;
         vnp_Params['vnp_IpAddr'] = ipAddr;
         vnp_Params['vnp_CreateDate'] = createDate;
-        if (bankCode !== null && bankCode !== '') {
+        if (bankCode) {
             vnp_Params['vnp_BankCode'] = bankCode;
         }
-        console.log(vnp_Params['vnp_OrderInfo']);
+
         vnp_Params = sortObject(vnp_Params);
 
         let signData = querystring.stringify(vnp_Params, { encode: false });
         let hmac = crypto.createHmac("sha512", secretKey);
-        let signed = hmac.update(new Buffer.from(signData, 'utf-8')).digest("hex");
+        let signed = hmac.update(new Buffer(signData, 'utf-8')).digest("hex")
         vnp_Params['vnp_SecureHash'] = signed;
         vnpUrl += '?' + querystring.stringify(vnp_Params, { encode: false });
-
-        // Cache payment URL briefly (30 seconds) to handle quick retries
-        await cache.setCache(`payment_url_${orderId}`, vnpUrl, 30);
 
         res.json({ paymentUrl: vnpUrl, orderId });
     } catch (error) {
@@ -99,12 +117,6 @@ router.get('/vnpay_return', async function (req, res, next) {
         let secureHash = vnp_Params['vnp_SecureHash'];
         let orderId = vnp_Params['vnp_TxnRef'];
 
-        // Try to get from cache first
-        const cachedResult = await cache.getCache(`payment_result_${orderId}`);
-        if (cachedResult) {
-            return res.json(JSON.parse(cachedResult));
-        }
-
         delete vnp_Params['vnp_SecureHash'];
         delete vnp_Params['vnp_SecureHashType'];
 
@@ -112,15 +124,12 @@ router.get('/vnpay_return', async function (req, res, next) {
         let secretKey = process.env.VNP_HASHSECRET;
         let signData = querystring.stringify(vnp_Params, { encode: false });
         let hmac = crypto.createHmac("sha512", secretKey);
-        let signed = hmac.update(new Buffer.from(signData, 'utf-8')).digest("hex");
+        let signed = hmac.update(new Buffer(signData, 'utf-8')).digest("hex")
 
         let result = { code: '97' };  // Default to error
 
         if (secureHash === signed) {
             result = { code: vnp_Params['vnp_ResponseCode'] };
-
-            // Cache the result for 1 hour - payment results are important to keep
-            await cache.setCache(`payment_result_${orderId}`, JSON.stringify(result), 3600);
         }
 
         res.json(result);
@@ -136,71 +145,206 @@ router.get('/vnpay_ipn', async function (req, res, next) {
         let secureHash = vnp_Params['vnp_SecureHash'];
         let orderId = vnp_Params['vnp_TxnRef'];
         let rspCode = vnp_Params['vnp_ResponseCode'];
-        console.log(vnp_Params['vnp_OrderInfo'])
-        console.log("alooo")
-        // Check if we've already processed this IPN
-        // const processedIPN = await cache.getCache(`ipn_processed_${orderId}`);
-        console.log(orderId, rspCode)
-        // if (processedIPN) {
-        //     return res.status(200).json({ RspCode: '02', Message: 'This order has been updated to the payment status' });
-        // }
 
+
+
+        // 2. Xác thực SecureHash
         delete vnp_Params['vnp_SecureHash'];
         delete vnp_Params['vnp_SecureHashType'];
 
         vnp_Params = sortObject(vnp_Params);
         let secretKey = process.env.VNP_HASHSECRET;
         let signData = querystring.stringify(vnp_Params, { encode: false });
-        let hmac = crypto.createHmac("sha512", secretKey);
-        let signed = hmac.update(new Buffer.from(signData, 'utf-8')).digest("hex");
+        let hmac = crypto.createHmac('sha512', secretKey);
+        let signed = hmac.update(new Buffer(signData, 'utf-8')).digest("hex");
 
-        let paymentStatus = '0'; // Giả sử '0' là trạng thái khởi tạo giao dịch, chưa có IPN
-        let checkOrderId = true; // Mã đơn hàng "giá trị của vnp_TxnRef" VNPAY phản hồi tồn tại trong CSDL của bạn
-        let checkAmount = true; // Kiểm tra số tiền "giá trị của vnp_Amout/100" trùng khớp với số tiền của đơn hàng trong CSDL của bạn
-
-        if (secureHash === signed) { //kiểm tra checksum
-            if (checkOrderId) {
-                if (checkAmount) {
-                    if (paymentStatus == "0") { //kiểm tra tình trạng giao dịch trước khi cập nhật tình trạng thanh toán
-                        if (rspCode == "00") {
-                            //thanh cong
-                            //paymentStatus = '1'
-                            // Ở đây cập nhật trạng thái giao dịch thanh toán thành công vào CSDL của bạn
-
-                            // Mark as processed in cache to avoid duplicates
-                            await cache.setCache(`ipn_processed_${orderId}`, 'success', 86400); // 24 hours
-
-                            res.status(200).json({ RspCode: '00', Message: 'Success' });
-                        }
-                        else {
-                            //that bai
-                            //paymentStatus = '2'
-                            // Ở đây cập nhật trạng thái giao dịch thanh toán thất bại vào CSDL của bạn
-
-                            // Mark as processed in cache to avoid duplicates
-                            await cache.setCache(`ipn_processed_${orderId}`, 'failed', 86400); // 24 hours
-
-                            res.status(200).json({ RspCode: '00', Message: 'Success' });
-                        }
-                    }
-                    else {
-                        res.status(200).json({ RspCode: '02', Message: 'This order has been updated to the payment status' });
-                    }
-                }
-                else {
-                    res.status(200).json({ RspCode: '04', Message: 'Amount invalid' });
-                }
-            }
-            else {
-                res.status(200).json({ RspCode: '01', Message: 'Order not found' });
-            }
+        if (secureHash !== signed) {
+            return res.status(200).json({
+                RspCode: '97',
+                Message: 'Invalid Checksum',
+                TerminalId: null,
+                OrderId: null,
+                Localdate: null,
+                Signature: null,
+            });
         }
-        else {
-            res.status(200).json({ RspCode: '97', Message: 'Checksum failed' });
+
+        // 3. Kiểm tra checkOrderId (tìm orderId trong bảng Payment)
+        const order = await Payment.findOne({
+            where: { orderId: orderId },
+        });
+
+        if (!order) {
+            return res.status(200).json({
+                RspCode: '01',
+                Message: 'Order Not Found',
+                TerminalId: null,
+                OrderId: null,
+                Localdate: null,
+                Signature: null,
+            });
+        }
+
+        // 4. Kiểm tra checkAmount (so sánh vnp_Amount với số tiền trong Payment)
+        const vnpAmount = parseInt(vnp_Params['vnp_Amount']) / 100; // Chia 100 để lấy giá trị thực
+        let checkAmount = Math.abs(order.amount - vnpAmount) < 0.01; // So sánh với độ chính xác 0.01
+
+        if (!checkAmount) {
+            console.log(`Amount mismatch: Expected ${order.amount}, but got ${vnpAmount}`);
+            return res.status(200).json({
+                RspCode: '04',
+                Message: 'Invalid amount',
+                TerminalId: null,
+                OrderId: null,
+                Localdate: null,
+                Signature: null,
+            });
+        }
+        // 1. Kiểm tra xem giao dịch đã được xử lý chưa (dựa vào transaction_id trong bảng Payment)
+        const existingPayment = await Payment.findOne({
+            where: { transaction_id: vnp_Params['vnp_TransactionNo'] },
+        });
+
+        if (existingPayment) {
+            return res.status(200).json({
+                RspCode: '02',
+                Message: 'This order has been updated to the payment status',
+                TerminalId: null,
+                OrderId: null,
+                Localdate: null,
+                Signature: null,
+            });
+        }
+        // 5. Kiểm tra paymentStatus (dựa trên trạng thái trong Payment)
+        if (order.payment_status !== 'PENDING') {
+            return res.status(200).json({
+                RspCode: '02',
+                Message: 'This order has been updated to the payment status',
+                TerminalId: null,
+                OrderId: null,
+                Localdate: null,
+                Signature: null,
+            });
+        }
+
+        // 6. Trích xuất user_id và subscription_id từ vnp_OrderInfo
+        const orderInfo = vnp_Params['vnp_OrderInfo'];
+        if (!orderInfo || orderInfo === 'undefined' || !orderInfo.includes('-')) {
+            return res.status(200).json({
+                RspCode: '99',
+                Message: 'Invalid vnp_OrderInfo format',
+                TerminalId: null,
+                OrderId: null,
+                Localdate: null,
+                Signature: null,
+            });
+        }
+
+        const [userId, subscriptionId] = orderInfo.split('-').map(Number);
+        if (!userId || !subscriptionId) {
+            return res.status(200).json({
+                RspCode: '99',
+                Message: 'Invalid user_id or subscription_id',
+                TerminalId: null,
+                OrderId: null,
+                Localdate: null,
+                Signature: null,
+            });
+        }
+
+        // 7. Kiểm tra tính hợp lệ của user_id và subscription_id (so với Payment)
+        if (order.user_id !== userId || order.subscription_id !== subscriptionId) {
+            return res.status(200).json({
+                RspCode: '99',
+                Message: 'Invalid user_id or subscription_id in vnp_OrderInfo',
+                TerminalId: null,
+                OrderId: null,
+                Localdate: null,
+                Signature: null,
+            });
+        }
+
+        // 8. Cập nhật thông tin giao dịch trong bảng Payment
+        const paymentDate = new Date(
+            vnp_Params['vnp_PayDate'].slice(0, 4), // Năm
+            vnp_Params['vnp_PayDate'].slice(4, 6) - 1, // Tháng (trừ 1)
+            vnp_Params['vnp_PayDate'].slice(6, 8), // Ngày
+            vnp_Params['vnp_PayDate'].slice(8, 10), // Giờ
+            vnp_Params['vnp_PayDate'].slice(10, 12), // Phút
+            vnp_Params['vnp_PayDate'].slice(12, 14) // Giây
+        );
+
+        await order.update({
+            transaction_id: vnp_Params['vnp_TransactionNo'],
+            payment_status: rspCode === '00' ? 'SUCCESS' : 'FAILED',
+            payment_date: paymentDate,
+            notes: `VNPay Transaction: ${orderId}`,
+        });
+
+        // 9. Cập nhật UserSub nếu giao dịch thành công
+        if (rspCode === '00') {
+            let userSub = await UserSub.findOne({
+                where: {
+                    user_id: userId,
+                    sub_id: subscriptionId,
+                },
+            });
+
+            const currentDate = new Date();
+            let endDate;
+            const subscription = await Subscription.findByPk(subscriptionId);
+            if (!subscription) {
+                throw new Error('Subscription not found');
+            }
+
+            endDate = new Date(currentDate);
+            endDate.setDate(currentDate.getDate() + subscription.duration);
+
+            if (userSub) {
+                userSub.status = 1;
+                userSub.start_date = currentDate;
+                userSub.end_date = endDate;
+                userSub.token = subscription.token || 0; // Sửa từ subscription.duration thành subscription.token
+                await userSub.save();
+            } else {
+                userSub = await UserSub.create({
+                    user_id: userId,
+                    sub_id: subscriptionId,
+                    status: 1,
+                    start_date: currentDate,
+                    end_date: endDate,
+                    token: subscription.token || 0,
+                });
+            }
+
+            return res.status(200).json({
+                RspCode: '00',
+                Message: 'Success',
+                TerminalId: null,
+                OrderId: orderId,
+                Localdate: moment().format('YYYYMMDDHHmmss'),
+                Signature: null,
+            });
+        } else {
+            return res.status(200).json({
+                RspCode: '00',
+                Message: 'Success',
+                TerminalId: null,
+                OrderId: orderId,
+                Localdate: moment().format('YYYYMMDDHHmmss'),
+                Signature: null,
+            });
         }
     } catch (error) {
         console.error('Error processing IPN:', error);
-        res.status(200).json({ RspCode: '99', Message: 'Server error' });
+        return res.status(200).json({
+            RspCode: '99',
+            Message: 'Server error',
+            TerminalId: null,
+            OrderId: null,
+            Localdate: null,
+            Signature: null,
+        });
     }
 });
 
@@ -211,14 +355,6 @@ router.post('/querydr', async function (req, res, next) {
 
         let vnp_TxnRef = req.body.orderId;
         let vnp_TransactionDate = req.body.transDate;
-
-        // Check cache first for recent query results
-        const cacheKey = `query_${vnp_TxnRef}_${vnp_TransactionDate}`;
-        const cachedResult = await cache.getCache(cacheKey);
-
-        if (cachedResult) {
-            return res.json(JSON.parse(cachedResult));
-        }
 
         let vnp_TmnCode = process.env.VNP_TMNCODE;
         let secretKey = process.env.VNP_HASHSECRET;
@@ -260,9 +396,6 @@ router.post('/querydr', async function (req, res, next) {
             json: true,
             body: dataObj
         });
-
-        // Cache result for 5 minutes
-        await cache.setCache(cacheKey, JSON.stringify(result), 300);
 
         res.json(result);
     } catch (error) {
@@ -327,12 +460,11 @@ router.post('/refund', async function (req, res, next) {
             body: dataObj
         });
 
-        // Invalidate cached payment result after refund
-        await cache.invalidateCache(`payment_result_${vnp_TxnRef}`);
-
         res.json(result);
     } catch (error) {
-        console.error('Error processing refund:', error);
+        console.error('Error processing refund:',
+
+            error);
         res.status(500).json({ error: 'Failed to process refund' });
     }
 });

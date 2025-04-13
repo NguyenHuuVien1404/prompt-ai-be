@@ -12,10 +12,14 @@ const Payment = sequelize.define("Payment", {
         type: DataTypes.STRING,
         allowNull: true,
     },
-    transaction_id: { type: DataTypes.STRING(255), unique: true, allowNull: false },
+    transaction_id: { type: DataTypes.STRING(255), unique: true, allowNull: true },
     payment_status: {
         type: DataTypes.STRING,
         allowNull: true,
+    },
+    orderId: {
+        type: DataTypes.STRING,
+        allowNull: false,
     },
     payment_date: { type: DataTypes.DATE, defaultValue: DataTypes.NOW },
     notes: { type: DataTypes.TEXT, allowNull: true },
