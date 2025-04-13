@@ -155,6 +155,10 @@ router.get('/vnpay_ipn', async function (req, res, next) {
             return res.status(200).json({
                 RspCode: '02',
                 Message: 'This order has been updated to the payment status',
+                TerminalId: null,
+                OrderId: null,
+                Localdate: null,
+                Signature: null,
             });
         }
 
@@ -166,10 +170,17 @@ router.get('/vnpay_ipn', async function (req, res, next) {
         let secretKey = process.env.VNP_HASHSECRET;
         let signData = querystring.stringify(vnp_Params, { encode: false });
         let hmac = crypto.createHmac('sha512', secretKey);
-        let signed = hmac.update(new Buffer(signData, 'utf-8')).digest("hex")
+        let signed = hmac.update(new Buffer(signData, 'utf-8')).digest("hex");
 
         if (secureHash !== signed) {
-            return res.status(200).json({ RspCode: '97', Message: 'Checksum failed' });
+            return res.status(200).json({
+                RspCode: '97',
+                Message: 'Invalid Checksum',
+                TerminalId: null,
+                OrderId: null,
+                Localdate: null,
+                Signature: null,
+            });
         }
 
         // 3. Kiểm tra checkOrderId (tìm orderId trong bảng Payment)
@@ -178,7 +189,14 @@ router.get('/vnpay_ipn', async function (req, res, next) {
         });
 
         if (!order) {
-            return res.status(200).json({ RspCode: '01', Message: 'Order not found' });
+            return res.status(200).json({
+                RspCode: '01',
+                Message: 'Order Not Found',
+                TerminalId: null,
+                OrderId: null,
+                Localdate: null,
+                Signature: null,
+            });
         }
 
         // 4. Kiểm tra checkAmount (so sánh vnp_Amount với số tiền trong Payment)
@@ -187,7 +205,14 @@ router.get('/vnpay_ipn', async function (req, res, next) {
 
         if (!checkAmount) {
             console.log(`Amount mismatch: Expected ${order.amount}, but got ${vnpAmount}`);
-            return res.status(200).json({ RspCode: '04', Message: 'Amount invalid' });
+            return res.status(200).json({
+                RspCode: '04',
+                Message: 'Invalid amount',
+                TerminalId: null,
+                OrderId: null,
+                Localdate: null,
+                Signature: null,
+            });
         }
 
         // 5. Kiểm tra paymentStatus (dựa trên trạng thái trong Payment)
@@ -195,6 +220,10 @@ router.get('/vnpay_ipn', async function (req, res, next) {
             return res.status(200).json({
                 RspCode: '02',
                 Message: 'This order has been updated to the payment status',
+                TerminalId: null,
+                OrderId: null,
+                Localdate: null,
+                Signature: null,
             });
         }
 
@@ -204,6 +233,10 @@ router.get('/vnpay_ipn', async function (req, res, next) {
             return res.status(200).json({
                 RspCode: '99',
                 Message: 'Invalid vnp_OrderInfo format',
+                TerminalId: null,
+                OrderId: null,
+                Localdate: null,
+                Signature: null,
             });
         }
 
@@ -212,6 +245,10 @@ router.get('/vnpay_ipn', async function (req, res, next) {
             return res.status(200).json({
                 RspCode: '99',
                 Message: 'Invalid user_id or subscription_id',
+                TerminalId: null,
+                OrderId: null,
+                Localdate: null,
+                Signature: null,
             });
         }
 
@@ -220,6 +257,10 @@ router.get('/vnpay_ipn', async function (req, res, next) {
             return res.status(200).json({
                 RspCode: '99',
                 Message: 'Invalid user_id or subscription_id in vnp_OrderInfo',
+                TerminalId: null,
+                OrderId: null,
+                Localdate: null,
+                Signature: null,
             });
         }
 
@@ -251,8 +292,7 @@ router.get('/vnpay_ipn', async function (req, res, next) {
 
             const currentDate = new Date();
             let endDate;
-            const id = subscriptionId;
-            const subscription = await Subscription.findByPk(id);
+            const subscription = await Subscription.findByPk(subscriptionId);
             if (!subscription) {
                 throw new Error('Subscription not found');
             }
@@ -264,7 +304,7 @@ router.get('/vnpay_ipn', async function (req, res, next) {
                 userSub.status = 1;
                 userSub.start_date = currentDate;
                 userSub.end_date = endDate;
-                userSub.token = subscription.duration || 0;
+                userSub.token = subscription.token || 0; // Sửa từ subscription.duration thành subscription.token
                 await userSub.save();
             } else {
                 userSub = await UserSub.create({
@@ -277,13 +317,34 @@ router.get('/vnpay_ipn', async function (req, res, next) {
                 });
             }
 
-            return res.status(200).json({ RspCode: '00', Message: 'Success' });
+            return res.status(200).json({
+                RspCode: '00',
+                Message: 'Success',
+                TerminalId: null,
+                OrderId: orderId,
+                Localdate: moment().format('YYYYMMDDHHmmss'),
+                Signature: null,
+            });
         } else {
-            return res.status(200).json({ RspCode: '00', Message: 'Success' });
+            return res.status(200).json({
+                RspCode: '00',
+                Message: 'Success',
+                TerminalId: null,
+                OrderId: orderId,
+                Localdate: moment().format('YYYYMMDDHHmmss'),
+                Signature: null,
+            });
         }
     } catch (error) {
         console.error('Error processing IPN:', error);
-        return res.status(200).json({ RspCode: '99', Message: 'Server error' });
+        return res.status(200).json({
+            RspCode: '99',
+            Message: 'Server error',
+            TerminalId: null,
+            OrderId: null,
+            Localdate: null,
+            Signature: null,
+        });
     }
 });
 
