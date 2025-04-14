@@ -452,7 +452,7 @@ router.post("/login-verify", async (req, res) => {
                 role: user.role // Thêm role vào token
             },
             process.env.JWT_SECRET || 'your_jwt_secret_key',
-            { expiresIn: '24h' }
+            { expiresIn: ' 60 * 60 * 24 * 30 * 6' }
         );
 
         // Trả về thông tin người dùng
@@ -549,7 +549,7 @@ router.post("/login-password", async (req, res) => {
                     role: user.role
                 },
                 process.env.JWT_SECRET || 'your_jwt_secret_key',
-                { expiresIn: '24h' }
+                { expiresIn: ' 60 * 60 * 24 * 30 * 6' }
             );
 
             res.json({
@@ -917,7 +917,7 @@ router.post("/auth/google", async (req, res) => {
                 role: user.role // Thêm role vào token
             },
             process.env.JWT_SECRET || 'your_jwt_secret_key',
-            { expiresIn: '24h' }
+            { expiresIn: ' 60 * 60 * 24 * 30 * 6' }
         );
 
 
