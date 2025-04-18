@@ -313,8 +313,8 @@ router.get("/by-sectionId/:sectionId", async (req, res) => {
             },
             group: ["Category.id"], // Nhóm theo Category để COUNT hoạt động chính xác
             order: [
+                [Sequelize.literal("is_comming_soon = 0"), "DESC"],  // false lên trước
                 ["created_at", "DESC"],
-                ["is_comming_soon", "ASC"],
               ],
               
             
