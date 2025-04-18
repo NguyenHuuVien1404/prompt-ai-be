@@ -103,7 +103,12 @@ router.post("/gpt", authMiddleware, async (req, res) => {
         const result = await callGPT(userPrompt, model, language);
 
         // Chỉ trừ count_prompt khi API call thành công
-        user.count_promt -= 1;
+        // Chỉ trừ count_prompt khi API call thành công
+        let cost = 1;
+        if (model === "gpt-4.1" || model === "gpt-4o") {
+            cost = 5;
+        }
+        user.count_promt -= cost;
         await user.save();
 
         res.json({ result, count: user.count_promt });
