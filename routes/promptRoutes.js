@@ -280,10 +280,10 @@ router.get("/newest", async (req, res) => {
         },
       },
       include: [
-        { model: Category, attributes: ["id", "name", "image"] },
+        { model: Category, attributes: ["id", "name", "image", "image_card"], include: { model: Section, attributes: ["id", "name", "description"] } },
         { model: Topic, attributes: ["id", "name"] }
       ],
-      limit: limit,
+      limit: 30,
       order: [["created_at", "DESC"]]
     });
 
