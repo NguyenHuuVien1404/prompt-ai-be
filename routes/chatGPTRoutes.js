@@ -87,7 +87,10 @@ router.post("/gpt", authMiddleware, async (req, res) => {
         if (!userPrompt) {
             return res.status(400).json({ error: "Thiếu userPrompt trong yêu cầu!" });
         }
-
+        let cost = 1;
+        if (model === "gpt-4.1" || model === "gpt-4o") {
+            cost = 5;
+        }
         const userId = req.user.id;
         const user = await User.findByPk(userId);
         console.log(user)
@@ -98,16 +101,16 @@ router.post("/gpt", authMiddleware, async (req, res) => {
         if (user.count_promt <= 0) {
             return res.status(403).json({ error: "Hết lượt sử dụng GPT." });
         }
+        if (user.count_promt < cost) {
+            return res.status(403).json({ error: "Hết lượt sử dụng GPT." });
+        }
 
         // Gọi API GPT
         const result = await callGPT(userPrompt, model, language);
 
         // Chỉ trừ count_prompt khi API call thành công
         // Chỉ trừ count_prompt khi API call thành công
-        let cost = 1;
-        if (model === "gpt-4.1" || model === "gpt-4o") {
-            cost = 5;
-        }
+
         user.count_promt -= cost;
         await user.save();
 

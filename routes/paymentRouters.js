@@ -104,7 +104,7 @@ router.post('/create_payment_url', async function (req, res, next) {
         vnp_Params['vnp_SecureHash'] = signed;
         vnpUrl += '?' + querystring.stringify(vnp_Params, { encode: false });
 
-        res.json({ paymentUrl: vnpUrl, orderId });
+        res.json({ paymentUrl: vnpUrl });
     } catch (error) {
         console.error('Error creating payment URL:', error);
         res.status(500).json({ error: 'Failed to create payment URL' });
