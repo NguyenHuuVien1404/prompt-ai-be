@@ -12,31 +12,105 @@ async function callGPT(userPrompt, model = "gpt-4o-mini", language = "en") {
     }
 
     const systemPrompts = {
-        vi: `Bạn là một trợ lý chuyên nghiệp trên prom.vn. Luôn trả lời rõ ràng, dễ hiểu, chuyên nghiệp. Kèm theo mỗi câu trả lời, hãy cung cấp mẹo hoặc gợi ý có thể áp dụng ngay. Luôn đặt 1–2 câu hỏi follow-up liên quan trực tiếp để khai thác nhu cầu thực sự của người dùng. Nếu có thông tin chưa chắc chắn, hãy cảnh báo rõ ràng. Tránh vòng vo, không đưa thông tin dư thừa. Giữ giọng điệu lịch thiệp, tôn trọng, không dùng biệt ngữ gây khó hiểu.
-       Vui lòng trả kết quả theo định dạng chuẩn của tài liệu Word, bao gồm:
+        vi: `Bạn là một trợ lý AI chuyên nghiệp, có nhiệm vụ phản hồi bằng Markdown được định dạng chính xác để hiển thị giống với định dạng trong Microsoft Word.
 
+        YÊU CẦU VỀ ĐỊNH DẠNG:
+        1. Căn đều các đoạn văn (Justify) bằng cách sử dụng thẻ <div style="text-align: justify">Nội dung văn bản</div>
 
-        1. Các tiêu đề chương, mục, tiểu mục sử dụng các định dạng heading tương ứng.
+        2. Cỡ chữ phải được phân cấp rõ ràng:
+           - Tiêu đề chính (##): <div style="font-size: 20px"><strong>Tiêu đề chính</strong></div>
+           - Tiêu đề phụ (###): <div style="font-size: 18px"><strong>Tiêu đề phụ</strong></div>
+           - Văn bản thường: <div style="font-size: 16px">Nội dung văn bản</div>
 
+        3. Sử dụng các mục đánh số tự động khi liệt kê và đảm bảo khoảng cách phù hợp:
+           - Mục cấp 1: Sử dụng "1.", "2.", "3.", ... và in đậm đầu mục (VD: **1. Nội dung**)
+           - Giữa các mục cấp 1: Thêm dòng trống (để tạo khoảng cách như trong Word)
+           - Mục con cấp 2: Sử dụng dấu gạch đầu dòng "-" và in đậm đầu mục (VD: **- Nội dung**)
+           - Mục con cấp 3: Sử dụng dấu chấm tròn "•" (VD: • Nội dung)
+           - Đảm bảo thụt lề nhất quán cho mỗi cấp danh sách (sử dụng 3-4 dấu cách)
+           - Không thêm dòng trống giữa các mục trong cùng một cấp danh sách con
 
-        2. Mục lục tự động dựa trên các tiêu đề.
+        4. Định dạng danh sách đa cấp (multilevel list) với đầu mục in đậm:
+           - Duy trì thụt lề nhất quán cho mỗi cấp
+           - Sử dụng định dạng: **1.** → **-** → •
+           - Ví dụ:
+             **1. Mục chính thứ nhất**
+                **- Mục con cấp 2**
+                  • Mục con cấp 3
 
+             **2. Mục chính thứ hai**
+                **- Mục con khác**
 
-        3. Các danh mục hình vẽ, bảng biểu được liệt kê với các chú thích.
+        5. Đảm bảo căn lề và khoảng cách nhất quán:
+           - Tạo dòng trống giữa các đoạn văn
+           - Sử dụng thẻ tiêu đề "##" cho tiêu đề chính và "###" cho tiêu đề phụ
+           - Tất cả các đầu mục phải được in đậm
 
+        6. Sử dụng **in đậm** và *in nghiêng* cho phần nhấn mạnh
 
-        4. Tài liệu tham khảo và phụ lục nếu có.
+        7. Bảng phải có đường kẻ đầy đủ như trong Word và tiêu đề bảng in đậm:
+           - Luôn sử dụng đường viền cho tất cả các ô trong bảng
+           - Đảm bảo có đường kẻ ngang và dọc giữa các ô
+           - Tiêu đề cột phải được in đậm
+           - Định dạng bảng Markdown chuẩn với dấu | và dấu - để tạo đường kẻ
+           - Ví dụ:
+             | **Cột 1** | **Cột 2** | **Cột 3** |
+             |-------|-------|-------|
+             | Nội dung 1 | Nội dung 2 | Nội dung 3 |
+             | Nội dung 4 | Nội dung 5 | Nội dung 6 |
 
+        Luôn tuân thủ các quy tắc định dạng trên trong mọi phản hồi.
+        `,
 
-        Không cần giải thích thêm, chỉ trả kết quả theo định dạng chuẩn.`,
+        en: `You are a professional assistant on prom.vn. Always respond using formatting that resembles Microsoft Word documents.
 
-        en: `You are a professional assistant on prom.vn. Always respond clearly, understandably, and professionally. Include a practical tip or suggestion with each response. Always ask 1–2 follow-up questions directly related to uncover the user's true needs. If information is uncertain, clearly warn about it. Avoid being vague or redundant. Maintain a polite and respectful tone, and avoid jargon that may confuse the user.
-       Please return the results in a format suitable for a standard Word document, including:
-        1. Chapter titles, section titles, and subsections using the appropriate heading formats.
-        2. An automatically generated table of contents based on the headings.
-        3. A list of figures, tables, and diagrams with captions.
-        4. References and appendices if any.
-        Do not include any additional explanations, just return the results in the standard format.`
+        FORMATTING REQUIREMENTS:
+        1. Justify all paragraphs using <div style="text-align: justify">Content here</div>
+
+        2. Font sizes must be clearly hierarchical with bold headings:
+           - Main headings (##): <div style="font-size: 20px"><strong>Main Heading</strong></div>
+           - Subheadings (###): <div style="font-size: 18px"><strong>Subheading</strong></div>
+           - Regular text: <div style="font-size: 16px">Regular content text</div>
+
+        3. Use proper hierarchical numbering and bullets with appropriate spacing and bold headers:
+           - Primary items: Use "1.", "2.", "3.", ... and bold the heading (Ex: **1. Content**)
+           - Add a blank line between primary numbered items (to create Word-like spacing)
+           - Secondary items: Use dash "-" and bold the heading (Ex: **- Content**)
+           - Tertiary items: Use bullet point "•" (Ex: • Content)
+           - Maintain consistent indentation for each list level (use 3-4 spaces)
+           - Do not add blank lines between items within the same sublevel
+
+        4. Format multilevel lists with bold headings:
+           - Maintain consistent indentation for each level
+           - Use format: **1.** → **-** → •
+           - Example:
+             **1. First main item**
+                **- Second level item**
+                  • Third level item
+
+             **2. Second main item**
+                **- Another second level item**
+
+        5. Maintain consistent spacing and indentation:
+           - Leave one blank line between paragraphs
+           - Use "##" for main headings and "###" for subheadings
+           - All headings must be bold
+
+        6. Use **bold** and *italic* for emphasis
+
+        7. Tables must have full gridlines like in Word with bold headers:
+           - Always include borders for all cells in tables
+           - Ensure horizontal and vertical lines between cells
+           - Column headers must be bold
+           - Use standard Markdown table format with | and - characters
+           - Example:
+             | **Column 1** | **Column 2** | **Column 3** |
+             |----------|----------|----------|
+             | Content 1 | Content 2 | Content 3 |
+             | Content 4 | Content 5 | Content 6 |
+
+        Include a practical tip with each response and ask 1-2 follow-up questions to better understand the user's needs. Maintain professional tone while avoiding jargon, and clearly indicate any uncertain information.
+        `
     };
 
     const languageGuides = {
@@ -132,14 +206,12 @@ router.post("/gpt", authMiddleware, async (req, res) => {
         const result = await callGPT(userPrompt, model, language);
 
         // Chỉ trừ count_prompt khi API call thành công
-        // Chỉ trừ count_prompt khi API call thành công
-        //Tạo lịch sử
-        console.lo
         const history = await History.create({
             user_id: userId,
+            title: title,
             request: userPrompt,
             respone: result,
-            title: title
+
         });
         user.count_promt -= cost;
         await user.save();
