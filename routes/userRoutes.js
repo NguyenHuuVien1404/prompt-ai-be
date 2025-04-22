@@ -889,7 +889,23 @@ router.post("/auth/google", async (req, res) => {
         const email = payload['email'];
         const name = payload['name'] || 'Unknown';
         const picture = payload['picture'];
-        let user = await User.findOne({ where: { google_id } });
+        const user = await User.findOne({
+            where: { google_id },
+            include: [
+                {
+                    model: UserSub,
+                    // alias mặc định của hasMany là: Model name + 's' => 'UserSubs'
+                    // nhưng nếu viết sai như 'userSub' hoặc 'userSubs' thì sẽ lỗi
+                    include: [
+                        {
+                            model: Subscription,
+                            // alias mặc định là 'Subscription'
+                        }
+                    ]
+                }
+            ]
+        });
+
         if (!user) {
             user = await User.findOne({ where: { email } });
             if (user) {
@@ -920,7 +936,8 @@ router.post("/auth/google", async (req, res) => {
             { expiresIn: 60 * 60 * 24 * 30 * 6 }
         );
 
-
+        const firstUserSub = user?.UserSubs?.[0]; // Tên mặc định là 'UserSubs'
+        const subType = firstUserSub?.Subscription;
         // Trả về response
         return res.json({
             message: "Đăng nhập thành công",
@@ -933,7 +950,9 @@ router.post("/auth/google", async (req, res) => {
                 count_prompt: user.count_promt,
                 updated_at: user.updated_at,
                 profile_image: user.profile_image,
-                userSub: null,
+                userSub: {
+                    subscription: subType
+                }
             },
         });
     } catch (error) {
