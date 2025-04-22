@@ -31,6 +31,7 @@ const Topic = require('./models/Topic.js');
 const Category = require('./models/Category.js');
 const Referral = require('./models/Referral.js');
 const chatGPTRoutes = require("./routes/chatGPTRoutes.js");
+const historyRoutes = require("./routes/historyRoutes.js");
 require('./cronJob.js');
 
 dotenv.config();
@@ -49,8 +50,8 @@ app.use(helmet());
 app.use(ddosProtection);
 
 app.use(cors({
-    origin: ["https://www.prom.vn", "https://prom.vn"],
-    // origin: "*",
+    // origin: ["https://www.prom.vn", "https://prom.vn"],
+    origin: "*",
     methods: ["GET", "POST", "PUT", "DELETE"],
     allowedHeaders: ["Content-Type", "Authorization"]
 }));
@@ -84,33 +85,6 @@ app.post('/api/upload-word', upload.single('file'), async (req, res) => {
     }
 });
 
-// app.post('/api/upload-excel', upload.single('file'), async (req, res) => {
-//     try {
-//         if (!req.file) {
-//             return res.status(400).json({ error: 'No file uploaded' });
-//         }
-
-//         // Process the Excel file in a worker thread
-//         const result = await runTask('excel-processor.js', {
-//             filePath: req.file.path
-//         });
-
-//         if (!result.success) {
-//             throw new Error(result.error);
-//         }
-
-//         // Respond with success
-//         res.status(200).json({
-//             message: 'Data successfully saved to database',
-//             count: result.count,
-//             success: true,
-//             data: result.data
-//         });
-//     } catch (error) {
-//         console.error(error);
-//         res.status(500).json({ error: 'Error processing the Excel file or saving to database' });
-//     }
-// });
 app.post('/api/upload-excel', upload.single('file'), async (req, res) => {
     try {
         if (!req.file) {
@@ -248,7 +222,7 @@ app.use("/api/devicelogs", deviceLogRoutes);
 app.use("/api/payment", paymentRouters);
 app.use("/api/referral", referralRoutes);
 app.use("/api/chat", chatGPTRoutes);
-
+app.use("/api/history", historyRoutes);
 const PORT = process.env.PORT || 5000;
 
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));

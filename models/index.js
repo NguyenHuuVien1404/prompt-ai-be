@@ -13,6 +13,7 @@ const Product = require('./Product');
 const Section = require('./Section');
 const PromDetails = require('./PromDetails');
 const DeviceLog = require('./DeviceLog');
+const History = require('./History');
 // Định nghĩa các quan hệ với tên khóa ngoại cụ thể
 User.hasMany(UserSub, {
     foreignKey: 'user_id',
@@ -183,4 +184,4 @@ sequelize.sync({ force: false, alter: false }).then(() => {
     console.error("Error synchronizing models:", error);
 });
 
-module.exports = { User, Subscription, UserSub, Category, Prompt, Course, Payment, UserActivity, PromFavorite, DeviceLog, Referral };
+module.exports = { User, Subscription, UserSub, Category, Prompt, Course, Payment, UserActivity, PromFavorite, DeviceLog, Referral, History };

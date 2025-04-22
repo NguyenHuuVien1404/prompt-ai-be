@@ -4,7 +4,7 @@ const axios = require("axios");
 const User = require("../models/User"); // Không destructure
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const { authMiddleware, adminMiddleware } = require('../middleware/authMiddleware');
-
+const History = require("../models/History"); // Không destructure
 // Hàm gọi OpenAI API với model và prompt tùy chọn
 async function callGPT(userPrompt, model = "gpt-4o-mini", language = "en") {
     if (!OPENAI_API_KEY) {
@@ -13,24 +13,30 @@ async function callGPT(userPrompt, model = "gpt-4o-mini", language = "en") {
 
     const systemPrompts = {
         vi: `Bạn là một trợ lý chuyên nghiệp trên prom.vn. Luôn trả lời rõ ràng, dễ hiểu, chuyên nghiệp. Kèm theo mỗi câu trả lời, hãy cung cấp mẹo hoặc gợi ý có thể áp dụng ngay. Luôn đặt 1–2 câu hỏi follow-up liên quan trực tiếp để khai thác nhu cầu thực sự của người dùng. Nếu có thông tin chưa chắc chắn, hãy cảnh báo rõ ràng. Tránh vòng vo, không đưa thông tin dư thừa. Giữ giọng điệu lịch thiệp, tôn trọng, không dùng biệt ngữ gây khó hiểu.
-        Vui lòng trả lời bằng Markdown được định dạng tốt, sử dụng:
-        - Tiêu đề ("##", "###") cho tiêu đề phần 
-        - Danh sách được đánh số ("1.", "2.", ...) cho các bước 
-        - Dấu đầu dòng ("-") cho các mục
-        - Một dòng trống giữa các đoạn văn
-        - Văn bản in đậm để nhấn mạnh
+       Vui lòng trả kết quả theo định dạng chuẩn của tài liệu Word, bao gồm:
 
-        Không sử dụng HTML nội tuyến hoặc khối mã trừ khi cần thiết.`,
+
+        1. Các tiêu đề chương, mục, tiểu mục sử dụng các định dạng heading tương ứng.
+
+
+        2. Mục lục tự động dựa trên các tiêu đề.
+
+
+        3. Các danh mục hình vẽ, bảng biểu được liệt kê với các chú thích.
+
+
+        4. Tài liệu tham khảo và phụ lục nếu có.
+
+
+        Không cần giải thích thêm, chỉ trả kết quả theo định dạng chuẩn.`,
 
         en: `You are a professional assistant on prom.vn. Always respond clearly, understandably, and professionally. Include a practical tip or suggestion with each response. Always ask 1–2 follow-up questions directly related to uncover the user's true needs. If information is uncertain, clearly warn about it. Avoid being vague or redundant. Maintain a polite and respectful tone, and avoid jargon that may confuse the user.
-        Please respond in well-formatted Markdown, using:
-        - Headings ("##", "###") for section titles
-        - Numbered lists ("1.", "2.", ...) for steps
-        - Bullet points ("-") for items
-        - One blank line between paragraphs
-        - Bold text for emphasis
-
-        Do not use inline HTML or code blocks unless needed`
+       Please return the results in a format suitable for a standard Word document, including:
+        1. Chapter titles, section titles, and subsections using the appropriate heading formats.
+        2. An automatically generated table of contents based on the headings.
+        3. A list of figures, tables, and diagrams with captions.
+        4. References and appendices if any.
+        Do not include any additional explanations, just return the results in the standard format.`
     };
 
     const languageGuides = {
@@ -99,7 +105,7 @@ function delay(ms) {
 
 router.post("/gpt", authMiddleware, async (req, res) => {
     try {
-        const { userPrompt, model, language, id } = req.body;
+        const { userPrompt, model, language, id, title } = req.body;
 
         if (!userPrompt) {
             return res.status(400).json({ error: "Thiếu userPrompt trong yêu cầu!" });
@@ -127,7 +133,14 @@ router.post("/gpt", authMiddleware, async (req, res) => {
 
         // Chỉ trừ count_prompt khi API call thành công
         // Chỉ trừ count_prompt khi API call thành công
-
+        //Tạo lịch sử
+        console.lo
+        const history = await History.create({
+            user_id: userId,
+            request: userPrompt,
+            respone: result,
+            title: title
+        });
         user.count_promt -= cost;
         await user.save();
 

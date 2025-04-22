@@ -11,6 +11,7 @@ const querystring = require('qs');
 const UserSub = require('../models/UserSub');
 const Payment = require('../models/Payment');
 const Subscription = require('../models/Subscription'); // Thêm model Subscription để lấy thông tin duration, token
+const User = require('../models/User');
 
 router.get('/', function (req, res, next) {
     res.render('orderlist', { title: 'Danh sách đơn hàng' });
@@ -103,7 +104,7 @@ router.post('/create_payment_url', async function (req, res, next) {
         let signed = hmac.update(new Buffer(signData, 'utf-8')).digest("hex")
         vnp_Params['vnp_SecureHash'] = signed;
         vnpUrl += '?' + querystring.stringify(vnp_Params, { encode: false });
-
+        console.log("checkk", signed)
         res.json({ paymentUrl: vnpUrl });
     } catch (error) {
         console.error('Error creating payment URL:', error);
@@ -184,7 +185,6 @@ router.get('/vnpay_ipn', async function (req, res, next) {
                 Signature: null,
             });
         }
-
         // 4. Kiểm tra checkAmount (so sánh vnp_Amount với số tiền trong Payment)
         const vnpAmount = parseInt(vnp_Params['vnp_Amount']) / 100; // Chia 100 để lấy giá trị thực
         let checkAmount = Math.abs(order.amount - vnpAmount) < 0.01; // So sánh với độ chính xác 0.01
@@ -280,7 +280,7 @@ router.get('/vnpay_ipn', async function (req, res, next) {
             payment_date: paymentDate,
             notes: `VNPay Transaction: ${orderId}`,
         });
-
+        await order.save();
         // 9. Cập nhật UserSub nếu giao dịch thành công
         if (rspCode === '00') {
             let userSub = await UserSub.findOne({
@@ -289,22 +289,39 @@ router.get('/vnpay_ipn', async function (req, res, next) {
                     sub_id: subscriptionId,
                 },
             });
-
+            let user = await User.findOne({
+                where: {
+                    id: userId,
+                },
+            });
             const currentDate = new Date();
             let endDate;
-            const subscription = await Subscription.findByPk(subscriptionId);
+            let id = subscriptionId
+            const subscription = await Subscription.findByPk(id);
+
             if (!subscription) {
                 throw new Error('Subscription not found');
             }
 
+            // Tạo một đối tượng Date mới cho endDate
             endDate = new Date(currentDate);
-            endDate.setDate(currentDate.getDate() + subscription.duration);
 
+            // Thay đổi tháng của endDate sang tháng tiếp theo
+            endDate.setMonth(currentDate.getMonth() + 1);
+
+            // Đặt ngày của endDate là ngày của currentDate
+            endDate.setDate(currentDate.getDate());
+            if (user) {
+                console.log("user", user);
+                console.log(subscription.duration)
+                user.count_promt = user.count_promt + subscription.duration;
+                await user.save();
+            }
             if (userSub) {
                 userSub.status = 1;
                 userSub.start_date = currentDate;
                 userSub.end_date = endDate;
-                userSub.token = subscription.token || 0; // Sửa từ subscription.duration thành subscription.token
+                userSub.token = subscription.duration || 0; // Sửa từ subscription.duration thành subscription.token
                 await userSub.save();
             } else {
                 userSub = await UserSub.create({
@@ -313,7 +330,7 @@ router.get('/vnpay_ipn', async function (req, res, next) {
                     status: 1,
                     start_date: currentDate,
                     end_date: endDate,
-                    token: subscription.token || 0,
+                    token: subscription.duration || 0,
                 });
             }
 
