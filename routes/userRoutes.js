@@ -922,6 +922,14 @@ router.post("/auth/google", async (req, res) => {
                     is_verified: true,
                     count_promt: 5
                 });
+                await UserSub.create({
+                    user_id: user.id,
+                    sub_id: 1,                 // gói mặc định có id = 1
+                    status: 1,                 // trạng thái kích hoạt (nếu 1 là active)
+                    start_date: new Date(),   // thời điểm hiện tại
+                    end_date: new Date(new Date().setMonth(new Date().getMonth() + 1)), // +1 tháng
+                    token: 5              // số token mặc định (hoặc cậu có thể để là 0)
+                });
             }
         }
 
