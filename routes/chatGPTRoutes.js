@@ -6,14 +6,74 @@ const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const { authMiddleware, adminMiddleware } = require('../middleware/authMiddleware');
 const History = require("../models/History"); // Không destructure
 // Hàm gọi OpenAI API với model và prompt tùy chọn
-async function callGPT(userPrompt, model = "gpt-4o-mini", language = "en") {
+async function callGPT(userPrompt, model = "gpt-4o-mini", language = "en", nangCap = false) {
     if (!OPENAI_API_KEY) {
         throw new Error("🚨 API Key chưa được thiết lập!");
     }
 
-    const systemPrompts = {
-        vi: `Bạn là một trợ lý AI chuyên nghiệp, có nhiệm vụ phản hồi bằng Markdown được định dạng chính xác để hiển thị giống với định dạng trong Microsoft Word.
+    const systemUpgrand = {
+        vi: `Bạn là “Prompt Optimizer / Nâng Cấp Prompt” cho Prom.vn.
+        Nhiệm vụ duy nhất của bạn là chuyển đổi mọi prompt của người dùng thành một prompt rõ ràng, tác động cao theo Khung 6 Thành Phần:
 
+        Task – Bắt đầu bằng một động từ hành động + yêu cầu cụ thể.
+
+        Context – Thêm bối cảnh, tiêu chí thành công, ràng buộc và điều kiện môi trường.
+
+        Exemplars – Cung cấp 1-2 ví dụ, mô hình hoặc tài liệu tham khảo ngắn gọn để định hướng đầu ra AI.
+
+        Persona – Xác định vai trò hoặc chuyên môn mà AI phải nhập vai.
+
+        Format – Chỉ định cấu trúc đầu ra chính xác (danh sách, bảng, mục, loại tệp, v.v.).
+
+        Tone – Mô tả giọng điệu hoặc phong cách mong muốn.
+
+        Hướng dẫn
+        Phản chiếu ngôn ngữ gốc của người dùng (Việt ↔ Anh) trừ khi họ yêu cầu khác.
+
+        Giữ nguyên ý định ban đầu, làm rõ điểm mơ hồ, bổ sung chi tiết còn thiếu và lược bớt phần thừa.
+
+        Ngắn gọn nhưng đầy đủ; ưu tiên gạch đầu dòng khi phù hợp.
+
+        Không thay đổi dữ kiện thực tế — chỉ nâng cao độ rõ ràng, cấu trúc và tính hoàn chỉnh.
+
+        Nếu prompt đã có sẵn thành phần nào, hãy giữ và tinh chỉnh thay vì lặp lại.
+
+        Không trả lời prompt; chỉ trả về phiên bản đã nâng cấp.`,
+        en: `You are a “Prompt Optimizer” for Prom.vn.
+        Your sole task is to transform any user-submitted prompt into a clear, high-impact prompt using the 6-Component Framework:
+
+        Task – Start with an action verb and a specific request.
+
+        Context – Add background information, success criteria, constraints, and environmental conditions.
+
+        Exemplars – Provide 1–2 short examples, models, or references to guide the AI’s output.
+
+        Persona – Define the role or expertise the AI should assume.
+
+        Format – Specify the desired output structure (e.g., list, table, bullets, file type).
+
+        Tone – Describe the desired tone or writing style.
+
+        Instructions:
+
+        Reflect the user’s original language (Vietnamese ↔ English) unless they specify otherwise.
+
+        Preserve the original intent, clarify ambiguities, add missing details, and remove redundancies.
+
+        Be concise but complete; use bullet points when appropriate.
+
+        Do not change factual content — only improve clarity, structure, and completeness.
+
+        If any components already exist in the prompt, keep and refine them instead of duplicating.
+
+        Do not answer the prompt; only return the optimized version.`
+    }
+    const systemPrompts = {
+        vi: "Bạn là một trợ lý AI chuyên nghiệp, có nhiệm vụ phản hồi bằng Markdown được định dạng chính xác để hiển thị giống với định dạng trong Microsoft Word.",
+        en: "You are an AI assistant specialized in providing Markdown-formatted responses that closely resemble the formatting in Microsoft Word."
+    }
+    const systemFomart = {
+        vi: `
         YÊU CẦU VỀ ĐỊNH DẠNG:
         1. Căn đều các đoạn văn (Justify) bằng cách sử dụng thẻ <div style="text-align: justify">Nội dung văn bản</div>
 
@@ -62,7 +122,7 @@ async function callGPT(userPrompt, model = "gpt-4o-mini", language = "en") {
         Luôn tuân thủ các quy tắc định dạng trên trong mọi phản hồi.
         `,
 
-        en: `You are a professional assistant on prom.vn. Always respond using formatting that resembles Microsoft Word documents.
+        en: `
 
         FORMATTING REQUIREMENTS:
         1. Justify all paragraphs using <div style="text-align: justify">Content here</div>
@@ -120,12 +180,28 @@ async function callGPT(userPrompt, model = "gpt-4o-mini", language = "en") {
 
     let attempts = 0;
     const maxAttempts = 5;
+    let messages = [];
+    if (nangCap) {
+        console.log("check okee")
+        messages.push({
+            role: "system",
+            content: systemUpgrand[language] || systemUpgrand.en
+        });
+    } else {
+        messages.push(
+            {
+                role: "system",
+                content: systemPrompts[language] || systemPrompts.en
+            },
+        )
+    }
 
-    const messages = [
+    messages.push(
         {
             role: "system",
-            content: systemPrompts[language] || systemPrompts.en
+            content: systemFomart[language] || systemFomart.en
         },
+
         {
             role: "system",
             content: languageGuides[language] || languageGuides.en
@@ -134,7 +210,7 @@ async function callGPT(userPrompt, model = "gpt-4o-mini", language = "en") {
             role: "user",
             content: userPrompt
         }
-    ];
+    );
 
     while (attempts < maxAttempts) {
         try {
@@ -179,7 +255,7 @@ function delay(ms) {
 
 router.post("/gpt", authMiddleware, async (req, res) => {
     try {
-        const { userPrompt, model, language, id, title } = req.body;
+        const { userPrompt, model, language, id, title, nangCap } = req.body;
 
         if (!userPrompt) {
             return res.status(400).json({ error: "Thiếu userPrompt trong yêu cầu!" });
@@ -190,7 +266,6 @@ router.post("/gpt", authMiddleware, async (req, res) => {
         }
         const userId = req.user.id;
         const user = await User.findByPk(userId);
-        console.log(user)
         if (!user) {
             return res.status(404).json({ error: "Không tìm thấy người dùng." });
         }
@@ -203,7 +278,7 @@ router.post("/gpt", authMiddleware, async (req, res) => {
         }
 
         // Gọi API GPT
-        const result = await callGPT(userPrompt, model, language);
+        const result = await callGPT(userPrompt, model, language, nangCap);
 
         // Chỉ trừ count_prompt khi API call thành công
         const history = await History.create({

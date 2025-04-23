@@ -99,7 +99,6 @@ router.get("/:id", async (req, res) => {
 
 // 📌 Tạo Subscription mới
 router.post("/", async (req, res) => {
-    console.log("Dữ liệu nhận từ frontend:", req.body); // Kiểm tra dữ liệu nhận được
     try {
         const { name_sub, type, duration, price, description } = req.body;
         const newSubscription = await Subscription.create({ name_sub, type, duration, price, description });

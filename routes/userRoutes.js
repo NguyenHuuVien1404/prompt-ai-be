@@ -111,7 +111,6 @@ router.post('/list', authMiddleware, adminMiddleware, async (req, res) => {
         }
 
         // Log để debug
-        console.log('POST params:', { page, pageSize, offset, limit, whereConditions });
 
         const { count, rows } = await User.findAndCountAll({
             attributes: { exclude: ['password_hash'] },
@@ -206,7 +205,6 @@ const generateOtp = () => Math.floor(100000 + Math.random() * 900000).toString()
 router.post('/register', async (req, res) => {
     try {
         const { full_name, email, password } = req.body;
-        console.log("register", full_name, email, password); // Sửa req.full_name -> full_name
 
         // Kiểm tra xem email đã tồn tại chưa
         const existingUser = await User.findOne({ where: { email } });
@@ -216,7 +214,6 @@ router.post('/register', async (req, res) => {
 
         const hashedPassword = await bcrypt.hash(password, 10);
         const otp = generateOtp();
-        console.log("register-otp", otp);
 
         const newUser = await User.create({
             full_name,
@@ -247,7 +244,6 @@ router.post('/register', async (req, res) => {
         await sendOtpEmail(email, otp);
         res.json({ message: 'Mã OTP đã được gửi đến email. Vui lòng xác thực tài khoản.' });
     } catch (error) {
-        console.log("error", error);
         res.status(500).json({ error: error.message });
     }
 });
@@ -375,7 +371,6 @@ router.post("/login", async (req, res) => {
             });
         }
     } catch (error) {
-        console.log("error-login", error);
         res.status(500).json({ error: error.message });
     }
 });
@@ -385,7 +380,6 @@ router.post("/login-verify", async (req, res) => {
     try {
         const { email, otp, ip_address } = req.body;
         const user = await User.findOne({ where: { email }, include: { model: UserSub }, nest: true });
-        console.log("email", email, "otp", otp, "ip_address", ip_address);
         if (!user || user.otp_code !== otp || new Date() > new Date(user.otp_expires_at)) {
             return res.status(400).json({ error: "Mã OTP không hợp lệ hoặc đã hết hạn" });
         }
@@ -415,7 +409,6 @@ router.post("/login-verify", async (req, res) => {
         // Lấy thông tin thiết bị từ yêu cầu
         const userAgent = req.headers['user-agent'];
         const ipAddress = ip_address || req.connection.remoteAddress;
-        console.log("ip_address_user", ipAddress);  // Lấy địa chỉ IP của người dùng
         const agent = userAgentParser.parse(userAgent);  // Phân tích User-Agent để lấy thông tin thiết bị
 
         // Kiểm tra xem thiết bị đã đăng nhập trước đó chưa (cùng user_id và ip_address)
@@ -471,7 +464,6 @@ router.post("/login-verify", async (req, res) => {
             },
         });
     } catch (error) {
-        console.log("error-login-verify", error);
         res.status(500).json({ error: error.message });
     }
 });
@@ -479,7 +471,6 @@ router.post("/login-verify", async (req, res) => {
 router.post("/login-password", async (req, res) => {
     try {
         const { email, password, ip_address } = req.body;
-        console.log(email, password)
         const user = await User.findOne({
             where: { email },
             include: { model: UserSub },
@@ -733,7 +724,6 @@ router.post("/forgot-password", async (req, res) => {
 
         res.json({ message: "Yêu cầu đặt lại mật khẩu đã được gửi" });
     } catch (error) {
-        console.log("error-forgot-password", error);
         res.status(500).json({ error: error.message });
     }
 });
@@ -742,13 +732,11 @@ router.post("/reset-password", async (req, res) => {
     try {
         const { email, otp, newPassword } = req.body; // Thay token bằng otp
         const user = await User.findOne({ where: { email } });
-        console.log("hiii", email, otp, newPassword)
         if (
             !user ||
             user.otp_code !== otp ||
             new Date() > new Date(user.otp_expires_at)
         ) {
-            console.log("hi", new Date(), new Date(user.otp_expires_at))
             return res.status(400).json({ error: "Mã OTP không hợp lệ hoặc đã hết hạn" });
         }
 
@@ -761,7 +749,6 @@ router.post("/reset-password", async (req, res) => {
 
         res.json({ message: "Đặt lại mật khẩu thành công" });
     } catch (error) {
-        console.log("error-reset-password", error);
         res.status(500).json({ error: error.message });
     }
 });

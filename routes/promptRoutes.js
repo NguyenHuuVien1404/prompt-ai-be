@@ -301,11 +301,10 @@ router.get("/newest", async (req, res) => {
 router.get("/:id", async (req, res) => {
   try {
     const { id } = req.params;
-    console.log("id", id);
 
     const prompt = await Prompt.findByPk(id, {
       include: [
-        { model: Category, attributes: ["id", "name"], include: { model: Section, attributes: ["id", "name", "description"] }},
+        { model: Category, attributes: ["id", "name"], include: { model: Section, attributes: ["id", "name", "description"] } },
         { model: Topic, attributes: ["id", "name"] }
       ]
     });
