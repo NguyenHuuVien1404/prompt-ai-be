@@ -104,7 +104,6 @@ router.post('/create_payment_url', async function (req, res, next) {
         let signed = hmac.update(new Buffer(signData, 'utf-8')).digest("hex")
         vnp_Params['vnp_SecureHash'] = signed;
         vnpUrl += '?' + querystring.stringify(vnp_Params, { encode: false });
-        console.log("checkk", signed)
         res.json({ paymentUrl: vnpUrl });
     } catch (error) {
         console.error('Error creating payment URL:', error);
@@ -190,7 +189,6 @@ router.get('/vnpay_ipn', async function (req, res, next) {
         let checkAmount = Math.abs(order.amount - vnpAmount) < 0.01; // So sánh với độ chính xác 0.01
 
         if (!checkAmount) {
-            console.log(`Amount mismatch: Expected ${order.amount}, but got ${vnpAmount}`);
             return res.status(200).json({
                 RspCode: '04',
                 Message: 'Invalid amount',
@@ -312,8 +310,6 @@ router.get('/vnpay_ipn', async function (req, res, next) {
             // Đặt ngày của endDate là ngày của currentDate
             endDate.setDate(currentDate.getDate());
             if (user) {
-                console.log("user", user);
-                console.log(subscription.duration)
                 user.count_promt = user.count_promt + subscription.duration;
                 await user.save();
             }

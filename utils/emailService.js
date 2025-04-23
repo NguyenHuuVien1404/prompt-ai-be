@@ -131,7 +131,6 @@ async function sendOrderEmail(email, userName, orderId = 1) {
 
     try {
         await transporter.sendMail(mailOptions);
-        console.log('Email sent successfully to', email);
     } catch (error) {
         console.error('Error sending email:', error);
         throw error;
@@ -224,7 +223,6 @@ async function sendOtpEmail(email, otp) {
 
     try {
         await transporter.sendMail(mailOptions);
-        console.log('Email sent successfully to', email);
     } catch (error) {
         console.error('Error sending email:', error);
         throw error;
@@ -316,7 +314,6 @@ async function sendReplyEmail(email, reply) {
 
     try {
         await transporter.sendMail(mailOptions);
-        console.log('Email sent successfully to', email);
     } catch (error) {
         console.error('Error sending email:', error);
         throw error;
@@ -408,7 +405,6 @@ async function sendSurveyEmail(email, reply) {
 
     try {
         await transporter.sendMail(mailOptions);
-        console.log('Email sent successfully to', email);
     } catch (error) {
         console.error('Error sending email:', error);
         throw error;
