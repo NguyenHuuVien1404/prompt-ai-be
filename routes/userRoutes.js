@@ -876,7 +876,7 @@ router.post("/auth/google", async (req, res) => {
         const email = payload['email'];
         const name = payload['name'] || 'Unknown';
         const picture = payload['picture'];
-        const user = await User.findOne({
+        let user = await User.findOne({
             where: { google_id },
             include: [
                 {
