@@ -866,42 +866,44 @@ router.patch('/:id/subscriptions/:subId/change', authMiddleware, adminMiddleware
 router.post("/auth/google", async (req, res) => {
     try {
         const { credential } = req.body;
+
+        // Xác minh token từ Google
         const ticket = await client.verifyIdToken({
             idToken: credential,
             audience: process.env.GOOGLE_CLIENT_ID,
         });
 
-        const payload = ticket.getPayload();
+        const payload = ticket.getPayload(); // 🔁 Lấy thông tin người dùng từ token
+
+        console.log("Token aud:", payload.aud);
+        console.log("Backend expects audience:", process.env.GOOGLE_CLIENT_ID);
+
         const google_id = payload['sub'];
         const email = payload['email'];
         const name = payload['name'] || 'Unknown';
         const picture = payload['picture'];
-        const user = await User.findOne({
+
+        // Tìm user theo google_id trước
+        let user = await User.findOne({
             where: { google_id },
-            include: [
-                {
-                    model: UserSub,
-                    // alias mặc định của hasMany là: Model name + 's' => 'UserSubs'
-                    // nhưng nếu viết sai như 'userSub' hoặc 'userSubs' thì sẽ lỗi
-                    include: [
-                        {
-                            model: Subscription,
-                            // alias mặc định là 'Subscription'
-                        }
-                    ]
-                }
-            ]
+            include: [{
+                model: UserSub,
+                include: [Subscription]
+            }]
         });
 
+        // Nếu không tìm thấy theo google_id, thử tìm theo email
         if (!user) {
             user = await User.findOne({ where: { email } });
             if (user) {
+                // Nếu có user theo email thì cập nhật thêm google_id và ảnh đại diện
                 user.google_id = google_id;
                 user.profile_image = picture;
                 await user.save();
             } else {
+                // Nếu chưa có tài khoản => tạo mới
                 user = await User.create({
-                    google_id: google_id,
+                    google_id,
                     email,
                     full_name: name,
                     profile_image: picture,
@@ -909,30 +911,32 @@ router.post("/auth/google", async (req, res) => {
                     is_verified: true,
                     count_promt: 5
                 });
+
                 await UserSub.create({
                     user_id: user.id,
-                    sub_id: 1,                 // gói mặc định có id = 1
-                    status: 1,                 // trạng thái kích hoạt (nếu 1 là active)
-                    start_date: new Date(),   // thời điểm hiện tại
-                    end_date: new Date(new Date().setMonth(new Date().getMonth() + 1)), // +1 tháng
-                    token: 5              // số token mặc định (hoặc cậu có thể để là 0)
+                    sub_id: 1, // Gói mặc định có ID = 1
+                    status: 1,
+                    start_date: new Date(),
+                    end_date: new Date(new Date().setMonth(new Date().getMonth() + 1)),
+                    token: 5
                 });
             }
         }
 
-        // Tạo JWT
+        // Tạo JWT token
         const token = jwt.sign(
             {
                 id: user.id,
                 email: user.email,
-                role: user.role // Thêm role vào token
+                role: user.role
             },
             process.env.JWT_SECRET || 'your_jwt_secret_key',
             { expiresIn: 60 * 60 * 24 * 30 * 6 }
         );
 
-        const firstUserSub = user?.UserSubs?.[0]; // Tên mặc định là 'UserSubs'
-        const subType = firstUserSub?.Subscription;
+        // Lấy subscription đầu tiên
+        const firstUserSub = user?.UserSubs?.[0];
+
         // Trả về response
         return res.json({
             message: "Đăng nhập thành công",
@@ -946,7 +950,7 @@ router.post("/auth/google", async (req, res) => {
                 updated_at: user.updated_at,
                 profile_image: user.profile_image,
                 userSub: {
-                    subscription: subType
+                    subscription: firstUserSub?.Subscription || null
                 }
             },
         });
@@ -954,5 +958,6 @@ router.post("/auth/google", async (req, res) => {
         console.error('Google login error:', error);
         return res.status(401).json({ error: 'Google login failed' });
     }
-})
+});
+
 module.exports = router;
