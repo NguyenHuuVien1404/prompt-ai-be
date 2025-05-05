@@ -23,6 +23,8 @@ const Payment = sequelize.define("Payment", {
     },
     payment_date: { type: DataTypes.DATE, defaultValue: DataTypes.NOW },
     notes: { type: DataTypes.TEXT, allowNull: true },
+    duration: { type: DataTypes.STRING, allowNull: true },
+    order_type: { type: DataTypes.STRING, allowNull: true },
 }, {
     tableName: "payments",
     timestamps: false,
