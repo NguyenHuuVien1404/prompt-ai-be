@@ -272,6 +272,7 @@ router.get('/vnpay_ipn', async function (req, res, next) {
             vnp_Params['vnp_PayDate'].slice(12, 14) // Giây
         );
 
+        console.log('vnp_Params:', vnp_Params);
         await order.update({
             transaction_id: vnp_Params['vnp_TransactionNo'],
             payment_status: rspCode === '00' ? 'SUCCESS' : 'FAILED',
