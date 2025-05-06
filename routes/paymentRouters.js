@@ -147,7 +147,6 @@ router.get('/vnpay_ipn', async function (req, res, next) {
         let rspCode = vnp_Params['vnp_ResponseCode'];
 
 
-
         // 2. Xác thực SecureHash
         delete vnp_Params['vnp_SecureHash'];
         delete vnp_Params['vnp_SecureHashType'];
@@ -273,13 +272,18 @@ router.get('/vnpay_ipn', async function (req, res, next) {
         );
 
         console.log('vnp_Params:', vnp_Params);
-        await order.update({
-            transaction_id: vnp_Params['vnp_TransactionNo'],
-            payment_status: rspCode === '00' ? 'SUCCESS' : 'FAILED',
-            payment_date: paymentDate,
-            notes: `VNPay Transaction: ${orderId}`,
-        });
-        await order.save();
+        try {
+            await order.update({
+                transaction_id: vnp_Params['vnp_TransactionNo'],
+                payment_status: rspCode === '00' ? 'SUCCESS' : 'FAILED',
+                payment_date: paymentDate,
+                notes: `VNPay Transaction: ${orderId}`,
+            });
+            await order.save();
+        } catch (error) {
+            console.error('Error updating payment:', error);
+        }
+
         // 9. Cập nhật UserSub nếu giao dịch thành công
         if (rspCode === '00') {
             let userSub = await UserSub.findOne({
