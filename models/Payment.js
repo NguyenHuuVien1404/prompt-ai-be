@@ -2,6 +2,7 @@ const { DataTypes } = require("sequelize");
 const sequelize = require("../config/database");
 const User = require("./User");
 const Subscription = require("./Subscription");
+const { duration } = require("moment");
 
 const Payment = sequelize.define("Payment", {
     id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
@@ -16,6 +17,9 @@ const Payment = sequelize.define("Payment", {
     payment_status: {
         type: DataTypes.STRING,
         allowNull: true,
+    },
+    duration: {
+        type: DataTypes.INTEGER,
     },
     orderId: {
         type: DataTypes.STRING,
