@@ -312,8 +312,31 @@ router.post("/login", async (req, res) => {
         const { email } = req.body;
         const user = await User.findOne({ where: { email } });
 
-        if (!user) {
-            return res.status(400).json({ error: "Email không tồn tại" });
+        if (!user) {    
+            const newUser = await User.create({
+                full_name:email,
+                email,
+            
+                account_status: 1,
+                role: 1,
+                count_promt: 5
+            });
+    
+            // Lấy ID của subscription miễn phí
+            const freeSub = await Subscription.findOne({ where: { type: 1 }, attributes: ["id"] });
+            if (!freeSub) {
+                return res.status(404).json({ error: 'Không có subscription miễn phí' });
+            }
+    
+            // Tạo bản ghi mới trong bảng UserSub
+            const newUserSub = await UserSub.create({
+                user_id: newUser.id,
+                sub_id: freeSub.id,
+                status: 1,
+                start_date: new Date(),
+                end_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
+            });
+    
         }
 
         // Kiểm tra mật khẩu
@@ -323,7 +346,7 @@ router.post("/login", async (req, res) => {
         // }
 
         // Kiểm tra xác thực
-        if (user.is_verified) {
+        // if (user.is_verified) {
             // Tạo token và đăng nhập thành công
             // const token = jwt.sign(
             //     { id: user.id, email: user.email, role: user.role },
@@ -341,20 +364,20 @@ router.post("/login", async (req, res) => {
             //         role: user.role
             //     }
             // });
-            const otp = generateOtp();
-            user.otp_code = otp;
-            user.otp_expires_at = new Date(Date.now() + 10 * 60 * 1000);
-            await user.save();
+        //     const otp = generateOtp();
+        //     user.otp_code = otp;
+        //     user.otp_expires_at = new Date(Date.now() + 10 * 60 * 1000);
+        //     await user.save();
 
-            await sendOtpEmail(email, otp);
+        //     await sendOtpEmail(email, otp);
 
-            // Trả về mã trạng thái 202 Accepted với flag requireVerification
-            return res.status(200).json({
-                message: "Mã OTP đã được gửi đến email của bạn.",
-                // requireVerification: true,
-                email: user.email
-            });
-        } else {
+        //     // Trả về mã trạng thái 202 Accepted với flag requireVerification
+        //     return res.status(200).json({
+        //         message: "Mã OTP đã được gửi đến email của bạn.",
+        //         // requireVerification: true,
+        //         email: user.email
+        //     });
+        // } else {
             // Tài khoản chưa xác thực - tạo OTP mới và gửi
             const otp = generateOtp();
             user.otp_code = otp;
@@ -369,7 +392,7 @@ router.post("/login", async (req, res) => {
                 requireVerification: true,
                 email: user.email
             });
-        }
+        //}
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
