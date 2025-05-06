@@ -54,7 +54,7 @@ router.post('/create_payment_url', async function (req, res, next) {
         let amount = parseFloat(req.body.amount); // Số tiền từ request
         let bankCode = req.body.bankCode;
         let orderInfo = req.body.orderInfo; // Dạng userId-subscriptionId (ví dụ: "42-1")
-
+        const duration = req.body.duration; // Thời gian sử dụng (nếu cần thiết)
         // Kiểm tra orderInfo hợp lệ
         if (!orderInfo || !orderInfo.includes('-')) {
             return res.status(400).json({ error: 'Invalid orderInfo format' });
@@ -74,6 +74,7 @@ router.post('/create_payment_url', async function (req, res, next) {
             transaction_id: null, // Chưa có transaction_id
             payment_status: 'PENDING',
             payment_date: new Date(),
+            duration: duration , // Thời gian sử dụng (nếu cần thiết)
             orderId: orderId,
             notes: `VNPay Transaction: ${orderId}`,
         });
@@ -277,6 +278,7 @@ router.get('/vnpay_ipn', async function (req, res, next) {
                 transaction_id: vnp_Params['vnp_TransactionNo'],
                 payment_status: rspCode === '00' ? 'SUCCESS' : 'FAILED',
                 payment_date: paymentDate,
+
                 notes: `VNPay Transaction: ${orderId}`,
             });
             await order.save();
