@@ -318,7 +318,7 @@ router.get('/vnpay_ipn', async function (req, res, next) {
             endDate.setDate(currentDate.getDate());
             if (user) {
                 if (order.duration === 1) {
-                    user.count_promt += +subscription.description;
+                    user.count_promt = +subscription.description;
                 } else if (order.duration === 12) {
                     user.count_promt = +subscription.description_per_year;
                 }

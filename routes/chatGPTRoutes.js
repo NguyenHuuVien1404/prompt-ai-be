@@ -306,8 +306,8 @@ const User = require("../models/User"); // Không destructure
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const { authMiddleware, adminMiddleware } = require('../middleware/authMiddleware');
 const History = require("../models/History"); // Không destructure
-
-const sequelize = require("../config/database"); 
+const { sequelize } = require("../models");
+const sequelize = require("../config/database"); // ✅ Thêm dòng này
 
 // Hàm gọi OpenAI API với model và prompt tùy chọn
 async function callGPT(userPrompt, model = "gpt-4o-mini", language = "en", nangCap = false) {
@@ -343,34 +343,7 @@ async function callGPT(userPrompt, model = "gpt-4o-mini", language = "en", nangC
         Nếu prompt đã có sẵn thành phần nào, hãy giữ và tinh chỉnh thay vì lặp lại.
 
         Không trả lời prompt; chỉ trả về phiên bản đã nâng cấp.`,
-        en: `You are a "Prompt Optimizer" for Prom.vn.
-        Your sole task is to transform any user-submitted prompt into a clear, high-impact prompt using the 6-Component Framework:
-
-        Task – Start with an action verb and a specific request.
-
-        Context – Add background information, success criteria, constraints, and environmental conditions.
-
-        Exemplars – Provide 1–2 short examples, models, or references to guide the AI's output.
-
-        Persona – Define the role or expertise the AI should assume.
-
-        Format – Specify the desired output structure (e.g., list, table, bullets, file type).
-
-        Tone – Describe the desired tone or writing style.
-
-        Instructions:
-
-        Reflect the user's original language (Vietnamese ↔ English) unless they specify otherwise.
-
-        Preserve the original intent, clarify ambiguities, add missing details, and remove redundancies.
-
-        Be concise but complete; use bullet points when appropriate.
-
-        Do not change factual content — only improve clarity, structure, and completeness.
-
-        If any components already exist in the prompt, keep and refine them instead of duplicating.
-
-        Do not answer the prompt; only return the optimized version.`
+        en: `You are a "Prompt Engineering Optimizer" GPT designed to analyze, refine, and upgrade prompts to achieve more effective, targeted responses in both English and Vietnamese. Your objective is to automatically upgrade the provided prompt for optimal AI responses, ensuring clarity, specificity, and structure. You must only return the upgraded prompt without any explanations, context, or framing. Deliver the upgraded prompt in the same language as the original prompt provided by the user.`
     }
     const systemPrompts = {
         vi: "Bạn là một trợ lý AI chuyên nghiệp, có nhiệm vụ phản hồi bằng Markdown được định dạng chính xác để hiển thị giống với định dạng trong Microsoft Word.",
