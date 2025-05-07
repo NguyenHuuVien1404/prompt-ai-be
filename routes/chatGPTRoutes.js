@@ -306,7 +306,6 @@ const User = require("../models/User"); // Không destructure
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const { authMiddleware, adminMiddleware } = require('../middleware/authMiddleware');
 const History = require("../models/History"); // Không destructure
-const { sequelize } = require("../models");
 const sequelize = require("../config/database"); // ✅ Thêm dòng này
 
 // Hàm gọi OpenAI API với model và prompt tùy chọn
