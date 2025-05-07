@@ -7,7 +7,7 @@ const Subscription = sequelize.define("Subscription", {
     type: { type: DataTypes.INTEGER, defaultValue: 1 },
     duration: { type: DataTypes.INTEGER, defaultValue: 1 },
     price: { type: DataTypes.DECIMAL(10, 2), allowNull: true },
-    price_per_month_yearly: { type: DataTypes.DECIMAL(10, 2), allowNull: true },
+    price_per_month_year: { type: DataTypes.DECIMAL(10, 2), allowNull: true },
     description_per_year: { type: DataTypes.TEXT, allowNull: true },
     price_total_yearly: { type: DataTypes.DECIMAL(10, 2), allowNull: true },
 
