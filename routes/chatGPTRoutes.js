@@ -1,3 +1,4 @@
+
 // const express = require("express");
 // const router = express.Router();
 // const axios = require("axios");
@@ -5,6 +6,9 @@
 // const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 // const { authMiddleware, adminMiddleware } = require('../middleware/authMiddleware');
 // const History = require("../models/History"); // Không destructure
+// const { sequelize } = require("../models");
+// const sequelize = require("../config/database"); // ✅ Thêm dòng này
+
 // // Hàm gọi OpenAI API với model và prompt tùy chọn
 // async function callGPT(userPrompt, model = "gpt-4o-mini", language = "en", nangCap = false) {
 //     if (!OPENAI_API_KEY) {
@@ -12,7 +16,7 @@
 //     }
 
 //     const systemUpgrand = {
-//         vi: `Bạn là “Prompt Optimizer / Nâng Cấp Prompt” cho Prom.vn.
+//         vi: `Bạn là "Prompt Optimizer / Nâng Cấp Prompt" cho Prom.vn.
 //         Nhiệm vụ duy nhất của bạn là chuyển đổi mọi prompt của người dùng thành một prompt rõ ràng, tác động cao theo Khung 6 Thành Phần:
 
 //         Task – Bắt đầu bằng một động từ hành động + yêu cầu cụ thể.
@@ -39,14 +43,14 @@
 //         Nếu prompt đã có sẵn thành phần nào, hãy giữ và tinh chỉnh thay vì lặp lại.
 
 //         Không trả lời prompt; chỉ trả về phiên bản đã nâng cấp.`,
-//         en: `You are a “Prompt Optimizer” for Prom.vn.
+//         en: `You are a "Prompt Optimizer" for Prom.vn.
 //         Your sole task is to transform any user-submitted prompt into a clear, high-impact prompt using the 6-Component Framework:
 
 //         Task – Start with an action verb and a specific request.
 
 //         Context – Add background information, success criteria, constraints, and environmental conditions.
 
-//         Exemplars – Provide 1–2 short examples, models, or references to guide the AI’s output.
+//         Exemplars – Provide 1–2 short examples, models, or references to guide the AI's output.
 
 //         Persona – Define the role or expertise the AI should assume.
 
@@ -56,7 +60,7 @@
 
 //         Instructions:
 
-//         Reflect the user’s original language (Vietnamese ↔ English) unless they specify otherwise.
+//         Reflect the user's original language (Vietnamese ↔ English) unless they specify otherwise.
 
 //         Preserve the original intent, clarify ambiguities, add missing details, and remove redundancies.
 
@@ -253,6 +257,60 @@
 //     return new Promise((resolve) => setTimeout(resolve, ms));
 // }
 
+// // Hàm chuẩn bị messages cho API call
+// function prepareMessages(userPrompt, language, nangCap) {
+//     const systemUpgrand = {
+//         vi: `Bạn là "Prompt Optimizer / Nâng Cấp Prompt" cho Prom.vn...`,
+//         en: `You are a "Prompt Optimizer" for Prom.vn...`
+//     };
+
+//     const systemPrompts = {
+//         vi: "Bạn là một trợ lý AI chuyên nghiệp, có nhiệm vụ phản hồi bằng Markdown được định dạng chính xác để hiển thị giống với định dạng trong Microsoft Word.",
+//         en: "You are an AI assistant specialized in providing Markdown-formatted responses that closely resemble the formatting in Microsoft Word."
+//     };
+
+//     const systemFomart = {
+//         vi: `YÊU CẦU VỀ ĐỊNH DẠNG:...`,
+//         en: `FORMATTING REQUIREMENTS:...`
+//     };
+
+//     const languageGuides = {
+//         vi: "Hãy trả lời toàn bộ bằng tiếng Việt.",
+//         en: "Please respond entirely in English."
+//     };
+
+//     let messages = [];
+    
+//     if (nangCap) {
+//         messages.push({
+//             role: "system",
+//             content: systemUpgrand[language] || systemUpgrand.en
+//         });
+//     } else {
+//         messages.push({
+//             role: "system",
+//             content: systemPrompts[language] || systemPrompts.en
+//         });
+//     }
+
+//     messages.push(
+//         {
+//             role: "system",
+//             content: systemFomart[language] || systemFomart.en
+//         },
+//         {
+//             role: "system",
+//             content: languageGuides[language] || languageGuides.en
+//         },
+//         {
+//             role: "user",
+//             content: userPrompt
+//         }
+//     );
+
+//     return messages;
+// }
+
 // router.post("/gpt", authMiddleware, async (req, res) => {
 //     try {
 //         const { userPrompt, model, language, id, title, nangCap } = req.body;
@@ -298,12 +356,169 @@
 //     }
 // });
 
+// // Route streaming
+// router.post("/gpt-stream", authMiddleware, async (req, res) => {
+//     const transaction = await sequelize.transaction();
+//     try {
+//         const { userPrompt, model, language, id, title, nangCap } = req.body;
+
+//         // Kiểm tra quyền truy cập và số lượt
+//         if (!userPrompt) {
+//             await transaction.rollback();
+//             return res.status(400).json({ error: "Thiếu userPrompt trong yêu cầu!" });
+//         }
+
+//         let cost = 1;
+//         if (model === "gpt-4.1" || model === "gpt-4o") {
+//             cost = 5;
+//         }
+
+//         const userId = req.user.id;
+//         const user = await User.findByPk(userId, { transaction });
+        
+//         if (!user) {
+//             await transaction.rollback();
+//             return res.status(404).json({ error: "Không tìm thấy người dùng." });
+//         }
+
+//         if (user.count_promt <= 0 || user.count_promt < cost) {
+//             await transaction.rollback();
+//             return res.status(403).json({ error: "Hết lượt sử dụng GPT." });
+//         }
+
+//         // Thiết lập headers cho SSE
+//         res.setHeader('Content-Type', 'text/event-stream');
+//         res.setHeader('Cache-Control', 'no-cache');
+//         res.setHeader('Connection', 'keep-alive');
+
+//         // Xử lý khi client đóng kết nối
+//         req.on('close', async () => {
+//             try {
+//                 await transaction.rollback();
+//             } catch (error) {
+//                 console.error('Error rolling back transaction on client disconnect:', error);
+//             }
+//         });
+
+//         // Chuẩn bị messages
+//         const messages = prepareMessages(userPrompt, language, nangCap);
+
+//         // Gọi API với streaming
+//         const response = await axios.post(
+//             "https://api.openai.com/v1/chat/completions",
+//             {
+//                 model,
+//                 messages,
+//                 stream: true
+//             },
+//             {
+//                 headers: {
+//                     "Authorization": `Bearer ${OPENAI_API_KEY}`,
+//                     "Content-Type": "application/json",
+//                 },
+//                 responseType: 'stream'
+//             }
+//         );
+
+//         let fullResponse = '';
+//         let isStreamEnded = false;
+        
+//         // Xử lý stream
+//         response.data.on('data', async (chunk) => {
+//             if (isStreamEnded) return;
+            
+//             const lines = chunk.toString().split('\n');
+//             for (const line of lines) {
+//                 if (line.startsWith('data: ')) {
+//                     const data = line.slice(6);
+//                     if (data === '[DONE]') {
+//                         isStreamEnded = true;
+//                         try {
+//                             // Kết thúc stream
+//                             res.write(`data: [DONE]\n\n`);
+                            
+//                             // Lưu history và cập nhật số lượt trong transaction
+//                             await saveHistoryAndUpdateCount(userId, title, userPrompt, fullResponse, cost, transaction);
+                            
+//                             res.end();
+//                         } catch (error) {
+//                             console.error('Error saving history:', error);
+//                             await transaction.rollback();
+//                         }
+//                         return;
+//                     }
+                    
+//                     try {
+//                         const parsed = JSON.parse(data);
+//                         const content = parsed.choices[0]?.delta?.content || '';
+//                         if (content) {
+//                             fullResponse += content;
+//                             // Gửi từng phần response về client
+//                             res.write(`data: ${JSON.stringify({ content })}\n\n`);
+//                         }
+//                     } catch (e) {
+//                         console.error('Error parsing chunk:', e);
+//                     }
+//                 }
+//             }
+//         });
+
+//         response.data.on('error', async (error) => {
+//             console.error('Stream error:', error);
+//             isStreamEnded = true;
+//             try {
+//                 res.write(`data: ${JSON.stringify({ error: 'Stream error occurred' })}\n\n`);
+//                 res.end();
+//                 await transaction.rollback();
+//             } catch (e) {
+//                 console.error('Error handling stream error:', e);
+//             }
+//         });
+
+//     } catch (error) {
+//         console.error("🚨 Lỗi server:", error.message);
+//         try {
+//             await transaction.rollback();
+//             res.write(`data: ${JSON.stringify({ error: error.message || "Lỗi server" })}\n\n`);
+//             res.end();
+//         } catch (e) {
+//             console.error('Error handling server error:', e);
+//         }
+//     }
+// });
+
+// // Hàm helper để lưu history và cập nhật số lượt
+// async function saveHistoryAndUpdateCount(userId, title, request, response, cost, transaction) {
+//     try {
+//         // Lưu history
+//         await History.create({
+//             user_id: userId,
+//             title: title,
+//             request: request,
+//             respone: response,
+//         }, { transaction });
+
+//         // Cập nhật số lượt
+//         const user = await User.findByPk(userId, { transaction });
+//         user.count_promt -= cost;
+//         await user.save({ transaction });
+
+//         await transaction.commit();
+//     } catch (error) {
+//         await transaction.rollback();
+//         throw error;
+//     }
+// }
+
 // module.exports = router;
+
 const express = require("express");
 const router = express.Router();
 const axios = require("axios");
 const User = require("../models/User"); // Không destructure
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+const OPENROUTER_API_KEY = process.env.OPENT_ROUTER_API_KEY;
+
 const { authMiddleware, adminMiddleware } = require('../middleware/authMiddleware');
 const History = require("../models/History"); // Không destructure
 const sequelize = require("../config/database"); // ✅ Thêm dòng này
@@ -471,14 +686,14 @@ async function callGPT(userPrompt, model = "gpt-4o-mini", language = "en", nangC
     while (attempts < maxAttempts) {
         try {
             const response = await axios.post(
-                "https://api.openai.com/v1/chat/completions",
+               "https://openrouter.ai/api/v1/chat/completions",
                 {
                     model,
                     messages
                 },
                 {
                     headers: {
-                        "Authorization": `Bearer ${OPENAI_API_KEY}`,
+                        "Authorization": `Bearer ${OPENROUTER_API_KEY}`,
                         "Content-Type": "application/json",
                     },
                 }
@@ -614,7 +829,6 @@ router.post("/gpt-stream", authMiddleware, async (req, res) => {
     try {
         const { userPrompt, model, language, id, title, nangCap } = req.body;
 
-        // Kiểm tra quyền truy cập và số lượt
         if (!userPrompt) {
             await transaction.rollback();
             return res.status(400).json({ error: "Thiếu userPrompt trong yêu cầu!" });
@@ -627,7 +841,7 @@ router.post("/gpt-stream", authMiddleware, async (req, res) => {
 
         const userId = req.user.id;
         const user = await User.findByPk(userId, { transaction });
-        
+
         if (!user) {
             await transaction.rollback();
             return res.status(404).json({ error: "Không tìm thấy người dùng." });
@@ -638,12 +852,10 @@ router.post("/gpt-stream", authMiddleware, async (req, res) => {
             return res.status(403).json({ error: "Hết lượt sử dụng GPT." });
         }
 
-        // Thiết lập headers cho SSE
         res.setHeader('Content-Type', 'text/event-stream');
         res.setHeader('Cache-Control', 'no-cache');
         res.setHeader('Connection', 'keep-alive');
 
-        // Xử lý khi client đóng kết nối
         req.on('close', async () => {
             try {
                 await transaction.rollback();
@@ -652,12 +864,10 @@ router.post("/gpt-stream", authMiddleware, async (req, res) => {
             }
         });
 
-        // Chuẩn bị messages
         const messages = prepareMessages(userPrompt, language, nangCap);
 
-        // Gọi API với streaming
         const response = await axios.post(
-            "https://api.openai.com/v1/chat/completions",
+            "https://openrouter.ai/api/v1/chat/completions",
             {
                 model,
                 messages,
@@ -665,7 +875,7 @@ router.post("/gpt-stream", authMiddleware, async (req, res) => {
             },
             {
                 headers: {
-                    "Authorization": `Bearer ${OPENAI_API_KEY}`,
+                    "Authorization": `Bearer ${OPENROUTER_API_KEY}`,
                     "Content-Type": "application/json",
                 },
                 responseType: 'stream'
@@ -674,11 +884,10 @@ router.post("/gpt-stream", authMiddleware, async (req, res) => {
 
         let fullResponse = '';
         let isStreamEnded = false;
-        
-        // Xử lý stream
+
         response.data.on('data', async (chunk) => {
             if (isStreamEnded) return;
-            
+
             const lines = chunk.toString().split('\n');
             for (const line of lines) {
                 if (line.startsWith('data: ')) {
@@ -686,12 +895,10 @@ router.post("/gpt-stream", authMiddleware, async (req, res) => {
                     if (data === '[DONE]') {
                         isStreamEnded = true;
                         try {
-                            // Kết thúc stream
                             res.write(`data: [DONE]\n\n`);
-                            
-                            // Lưu history và cập nhật số lượt trong transaction
+
                             await saveHistoryAndUpdateCount(userId, title, userPrompt, fullResponse, cost, transaction);
-                            
+
                             res.end();
                         } catch (error) {
                             console.error('Error saving history:', error);
@@ -699,13 +906,12 @@ router.post("/gpt-stream", authMiddleware, async (req, res) => {
                         }
                         return;
                     }
-                    
+
                     try {
                         const parsed = JSON.parse(data);
                         const content = parsed.choices[0]?.delta?.content || '';
                         if (content) {
                             fullResponse += content;
-                            // Gửi từng phần response về client
                             res.write(`data: ${JSON.stringify({ content })}\n\n`);
                         }
                     } catch (e) {
