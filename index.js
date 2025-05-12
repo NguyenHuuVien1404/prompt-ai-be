@@ -36,9 +36,13 @@ require('./cronJob.js');
 
 dotenv.config();
 const app = express();
-
+const shouldCompress = (req, res) => {
+    if (req._noCompression) return false; // bỏ nén cho những route gắn cờ này
+    return compression.filter(req, res);
+  };
+  
+  app.use(compression({ filter: shouldCompress }));
 // Nén dữ liệu trước khi gửi để giảm bandwith và tăng tốc độ
-app.use(compression());
 
 // Static resources không chịu rate limit
 app.use("/uploads", express.static("uploads"));
