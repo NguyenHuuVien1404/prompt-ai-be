@@ -59,11 +59,13 @@ const createRateLimiter = (options = {}) => {
                     });
                 }
 
-                return res.status(429).json({
-                    error: 'Rate limit exceeded',
-                    message,
-                    retryAfter: timeWindow
-                });
+                // return res.status(429).json({
+                //     error: 'Rate limit exceeded',
+                //     message,
+                //     retryAfter: timeWindow
+                // });                
+                // Bỏ qua việc trả về lỗi 429 và cho phép request tiếp tục
+                return next();
             }
 
             // Tăng counter và set TTL nếu là request đầu tiên
