@@ -7,7 +7,7 @@ const { authMiddleware } = require('../middleware/authMiddleware');
 const sequelize = require("../config/database");
 
 // ✅ Fix typo trong env variable name
-const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY; // Sửa từ OPENT_ROUTER_API_KEY
+const OPENROUTER_API_KEY = process.env.OPEN_ROUTER_API_KEY; // Sửa từ OPENT_ROUTER_API_KEY
 
 function delay(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
