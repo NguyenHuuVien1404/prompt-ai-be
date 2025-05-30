@@ -10,6 +10,7 @@ const sequelize = require('../config/database');
 const Section = require("../models/Section");
 const PromDetails = require("../models/PromDetails");
 const { authMiddleware, adminMiddleware } = require('../middleware/authMiddleware');
+const checkSubTypeAccess = require('../middleware/subTypeMiddleware');
 
 // Cấu hình Multer để lưu file vào thư mục "uploads"
 const storage = multer.diskStorage({
@@ -99,7 +100,7 @@ router.post("/upload", authMiddleware, upload.any(), async (req, res) => {
 });
 
 // Get all prompts with pagination
-router.get("/", async (req, res) => {
+router.get("/", authMiddleware, checkSubTypeAccess, async (req, res) => {
   try {
     const page = parseInt(req.query.page) || 1;
     const pageSize = parseInt(req.query.pageSize) || 10;
@@ -113,6 +114,13 @@ router.get("/", async (req, res) => {
 
     if (req.query.is_type) {
       where.is_type = req.query.is_type;
+    }
+
+    // Thêm điều kiện sub_type dựa trên quyền truy cập
+    if (Array.isArray(req.subTypeAccess)) {
+      where.sub_type = { [Op.in]: req.subTypeAccess };
+    } else {
+      where.sub_type = req.subTypeAccess;
     }
 
     if (req.query.status !== undefined) {
@@ -171,20 +179,24 @@ router.get("/", async (req, res) => {
 });
 
 // Get all prompts for user by categoryId with pagination
-router.get("/by-category", async (req, res) => {
+router.get("/by-category", authMiddleware, checkSubTypeAccess, async (req, res) => {
   try {
     const category_id = req.query.category_id;
     if (!category_id) {
       return res.status(400).json({ message: "category_id is required" });
     }
     const is_type = req.query.is_type || 1;
+    const sub_type = req.query.sub_type || 1;
     const topic_id = req.query.topic_id;
     const searchText = req.query.search_text;
     const page = parseInt(req.query.page) || 1;
     const pageSize = parseInt(req.query.pageSize) || 12;
 
     const offset = (page - 1) * pageSize;
-    let whereCondition = { category_id: category_id };
+    let whereCondition = { 
+      category_id: category_id,
+      sub_type: sub_type
+    };
     if (topic_id && topic_id != 0 && topic_id != "undefined" && topic_id != null) {
       whereCondition.topic_id = topic_id;
     }
@@ -194,6 +206,13 @@ router.get("/by-category", async (req, res) => {
         { title: { [Op.like]: `%${searchText.toLowerCase()}%` } },
         { title: { [Op.like]: `%${searchText.toUpperCase()}%` } },
       ];
+    }
+
+    // Thêm điều kiện sub_type dựa trên quyền truy cập
+    if (Array.isArray(req.subTypeAccess)) {
+      whereCondition.sub_type = { [Op.in]: req.subTypeAccess };
+    } else {
+      whereCondition.sub_type = req.subTypeAccess;
     }
 
     const { count, rows } = await Prompt.findAndCountAll({
@@ -221,15 +240,26 @@ router.get("/by-category", async (req, res) => {
   }
 });
 
-router.get("/topics/by-category", async (req, res) => {
+router.get("/topics/by-category", authMiddleware, checkSubTypeAccess, async (req, res) => {
   try {
     const { category_id } = req.query;
     if (!category_id) {
       return res.status(400).json({ message: "category_id is required" });
     }
 
+    let whereCondition = { 
+      category_id
+    };
+
+    // Thêm điều kiện sub_type dựa trên quyền truy cập
+    if (Array.isArray(req.subTypeAccess)) {
+      whereCondition.sub_type = { [Op.in]: req.subTypeAccess };
+    } else {
+      whereCondition.sub_type = req.subTypeAccess;
+    }
+
     const prompts = await Prompt.findAll({
-      where: { category_id },
+      where: whereCondition,
       attributes: ["topic_id"],
       raw: true,
     });
@@ -262,7 +292,7 @@ router.get("/topics/by-category", async (req, res) => {
 });
 
 // lấy list prompts mới nhất
-router.get("/newest", async (req, res) => {
+router.get("/newest", authMiddleware, checkSubTypeAccess, async (req, res) => {
   try {
     const category_id = req.query.category_id;
     if (!category_id) {
@@ -272,13 +302,22 @@ router.get("/newest", async (req, res) => {
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 90);
 
+    let whereCondition = {
+      category_id: category_id,
+      created_at: {
+        [Op.gte]: thirtyDaysAgo,
+      }
+    };
+
+    // Thêm điều kiện sub_type dựa trên quyền truy cập
+    if (Array.isArray(req.subTypeAccess)) {
+      whereCondition.sub_type = { [Op.in]: req.subTypeAccess };
+    } else {
+      whereCondition.sub_type = req.subTypeAccess;
+    }
+
     const newest_prompts = await Prompt.findAll({
-      where: {
-        category_id: category_id,
-        created_at: {
-          [Op.gte]: thirtyDaysAgo,
-        },
-      },
+      where: whereCondition,
       include: [
         { model: Category, attributes: ["id", "name", "image", "image_card"], include: { model: Section, attributes: ["id", "name", "description"] } },
         { model: Topic, attributes: ["id", "name"] }
@@ -298,11 +337,21 @@ router.get("/newest", async (req, res) => {
 });
 
 // Get a single prompt by ID with detailed info
-router.get("/:id", async (req, res) => {
+router.get("/:id", authMiddleware, checkSubTypeAccess, async (req, res) => {
   try {
     const { id } = req.params;
 
-    const prompt = await Prompt.findByPk(id, {
+    let whereCondition = { id };
+
+    // Thêm điều kiện sub_type dựa trên quyền truy cập
+    if (Array.isArray(req.subTypeAccess)) {
+      whereCondition.sub_type = { [Op.in]: req.subTypeAccess };
+    } else {
+      whereCondition.sub_type = req.subTypeAccess;
+    }
+
+    const prompt = await Prompt.findOne({
+      where: whereCondition,
       include: [
         { model: Category, attributes: ["id", "name"], include: { model: Section, attributes: ["id", "name", "description"] } },
         { model: Topic, attributes: ["id", "name"] }
@@ -310,12 +359,13 @@ router.get("/:id", async (req, res) => {
     });
 
     if (!prompt) {
-      return res.status(404).json({ message: "Prompt not found" });
+      return res.status(404).json({ message: "Prompt not found or you don't have access to it" });
     }
 
     const relatedPrompts = await Prompt.findAll({
       where: {
         category_id: prompt.category_id,
+        sub_type: prompt.sub_type,
         id: { [Op.ne]: id }
       },
       attributes: ["id", "title", "short_description"],

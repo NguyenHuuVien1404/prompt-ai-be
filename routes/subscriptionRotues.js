@@ -98,7 +98,7 @@ router.get("/:id", async (req, res) => {
 });
 
 // 📌 Tạo Subscription mới
-router.post("/", async (req, res) => {
+router.post("/", authMiddleware, adminMiddleware, async (req, res) => {
     try {
         const { name_sub, type, duration, price, description } = req.body;
         const newSubscription = await Subscription.create({ name_sub, type, duration, price, description });

@@ -10,6 +10,7 @@ const Prompt = sequelize.define("Prompt", {
     short_description: { type: DataTypes.STRING(500), allowNull: false },
     category_id: { type: DataTypes.INTEGER, references: { model: Category, key: "id" } },
     is_type: { type: DataTypes.INTEGER, defaultValue: 1 },
+    sub_type: { type: DataTypes.INTEGER, defaultValue: 1 },
     what: { type: DataTypes.TEXT, allowNull: true },
     tips: { type: DataTypes.TEXT, allowNull: true },
     text: { type: DataTypes.TEXT, allowNull: true },
