@@ -107,7 +107,7 @@ router.get("/", authMiddleware, checkSubTypeAccess, async (req, res) => {
     const offset = (page - 1) * pageSize;
 
     const where = {};
-
+    console.log(req.query);
     if (req.query.category_id) {
       where.category_id = req.query.category_id;
     }
@@ -116,15 +116,12 @@ router.get("/", authMiddleware, checkSubTypeAccess, async (req, res) => {
       where.is_type = req.query.is_type;
     }
 
-    // Thêm điều kiện sub_type dựa trên quyền truy cập
-    if (Array.isArray(req.subTypeAccess)) {
-      where.sub_type = { [Op.in]: req.subTypeAccess };
-    } else {
-      where.sub_type = req.subTypeAccess;
-    }
-
     if (req.query.status !== undefined) {
       where.status = req.query.status;
+    }
+    
+    if (!!req.query.sub_type && Number(req.query.sub_type) !== 0) {
+      where.sub_type = req.query.sub_type;
     }
 
     if (req.query.topic_id !== undefined) {
@@ -144,7 +141,7 @@ router.get("/", authMiddleware, checkSubTypeAccess, async (req, res) => {
         { OptimationGuide: { [Op.like]: searchTerm } },
       ];
     }
-
+    console.log({where});
     const { count, rows } = await Prompt.findAndCountAll({
       where,
       include: [
@@ -186,7 +183,6 @@ router.get("/by-category", authMiddleware, checkSubTypeAccess, async (req, res) 
       return res.status(400).json({ message: "category_id is required" });
     }
     const is_type = req.query.is_type || 1;
-    const sub_type = req.query.sub_type || 1;
     const topic_id = req.query.topic_id;
     const searchText = req.query.search_text;
     const page = parseInt(req.query.page) || 1;
@@ -194,9 +190,14 @@ router.get("/by-category", authMiddleware, checkSubTypeAccess, async (req, res) 
 
     const offset = (page - 1) * pageSize;
     let whereCondition = { 
-      category_id: category_id,
-      sub_type: sub_type
+      category_id: category_id
     };
+
+    if (!!req.query.sub_type && Number(req.query.sub_type) !== 0) {
+      whereCondition.sub_type = req.query.sub_type;
+    }
+
+    console.log({whereCondition});
     if (topic_id && topic_id != 0 && topic_id != "undefined" && topic_id != null) {
       whereCondition.topic_id = topic_id;
     }
@@ -206,13 +207,6 @@ router.get("/by-category", authMiddleware, checkSubTypeAccess, async (req, res) 
         { title: { [Op.like]: `%${searchText.toLowerCase()}%` } },
         { title: { [Op.like]: `%${searchText.toUpperCase()}%` } },
       ];
-    }
-
-    // Thêm điều kiện sub_type dựa trên quyền truy cập
-    if (Array.isArray(req.subTypeAccess)) {
-      whereCondition.sub_type = { [Op.in]: req.subTypeAccess };
-    } else {
-      whereCondition.sub_type = req.subTypeAccess;
     }
 
     const { count, rows } = await Prompt.findAndCountAll({
@@ -251,11 +245,8 @@ router.get("/topics/by-category", authMiddleware, checkSubTypeAccess, async (req
       category_id
     };
 
-    // Thêm điều kiện sub_type dựa trên quyền truy cập
-    if (Array.isArray(req.subTypeAccess)) {
-      whereCondition.sub_type = { [Op.in]: req.subTypeAccess };
-    } else {
-      whereCondition.sub_type = req.subTypeAccess;
+    if (!!req.query.sub_type && Number(req.query.sub_type) !== 0) {
+      whereCondition.sub_type = req.query.sub_type;
     }
 
     const prompts = await Prompt.findAll({
@@ -309,11 +300,8 @@ router.get("/newest", authMiddleware, checkSubTypeAccess, async (req, res) => {
       }
     };
 
-    // Thêm điều kiện sub_type dựa trên quyền truy cập
-    if (Array.isArray(req.subTypeAccess)) {
-      whereCondition.sub_type = { [Op.in]: req.subTypeAccess };
-    } else {
-      whereCondition.sub_type = req.subTypeAccess;
+    if (!!req.query.sub_type && Number(req.query.sub_type) !== 0) {
+      whereCondition.sub_type = req.query.sub_type;
     }
 
     const newest_prompts = await Prompt.findAll({
@@ -343,12 +331,6 @@ router.get("/:id", authMiddleware, checkSubTypeAccess, async (req, res) => {
 
     let whereCondition = { id };
 
-    // Thêm điều kiện sub_type dựa trên quyền truy cập
-    if (Array.isArray(req.subTypeAccess)) {
-      whereCondition.sub_type = { [Op.in]: req.subTypeAccess };
-    } else {
-      whereCondition.sub_type = req.subTypeAccess;
-    }
 
     const prompt = await Prompt.findOne({
       where: whereCondition,
