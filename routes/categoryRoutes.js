@@ -233,27 +233,50 @@ router.put("/:id", upload.fields([{ name: "image" }, { name: "image_card" }]), a
 // Delete category
 router.delete("/:id", async (req, res) => {
     try {
+        console.log("Start DELETE /:id");
         const categoryId = req.params.id;
         const category = await Category.findByPk(categoryId);
+        console.log("Category found:", category);
 
         if (!category) {
-            return res.status(404).json({ message: "Category not found" });
+            console.log("Category not found");
+            return res.status(404).json({ 
+                success: false,
+                message: "Category not found" 
+            });
         }
 
         const sectionId = category.section_id;
+        const categoryName = category.name;
 
         await category.destroy();
+        console.log("Category destroyed");
 
-        // Invalidate relevant caches
-        await Promise.all([
-            cache.invalidateCache(`category_detail_${categoryId}`),
-            cache.invalidateCache(`categories_list_*`),
-            cache.invalidateCache(`categories_by_section_${sectionId}*`),
-        ]);
+        // Invalidate relevant caches (tạm thời comment lại để kiểm tra lỗi treo)
+        // await Promise.all([
+        //     cache.invalidateCache(`category_detail_${categoryId}`),
+        //     cache.invalidateCache(`categories_list_*`),
+        //     cache.invalidateCache(`categories_by_section_${sectionId}*`),
+        // ]);
+        // console.log("Cache invalidated");
 
-        res.status(200).json({ message: "Category deleted successfully" });
+        res.status(200).json({ 
+            success: true,
+            message: "Category deleted successfully",
+            data: {
+                id: categoryId,
+                name: categoryName,
+                section_id: sectionId
+            }
+        });
+        console.log("Response sent");
     } catch (error) {
-        res.status(500).json({ message: "Error deleting category", error: error.message });
+        console.error("Error deleting category:", error);
+        res.status(500).json({ 
+            success: false,
+            message: "Error deleting category", 
+            error: error.message 
+        });
     }
 });
 
