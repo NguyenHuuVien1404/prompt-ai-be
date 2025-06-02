@@ -176,7 +176,7 @@ router.get("/", authMiddleware, checkSubTypeAccess, async (req, res) => {
 });
 
 // Get all prompts for user by categoryId with pagination
-router.get("/by-category", authMiddleware, checkSubTypeAccess, async (req, res) => {
+router.get("/by-category", checkSubTypeAccess, async (req, res) => {
   try {
     const category_id = req.query.category_id;
     if (!category_id) {
@@ -234,7 +234,7 @@ router.get("/by-category", authMiddleware, checkSubTypeAccess, async (req, res) 
   }
 });
 
-router.get("/topics/by-category", authMiddleware, checkSubTypeAccess, async (req, res) => {
+router.get("/topics/by-category", checkSubTypeAccess, async (req, res) => {
   try {
     const { category_id } = req.query;
     if (!category_id) {
@@ -283,7 +283,7 @@ router.get("/topics/by-category", authMiddleware, checkSubTypeAccess, async (req
 });
 
 // lấy list prompts mới nhất
-router.get("/newest", authMiddleware, checkSubTypeAccess, async (req, res) => {
+router.get("/newest", checkSubTypeAccess, async (req, res) => {
   try {
     const category_id = req.query.category_id;
     if (!category_id) {
