@@ -143,11 +143,14 @@ app.post('/api/upload-excel', upload.single('file'), async (req, res) => {
                     where: { name: promptData?.category },
                     transaction
                 });
+                // if (!category) {
+                //     category = await Category.create(
+                //         { name: promptData?.category },
+                //         { transaction }
+                //     );
+                // }
                 if (!category) {
-                    category = await Category.create(
-                        { name: promptData?.category },
-                        { transaction }
-                    );
+                    continue;
                 }
                 const categoryId = category.id;
 
