@@ -119,7 +119,10 @@ router.post('/list', authMiddleware, adminMiddleware, async (req, res) => {
                     model: UserSub,
                     attributes: ['sub_id'],
                     required: false,
-                    where: { status: 1 }
+                    where: {
+                        status: 1,
+                        ...(req.body.sub_id ? { sub_id: req.body.sub_id } : {})
+                    }
                 }
             ],
             where: whereConditions,
