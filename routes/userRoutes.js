@@ -114,14 +114,37 @@ router.post('/list', authMiddleware, adminMiddleware, async (req, res) => {
 
         const { count, rows } = await User.findAndCountAll({
             attributes: { exclude: ['password_hash'] },
+            include: [
+                {
+                    model: UserSub,
+                    attributes: ['sub_id'],
+                    required: false,
+                    where: { status: 1 }
+                }
+            ],
             where: whereConditions,
             offset,
             limit,
-            order: [['created_at', 'DESC']], // Sắp xếp theo ngày tạo giảm dần
+            order: [['created_at', 'DESC']],
+        });
+
+        // Log để debug - chỉ hiển thị sub_id
+        rows.forEach(row => {
+            console.log('User ID:', row.id, 'Sub ID:', row.UserSubs?.[0]?.sub_id || 'No sub_id');
+        });
+
+        // Transform the data to flatten the structure
+        const transformedRows = rows.map(row => {
+            const plainRow = row.get({ plain: true });
+            return {
+                ...plainRow,
+                sub_id: plainRow.UserSubs?.[0]?.sub_id || null,
+                UserSubs: undefined // Remove the UserSubs array
+            };
         });
 
         res.json({
-            data: rows,
+            data: transformedRows,
             total: count,
             currentPage: page,
             pageSize,
