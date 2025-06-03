@@ -112,28 +112,23 @@ router.post('/list', authMiddleware, adminMiddleware, async (req, res) => {
 
         // Log để debug
 
+        const userSubInclude = {
+            model: UserSub,
+            attributes: ['sub_id'],
+            required: !!req.body.sub_id, // Nếu có truyền sub_id thì required: true, ngược lại false
+            where: {
+                status: 1,
+                ...(req.body.sub_id ? { sub_id: req.body.sub_id } : {})
+            }
+        };
+
         const { count, rows } = await User.findAndCountAll({
             attributes: { exclude: ['password_hash'] },
-            include: [
-                {
-                    model: UserSub,
-                    attributes: ['sub_id'],
-                    required: false,
-                    where: {
-                        status: 1,
-                        ...(req.body.sub_id ? { sub_id: req.body.sub_id } : {})
-                    }
-                }
-            ],
+            include: [userSubInclude],
             where: whereConditions,
             offset,
             limit,
             order: [['created_at', 'DESC']],
-        });
-
-        // Log để debug - chỉ hiển thị sub_id
-        rows.forEach(row => {
-            console.log('User ID:', row.id, 'Sub ID:', row.UserSubs?.[0]?.sub_id || 'No sub_id');
         });
 
         // Transform the data to flatten the structure
