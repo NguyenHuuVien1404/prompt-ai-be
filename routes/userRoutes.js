@@ -201,8 +201,41 @@ router.put('/:id', async (req, res) => {
         const user = await User.findByPk(req.params.id);
         if (!user) return res.status(404).json({ message: "User not found" });
 
+        // Update user information
         await user.update(req.body);
-        res.json(user);
+
+        // Update subscription if sub_id is provided
+        if (req.body.sub_id) {
+            const userSub = await UserSub.findOne({
+                where: { user_id: req.params.id, status: 1 }
+            });
+
+            if (userSub) {
+                await userSub.update({
+                    sub_id: req.body.sub_id
+                });
+            } else {
+                // Create new subscription if none exists
+                await UserSub.create({
+                    user_id: req.params.id,
+                    sub_id: req.body.sub_id,
+                    status: 1,
+                    start_date: new Date(),
+                    end_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) // 30 days from now
+                });
+            }
+        }
+
+        // Get updated user with subscription
+        const updatedUser = await User.findByPk(req.params.id, {
+            include: [{
+                model: UserSub,
+                where: { status: 1 },
+                include: [Subscription]
+            }]
+        });
+
+        res.json(updatedUser);
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
