@@ -12,7 +12,8 @@ const cache = require('../utils/cache');
 // Cấu hình Multer để lưu file vào thư mục "uploads"
 const storage = multer.diskStorage({
     destination: (req, file, cb) => {
-        cb(null, "uploads/"); // Lưu file vào thư mục "uploads"
+        // cb(null, "uploads/"); // Lưu file vào thư mục "uploads"
+        cb(null, "/var/www/promvn/uploads/");
     },
     filename: (req, file, cb) => {
         cb(null, Date.now() + path.extname(file.originalname)); // Tạo tên file duy nhất
