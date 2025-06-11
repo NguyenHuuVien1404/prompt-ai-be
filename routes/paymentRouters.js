@@ -12,6 +12,7 @@ const UserSub = require('../models/UserSub');
 const Payment = require('../models/Payment');
 const Subscription = require('../models/Subscription'); // Thêm model Subscription để lấy thông tin duration, token
 const User = require('../models/User');
+const Coupon = require('../models/Coupon'); // Implied import for Coupon model
 
 router.get('/', function (req, res, next) {
     res.render('orderlist', { title: 'Danh sách đơn hàng' });
@@ -55,6 +56,8 @@ router.post('/create_payment_url', async function (req, res, next) {
         let bankCode = req.body.bankCode;
         let orderInfo = req.body.orderInfo; // Dạng userId-subscriptionId (ví dụ: "42-1")
         const duration = req.body.duration; // Thời gian sử dụng (nếu cần thiết)
+        const couponId = req.body.couponId; // Thêm couponId từ request
+
         // Kiểm tra orderInfo hợp lệ
         if (!orderInfo || !orderInfo.includes('-')) {
             return res.status(400).json({ error: 'Invalid orderInfo format' });
@@ -69,13 +72,14 @@ router.post('/create_payment_url', async function (req, res, next) {
         const payment = await Payment.create({
             user_id: userId,
             subscription_id: subscriptionId,
-            amount: amount, // Lưu dưới dạng giá trị thực (ví dụ: 190.00)
+            amount: amount,
             payment_method: bankCode || 'VNPAY',
-            transaction_id: null, // Chưa có transaction_id
+            transaction_id: null,
             payment_status: 'PENDING',
             payment_date: new Date(),
-            duration: duration , // Thời gian sử dụng (nếu cần thiết)
+            duration: duration,
             orderId: orderId,
+            coupon_id: couponId,
             notes: `VNPay Transaction: ${orderId}`,
         });
 
@@ -264,12 +268,12 @@ router.get('/vnpay_ipn', async function (req, res, next) {
 
         // 8. Cập nhật thông tin giao dịch trong bảng Payment
         const paymentDate = new Date(
-            vnp_Params['vnp_PayDate'].slice(0, 4), // Năm
-            vnp_Params['vnp_PayDate'].slice(4, 6) - 1, // Tháng (trừ 1)
-            vnp_Params['vnp_PayDate'].slice(6, 8), // Ngày
-            vnp_Params['vnp_PayDate'].slice(8, 10), // Giờ
-            vnp_Params['vnp_PayDate'].slice(10, 12), // Phút
-            vnp_Params['vnp_PayDate'].slice(12, 14) // Giây
+            vnp_Params['vnp_PayDate'].slice(0, 4),
+            vnp_Params['vnp_PayDate'].slice(4, 6) - 1,
+            vnp_Params['vnp_PayDate'].slice(6, 8),
+            vnp_Params['vnp_PayDate'].slice(8, 10),
+            vnp_Params['vnp_PayDate'].slice(10, 12),
+            vnp_Params['vnp_PayDate'].slice(12, 14)
         );
 
         console.log('vnp_Params:', vnp_Params);
@@ -278,7 +282,6 @@ router.get('/vnpay_ipn', async function (req, res, next) {
                 transaction_id: vnp_Params['vnp_TransactionNo'],
                 payment_status: rspCode === '00' ? 'SUCCESS' : 'FAILED',
                 payment_date: paymentDate,
-
                 notes: `VNPay Transaction: ${orderId}`,
             });
             await order.save();
@@ -286,7 +289,7 @@ router.get('/vnpay_ipn', async function (req, res, next) {
             console.error('Error updating payment:', error);
         }
 
-        // 9. Cập nhật UserSub nếu giao dịch thành công
+        // 9. Cập nhật UserSub và Coupon nếu giao dịch thành công
         if (rspCode === '00') {
             let userSub = await UserSub.findOne({
                 where: {
@@ -340,6 +343,14 @@ router.get('/vnpay_ipn', async function (req, res, next) {
                     end_date: endDate,
                     token: subscription.duration || 0,
                 });
+            }
+
+            // Tăng usage_count của coupon nếu có
+            if (order.coupon_id) {
+                const coupon = await Coupon.findByPk(order.coupon_id);
+                if (coupon) {
+                    await coupon.increment('usage_count');
+                }
             }
 
             return res.status(200).json({

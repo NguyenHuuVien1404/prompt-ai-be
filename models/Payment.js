@@ -9,6 +9,7 @@ const Payment = sequelize.define("Payment", {
     user_id: { type: DataTypes.INTEGER, allowNull: false, references: { model: User, key: "id" } },
     subscription_id: { type: DataTypes.INTEGER, allowNull: false, references: { model: Subscription, key: "id" } },
     amount: { type: DataTypes.DECIMAL(10, 2), allowNull: false },
+    coupon_id: { type: DataTypes.INTEGER, allowNull: true },
     payment_method: {
         type: DataTypes.STRING,
         allowNull: true,

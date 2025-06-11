@@ -32,6 +32,7 @@ const Category = require('./models/Category.js');
 const Referral = require('./models/Referral.js');
 const chatGPTRoutes = require("./routes/chatGPTRoutes.js");
 const historyRoutes = require("./routes/historyRoutes.js");
+const couponRoutes = require('./routes/couponRoutes');
 require('./cronJob.js');
 
 dotenv.config();
@@ -230,6 +231,7 @@ app.use("/api/payment", paymentRouters);
 app.use("/api/referral", referralRoutes);
 app.use("/api/chat", chatGPTRoutes);
 app.use("/api/history", historyRoutes);
+app.use("/api/coupons", couponRoutes);
 const PORT = process.env.PORT || 5000;
 
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
