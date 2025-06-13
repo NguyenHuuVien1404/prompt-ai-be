@@ -169,8 +169,7 @@ const sendEmailsInBatches = async (emailList, reply, batchSize = 10, delayMs = 3
             let retries = 3; // Thử lại tối đa 3 lần
             while (retries > 0) {
                 try {
-                    await sendSurveyEmail(email, reply);
-                    return; // Thành công thì thoát vòng lặp
+                    return  sendSurveyEmail(email, reply);// Thành công thì thoát vòng lặp
                 } catch (error) {
                     console.error(`❌ Failed to send to ${email} - Error: ${error.message}`);
                     retries--;
@@ -203,7 +202,6 @@ router.post("/survey", async (req, res) => {
 
         sendEmailsInBatches(emailList, reply, 10, 3000)
             .then(failedEmails => {
-
             })
             .catch(err => console.error("Error in email sending:", err));
 

@@ -41,7 +41,7 @@ router.get('/', authMiddleware, adminMiddleware, async (req, res) => {
             return res.json({
                 success: true,
                 data: {
-                    coupons,
+                    list: coupons,
                     pagination: {
                         total: count,
                         page: parseInt(page),
@@ -114,7 +114,7 @@ router.get('/', authMiddleware, adminMiddleware, async (req, res) => {
         res.json({
             success: true,
             data: {
-                coupons: formattedStats,
+                list: formattedStats,
                 pagination: {
                     total,
                     page: parseInt(page),
