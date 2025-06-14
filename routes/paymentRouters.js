@@ -581,13 +581,23 @@ router.get('/filter', async (req, res) => {
         const couponMap = {};
         coupons.forEach(c => { couponMap[String(c.id)] = c; });
 
-        // Gắn data coupon vào từng payment và chỉ trả về các trường cần thiết (ép coupon_id về string khi truy cập)
+        // Lấy tất cả subscription_id duy nhất từ kết quả
+        const subscriptionIds = [...new Set(rows.map(p => p.subscription_id).filter(Boolean))];
+        const subscriptions = await Subscription.findAll({
+            where: { id: subscriptionIds }
+        });
+        const subscriptionMap = {};
+        subscriptions.forEach(s => { subscriptionMap[String(s.id)] = s; });
+
+        // Gắn data coupon và price vào từng payment và chỉ trả về các trường cần thiết
         const result = rows.map(payment => {
             const p = payment.toJSON();
             const coupon = p.coupon_id ? (couponMap[String(p.coupon_id)] ? couponMap[String(p.coupon_id)].toJSON() : null) : null;
+            const subscription = p.subscription_id ? subscriptionMap[String(p.subscription_id)] : null;
             return {
                 id: p.id,
                 subscription_id: p.subscription_id,
+                price: subscription ? subscription.price : null,
                 amount: p.amount,
                 payment_method: p.payment_method,
                 transaction_id: p.transaction_id,
