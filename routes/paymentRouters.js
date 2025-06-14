@@ -13,6 +13,7 @@ const Payment = require('../models/Payment');
 const Subscription = require('../models/Subscription'); // Thêm model Subscription để lấy thông tin duration, token
 const User = require('../models/User');
 const Coupon = require('../models/Coupon'); // Implied import for Coupon model
+const { Op } = require('sequelize');
 
 router.get('/', function (req, res, next) {
     res.render('orderlist', { title: 'Danh sách đơn hàng' });
@@ -502,6 +503,105 @@ router.post('/refund', async function (req, res, next) {
 
             error);
         res.status(500).json({ error: 'Failed to process refund' });
+    }
+});
+
+// GET /api/payment/filter
+router.get('/filter', async (req, res) => {
+    try {
+        const { status, start_date, end_date, name, email, page = 1, limit = 10 } = req.query;
+        const offset = (page - 1) * limit;
+
+        // Xây dựng điều kiện where
+        const where = {};
+        if (status) where.payment_status = status;
+        if (start_date || end_date) {
+            where.payment_date = {};
+            if (start_date) where.payment_date[Op.gte] = new Date(start_date);
+            if (end_date) where.payment_date[Op.lte] = new Date(end_date);
+        }
+
+        // Join với User để filter theo tên hoặc email
+        const include = [];
+        if (name || email) {
+            const userWhere = {};
+            if (name) userWhere.full_name = { [Op.like]: `%${name}%` };
+            if (email) userWhere.email = { [Op.like]: `%${email}%` };
+            include.push({
+                model: User,
+                attributes: ['id', 'full_name', 'email'],
+                where: userWhere
+            });
+        } else {
+            include.push({
+                model: User,
+                attributes: ['id', 'full_name', 'email']
+            });
+        }
+
+        const { count, rows } = await Payment.findAndCountAll({
+            where,
+            include,
+            limit: parseInt(limit),
+            offset: parseInt(offset),
+            order: [['payment_date', 'DESC']]
+        });
+
+        // Lấy tất cả coupon_id duy nhất từ kết quả
+        const couponIds = [...new Set(rows.map(p => p.coupon_id).filter(Boolean))];
+        // Lấy thông tin coupon cho các coupon_id này
+        const coupons = await Coupon.findAll({
+            where: { id: couponIds }
+        });
+        // Map coupon_id -> coupon data
+        const couponMap = {};
+        coupons.forEach(c => { couponMap[c.id] = c; });
+
+        // Gắn data coupon vào từng payment và chỉ trả về các trường cần thiết
+        const result = rows.map(payment => {
+            const p = payment.toJSON();
+            return {
+                id: p.id,
+                subscription_id: p.subscription_id,
+                amount: p.amount,
+                payment_method: p.payment_method,
+                transaction_id: p.transaction_id,
+                payment_status: p.payment_status,
+                payment_date: p.payment_date,
+                User: p.User ? {
+                    id: p.User.id,
+                    full_name: p.User.full_name,
+                    email: p.User.email
+                } : null,
+                Coupon: p.Coupon ? {
+                    id: p.Coupon.id,
+                    code: p.Coupon.code,
+                    discount: p.Coupon.discount,
+                    type: p.Coupon.type,
+                    expiry_date: p.Coupon.expiry_date,
+                    is_active: p.Coupon.is_active,
+                    max_usage: p.Coupon.max_usage,
+                    usage_count: p.Coupon.usage_count,
+                    created_at: p.Coupon.created_at
+                } : null
+            };
+        });
+
+        res.json({
+            success: true,
+            data: {
+                list: result,
+                pagination: {
+                    total: count,
+                    page: parseInt(page),
+                    limit: parseInt(limit),
+                    totalPages: Math.ceil(count / limit)
+                }
+            }
+        });
+    } catch (error) {
+        console.error('Lỗi khi filter payment:', error);
+        res.status(500).json({ success: false, message: 'Lỗi khi filter payment', error: error.message });
     }
 });
 

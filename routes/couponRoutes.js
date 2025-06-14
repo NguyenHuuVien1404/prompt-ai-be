@@ -79,23 +79,17 @@ router.get('/', authMiddleware, adminMiddleware, async (req, res) => {
             nest: true
         });
 
-        // 3. Group theo coupon_id + full_name
-        const couponToUsers = {};
-
+        // 3. Group theo coupon_id để đếm số lần sử dụng
+        const couponToCount = {};
         successfulPayments.forEach(p => {
             const couponId = p.coupon_id;
-            const fullName = p.User?.full_name;
-            if (!couponId || !fullName) return;
-
-            if (!couponToUsers[couponId]) couponToUsers[couponId] = {};
-            couponToUsers[couponId][fullName] = (couponToUsers[couponId][fullName] || 0) + 1;
+            if (!couponId) return;
+            couponToCount[couponId] = (couponToCount[couponId] || 0) + 1;
         });
 
         // 4. Merge vào coupons
         const formattedStats = coupons.map(c => {
-            const usageMap = couponToUsers[c.id] || {};
-            const user_usages = Object.entries(usageMap).map(([full_name, times]) => ({ full_name, times }));
-
+            const count = couponToCount[c.id] || 0;
             // Tính usage %
             const usage_percentage = (c.max_usage && c.max_usage > 0)
                 ? Number(((c.usage_count / c.max_usage) * 100).toFixed(2))
@@ -104,7 +98,7 @@ router.get('/', authMiddleware, adminMiddleware, async (req, res) => {
             return {
                 ...c,
                 usage_percentage,
-                user_usages
+                count
             };
         });
 
@@ -306,7 +300,7 @@ router.delete('/:id', authMiddleware, adminMiddleware, async (req, res) => {
 // Kiểm tra tính hợp lệ của coupon
 router.post('/validate', async (req, res) => {
     try {
-        const { code } = req.body;
+        const { code, total } = req.body;
 
         if (!code) {
             return res.status(400).json({
@@ -370,6 +364,20 @@ router.post('/validate', async (req, res) => {
             });
         }
 
+        // Tính discount_amount và final_price nếu có total
+        let discount_amount = 0;
+        let final_price = null;
+        if (total !== undefined && total !== null) {
+            if (coupon.type === 'percent') {
+                discount_amount = Math.round((total * coupon.discount) / 100);
+                final_price = total - discount_amount;
+            } else if (coupon.type === 'fixed') {
+                discount_amount = coupon.discount;
+                final_price = total - discount_amount;
+            }
+            if (final_price < 0) final_price = 0;
+        }
+
         // Nếu tất cả điều kiện đều hợp lệ
         res.json({
             success: true,
@@ -379,10 +387,8 @@ router.post('/validate', async (req, res) => {
                 code: coupon.code,
                 type: coupon.type,
                 discount: coupon.discount,
-                // usage_count: coupon.usage_count,
-                // max_usage: coupon.max_usage,
-                // expiry_date: coupon.expiry_date,
-                // created_at: coupon.created_at
+                discount_amount,
+                final_price
             }
         });
     } catch (error) {
@@ -390,6 +396,79 @@ router.post('/validate', async (req, res) => {
         res.status(500).json({
             success: false,
             message: 'Lỗi khi kiểm tra coupon',
+            error: error.message
+        });
+    }
+});
+
+// Lấy danh sách user sử dụng coupon (có phân trang)
+router.get('/:id/users', authMiddleware, adminMiddleware, async (req, res) => {
+    try {
+        const { page = 1, limit = 10 } = req.query;
+        const offset = (page - 1) * limit;
+        const couponId = req.params.id;
+
+        // Lấy tất cả payment thành công với coupon_id này
+        const payments = await Payment.findAll({
+            where: {
+                coupon_id: couponId,
+                payment_status: 'SUCCESS'
+            },
+            include: [{
+                model: User,
+                attributes: ['id', 'full_name']
+            }],
+            raw: true,
+            nest: true
+        });
+
+        // Nhóm theo user_id
+        const userMap = {};
+        payments.forEach(p => {
+            const userId = p.User?.id;
+            const fullName = p.User?.full_name;
+            if (!userId) return;
+            if (!userMap[userId]) {
+                userMap[userId] = {
+                    user_id: userId,
+                    full_name: fullName,
+                    total_payments: 0,
+                    total_amount: 0,
+                    last_payment_date: null,
+                    last_status: null
+                };
+            }
+            userMap[userId].total_payments += 1;
+            userMap[userId].total_amount += Number(p.amount || 0);
+            // Cập nhật ngày và trạng thái nếu mới hơn
+            if (!userMap[userId].last_payment_date || new Date(p.payment_date) > new Date(userMap[userId].last_payment_date)) {
+                userMap[userId].last_payment_date = p.payment_date;
+                userMap[userId].last_status = p.payment_status;
+            }
+        });
+
+        // Chuyển thành mảng và phân trang
+        const users = Object.values(userMap);
+        const total = users.length;
+        const pagedUsers = users.slice(offset, offset + parseInt(limit));
+
+        res.json({
+            success: true,
+            data: {
+                list: pagedUsers,
+                pagination: {
+                    total,
+                    page: parseInt(page),
+                    limit: parseInt(limit),
+                    totalPages: Math.ceil(total / limit)
+                }
+            }
+        });
+    } catch (error) {
+        console.error('Lỗi khi lấy danh sách user sử dụng coupon:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Lỗi khi lấy danh sách user sử dụng coupon',
             error: error.message
         });
     }
