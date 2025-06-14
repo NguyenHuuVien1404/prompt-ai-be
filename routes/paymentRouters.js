@@ -509,7 +509,7 @@ router.post('/refund', async function (req, res, next) {
 // GET /api/payment/filter
 router.get('/filter', async (req, res) => {
     try {
-        const { status, start_date, end_date, name, email, page = 1, limit = 10 } = req.query;
+        const { status, start_date, end_date, name, email, page = 1, limit = 10, code } = req.query;
         const offset = (page - 1) * limit;
 
         // Xây dựng điều kiện where
@@ -521,7 +521,30 @@ router.get('/filter', async (req, res) => {
             if (end_date) where.payment_date[Op.lte] = new Date(end_date);
         }
 
-        // Join với User để filter theo tên hoặc email
+        // Nếu có truyền code, tìm coupon_id
+        if (code) {
+            const coupon = await Coupon.findOne({ where: { code } });
+            console.log("coupon",coupon);
+            if (coupon) {
+                where.coupon_id = coupon.id;
+            } else {
+                // Không tìm thấy coupon, trả về rỗng luôn
+                return res.json({
+                    success: true,
+                    data: {
+                        list: [],
+                        pagination: {
+                            total: 0,
+                            page: parseInt(page),
+                            limit: parseInt(limit),
+                            totalPages: 0
+                        }
+                    }
+                });
+            }
+        }
+        
+        // Join với User để filter theo tn hoặc email
         const include = [];
         if (name || email) {
             const userWhere = {};
@@ -546,20 +569,22 @@ router.get('/filter', async (req, res) => {
             offset: parseInt(offset),
             order: [['payment_date', 'DESC']]
         });
-
         // Lấy tất cả coupon_id duy nhất từ kết quả
         const couponIds = [...new Set(rows.map(p => p.coupon_id).filter(Boolean))];
+        console.log("couponIds123123",couponIds);
         // Lấy thông tin coupon cho các coupon_id này
         const coupons = await Coupon.findAll({
             where: { id: couponIds }
         });
-        // Map coupon_id -> coupon data
+        console.log("coupons123123",coupons);
+        // Map coupon_id -> coupon data (ép key về string)
         const couponMap = {};
-        coupons.forEach(c => { couponMap[c.id] = c; });
+        coupons.forEach(c => { couponMap[String(c.id)] = c; });
 
-        // Gắn data coupon vào từng payment và chỉ trả về các trường cần thiết
+        // Gắn data coupon vào từng payment và chỉ trả về các trường cần thiết (ép coupon_id về string khi truy cập)
         const result = rows.map(payment => {
             const p = payment.toJSON();
+            const coupon = p.coupon_id ? (couponMap[String(p.coupon_id)] ? couponMap[String(p.coupon_id)].toJSON() : null) : null;
             return {
                 id: p.id,
                 subscription_id: p.subscription_id,
@@ -573,16 +598,14 @@ router.get('/filter', async (req, res) => {
                     full_name: p.User.full_name,
                     email: p.User.email
                 } : null,
-                Coupon: p.Coupon ? {
-                    id: p.Coupon.id,
-                    code: p.Coupon.code,
-                    discount: p.Coupon.discount,
-                    type: p.Coupon.type,
-                    expiry_date: p.Coupon.expiry_date,
-                    is_active: p.Coupon.is_active,
-                    max_usage: p.Coupon.max_usage,
-                    usage_count: p.Coupon.usage_count,
-                    created_at: p.Coupon.created_at
+                Coupon: coupon ? {
+                    id: coupon.id,
+                    code: coupon.code,
+                    discount: coupon.discount,
+                    type: coupon.type,
+                    expiry_date: coupon.expiry_date,
+                    is_active: coupon.is_active,
+                    created_at: coupon.created_at
                 } : null
             };
         });
