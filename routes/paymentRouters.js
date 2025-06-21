@@ -305,7 +305,6 @@ router.get("/vnpay_ipn", async function (req, res, next) {
       const end = new Date(now);
       end.setMonth(now.getMonth() + 1);
 
-      // Cộng token tuỳ theo gói và thời hạn
       let tokenToAdd = 0;
       if (order.duration === 1) {
         tokenToAdd = +sub.description || 0;
@@ -313,11 +312,9 @@ router.get("/vnpay_ipn", async function (req, res, next) {
         tokenToAdd = +sub.description_per_year || 0;
       }
 
-      // Áp dụng quy tắc cập nhật loại user:
-      const currentType = user.type; // type hiện tại của user
-      const newType = sub.type; // type của subscription
+      const currentType = user.type;
+      const newType = sub.type;
 
-      // ✅ Xử lý logic đổi/giữ loại user theo bảng trên
       if (currentType === 1 && newType === 2) {
         // Từ free ➜ premium
         user.type = 2;
