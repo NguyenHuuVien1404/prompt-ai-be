@@ -294,83 +294,83 @@ router.get("/vnpay_ipn", async function (req, res, next) {
       console.error("Error updating payment:", error);
     }
 
-    // 9. Cập nhật UserSub và Coupon nếu giao dịch thành công
+    // 9. Cập nhật User / UserSub / Coupon khi thanh toán thành công
     if (rspCode === "00") {
-      let userSub = await UserSub.findOne({
-        where: {
-          user_id: userId,
-          sub_id: subscriptionId,
-        },
-      });
-      let user = await User.findOne({
-        where: {
-          id: userId,
-        },
-      });
-      const currentDate = new Date();
-      let endDate;
-      let id = subscriptionId;
-      const subscription = await Subscription.findByPk(id);
+      const user = await User.findByPk(userId);
+      const sub = await Subscription.findByPk(subscriptionId);
+      if (!sub || !user)
+        throw new Error("User hoặc Subscription không tồn tại");
 
-      if (!subscription) {
-        throw new Error("Subscription not found");
+      const now = new Date();
+      const end = new Date(now);
+      end.setMonth(now.getMonth() + 1);
+
+      // Cộng token tuỳ theo gói và thời hạn
+      let tokenToAdd = 0;
+      if (order.duration === 1) {
+        tokenToAdd = +sub.description || 0;
+      } else if (order.duration === 12) {
+        tokenToAdd = +sub.description_per_year || 0;
       }
 
-      // Tạo một đối tượng Date mới cho endDate
-      endDate = new Date(currentDate);
+      // Áp dụng quy tắc cập nhật loại user:
+      const currentType = user.type; // type hiện tại của user
+      const newType = sub.type; // type của subscription
 
-      // Thay đổi tháng của endDate sang tháng tiếp theo
-      endDate.setMonth(currentDate.getMonth() + 1);
-
-      // Đặt ngày của endDate là ngày của currentDate
-      endDate.setDate(currentDate.getDate());
-      if (user) {
-        if (order.duration === 1) {
-          user.count_promt += +subscription.description;
-        } else if (order.duration === 12) {
-          user.count_promt += +subscription.description_per_year;
-        }
-        await user.save();
+      // ✅ Xử lý logic đổi/giữ loại user theo bảng trên
+      if (currentType === 1 && newType === 2) {
+        // Từ free ➜ premium
+        user.type = 2;
+      } else if (currentType === 1 && newType === 3) {
+        // Từ free ➜ token pro
+        user.type = 3;
+      } else if (currentType === 2 && newType === 2) {
+        // Premium ➜ mua premium ➜ giữ nguyên
+        user.type = 2;
+      } else if (currentType === 3 && newType === 3) {
+        // Token pro ➜ mua token ➜ giữ nguyên
+        user.type = 3;
       }
 
-      if (userSub) {
-        userSub.status = 1;
-        userSub.start_date = currentDate;
-        userSub.end_date = endDate;
-        userSub.token = subscription.duration;
-        await userSub.save();
-      } else {
-        userSub = await UserSub.create({
-          user_id: userId,
-          sub_id: subscriptionId,
-          status: 1,
-          start_date: currentDate,
-          end_date: endDate,
-          token: subscription.duration || 0,
+      // ✅ Cộng token
+      user.count_promt += tokenToAdd;
+      await user.save();
+
+      // ✅ Xử lý UserSub (chỉ cho gói không phải token)
+      if (newType !== 3) {
+        let userSub = await UserSub.findOne({
+          where: { user_id: userId, sub_id: subscriptionId },
         });
+
+        if (userSub) {
+          userSub.set({
+            status: 1,
+            start_date: now,
+            end_date: end,
+            token: sub.duration || 0,
+          });
+          await userSub.save();
+        } else {
+          await UserSub.create({
+            user_id: userId,
+            sub_id: subscriptionId,
+            status: 1,
+            start_date: now,
+            end_date: end,
+            token: sub.duration || 0,
+          });
+        }
       }
 
-      // Tăng usage_count của coupon nếu có
+      // ✅ Cập nhật usage_count của coupon nếu có
       if (order.coupon_id) {
         const coupon = await Coupon.findByPk(order.coupon_id);
-        if (coupon) {
-          await coupon.increment("usage_count");
-        }
+        if (coupon) await coupon.increment("usage_count");
       }
 
       return res.status(200).json({
         RspCode: "00",
         Message: "Success",
-        TerminalId: null,
-        OrderId: orderId,
-        Localdate: moment().format("YYYYMMDDHHmmss"),
-        Signature: null,
-      });
-    } else {
-      return res.status(200).json({
-        RspCode: "00",
-        Message: "Success",
-        TerminalId: null,
         OrderId: orderId,
         Localdate: moment().format("YYYYMMDDHHmmss"),
         Signature: null,
