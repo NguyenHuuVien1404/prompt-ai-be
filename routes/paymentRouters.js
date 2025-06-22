@@ -298,6 +298,13 @@ router.get("/vnpay_ipn", async function (req, res, next) {
 
     // 9. Cập nhật UserSub nếu giao dịch thành công
     if (rspCode === "00") {
+      // Tăng usage_count của coupon nếu có
+      if (order.coupon_id) {
+        const coupon = await Coupon.findByPk(order.coupon_id);
+        if (coupon) {
+          await coupon.increment("usage_count");
+        }
+      }
       const currentDate = new Date();
       const subscription = await Subscription.findByPk(subscriptionId);
       if (!subscription) throw new Error("Subscription not found");
@@ -354,14 +361,7 @@ router.get("/vnpay_ipn", async function (req, res, next) {
           Signature: null,
         });
       }
-      // Tăng usage_count của coupon nếu có
-      if (order.coupon_id) {
-        const coupon = await Coupon.findByPk(order.coupon_id);
-        if (coupon) {
-          await coupon.increment("usage_count");
-        }
-      }
-
+      
       // Ngược lại không hợp lệ
       return res.status(200).json({
         RspCode: "99",
