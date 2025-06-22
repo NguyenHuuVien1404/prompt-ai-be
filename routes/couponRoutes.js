@@ -160,12 +160,22 @@ router.post('/', authMiddleware, adminMiddleware, async (req, res) => {
         const couponData = req.body;
         
         // Validate dữ liệu
-        if (!couponData.code || !couponData.discount || !couponData.type) {
+        if (!couponData.code || couponData.discount === undefined || couponData.discount === null || !couponData.type) {
             await t.rollback();
             return res.status(400).json({
                 success: false,
                 message: 'Thiếu thông tin bắt buộc',
                 error: 'INVALID_DATA'
+            });
+        }
+
+        // Kiểm tra discount không âm
+        if (couponData.discount < 0) {
+            await t.rollback();
+            return res.status(400).json({
+                success: false,
+                message: 'Giá trị discount không được âm',
+                error: 'INVALID_DISCOUNT'
             });
         }
 

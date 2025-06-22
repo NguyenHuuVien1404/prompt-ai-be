@@ -169,25 +169,40 @@ router.get('/:id', async (req, res) => {
     try {
         const user = await User.findByPk(req.params.id);
         if (!user) return res.status(404).json({ message: "User not found" });
+        
         const userSubs = await user.getUserSubs({
-            where: { status: 1 },
             include: [Subscription],
         });
+        
+        console.log('Found UserSubs:', userSubs.length);
+        userSubs.forEach(us => {
+            console.log('UserSub:', {
+                id: us.id,
+                status: us.status,
+                sub_id: us.sub_id,
+                subscription: us.Subscription ? us.Subscription.name_sub : 'No subscription'
+            });
+        });
+        
         const sortedUserSubs = userSubs
             .map(us => ({
+                // id: us.id,
                 status: us.status,
                 start_date: us.start_date,
                 end_date: us.end_date,
-                subscription: us.Subscription ? {
-                    name: us.Subscription.name_sub,
-                    type: us.Subscription.type,
-                } : null
+                // token: us.token,
+                subscription: {
+                    name: us.Subscription ? us.Subscription.name_sub : `Subscription ${us.sub_id}`,
+                    type: us.Subscription ? us.Subscription.type : us.sub_id
+                }
             }))
-            .sort((a, b) => b.subscription?.type - a.subscription?.type);
+            .sort((a, b) => b.sub_id - a.sub_id);
+            
         res.json({
             data: {
                 user: user,
                 userSub: sortedUserSubs.length > 0 ? sortedUserSubs[0] : null,
+                // allUserSubs: sortedUserSubs  // Thêm để debug
             }
         });
     } catch (error) {
@@ -473,15 +488,17 @@ router.post("/login-verify", async (req, res) => {
         });
         const sortedUserSubs = userSubs
             .map(us => ({
+                id: us.id,
                 status: us.status,
                 start_date: us.start_date,
                 end_date: us.end_date,
-                subscription: us.Subscription ? {
-                    name: us.Subscription.name_sub,
-                    type: us.Subscription.type,
-                } : null
+                token: us.token,
+                subscription: {
+                    name: us.Subscription ? us.Subscription.name_sub : `Subscription ${us.sub_id}`,
+                    type: us.Subscription ? us.Subscription.type : us.sub_id
+                }
             }))
-            .sort((a, b) => b.subscription?.type - a.subscription?.type);
+            .sort((a, b) => b.sub_id - a.sub_id);
 
         // Lấy thông tin thiết bị từ yêu cầu
         const userAgent = req.headers['user-agent'];

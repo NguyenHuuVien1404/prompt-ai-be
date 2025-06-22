@@ -305,11 +305,10 @@ router.get("/vnpay_ipn", async function (req, res, next) {
       });
 
       // Nếu là TOKEN (id = 4)
-      if (subscription.id === 4 && subscription.type === 3) {
+      if (subscription.id === 4 ) {
         // Chỉ cộng token, không đụng đến UserSub
         user.count_promt += subscription.duration;
         await user.save();
-
         return res.status(200).json({
           RspCode: "00",
           Message: "Token added successfully",
@@ -321,9 +320,9 @@ router.get("/vnpay_ipn", async function (req, res, next) {
 
       // Nếu là PREMIUM (id = 3)
       if (subscription.id === 3) {
-        const endDate = new Date(currentDate);
-        endDate.setMonth(currentDate.getMonth() + 1);
-        endDate.setDate(currentDate.getDate());
+        // const endDate = new Date(currentDate);
+        // endDate.setMonth(currentDate.getMonth() + 1);
+        // endDate.setDate(currentDate.getDate());
 
         user.count_promt += subscription.duration;
         await user.save();
