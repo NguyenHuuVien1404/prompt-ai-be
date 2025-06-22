@@ -320,7 +320,7 @@ router.get("/vnpay_ipn", async function (req, res, next) {
       }
 
       // Nếu là PREMIUM (id = 3)
-      if (subscription.id === 3 && subscription.type === 2) {
+      if (subscription.id === 3) {
         const endDate = new Date(currentDate);
         endDate.setMonth(currentDate.getMonth() + 1);
         endDate.setDate(currentDate.getDate());
@@ -339,16 +339,6 @@ router.get("/vnpay_ipn", async function (req, res, next) {
             await userSub.save();
           }
           // Nếu đã Premium thì không thay đổi gì cả (giữ gói, không reset thời hạn)
-        } else {
-          // Chưa có sub (FREE) → tạo Premium mới
-          await UserSub.create({
-            user_id: userId,
-            sub_id: 3,
-            status: 1,
-            start_date: currentDate,
-            end_date: endDate,
-            token: subscription.duration || 0,
-          });
         }
 
         return res.status(200).json({
