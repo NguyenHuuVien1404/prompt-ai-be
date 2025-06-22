@@ -12,6 +12,8 @@ const UserSub = require("../models/UserSub");
 const Payment = require("../models/Payment");
 const Subscription = require("../models/Subscription"); // Thêm model Subscription để lấy thông tin duration, token
 const User = require("../models/User");
+const Coupon = require('../models/Coupon'); // Implied import for Coupon model
+const { Op } = require('sequelize');
 
 router.get("/", function (req, res, next) {
   res.render("orderlist", { title: "Danh sách đơn hàng" });
@@ -550,19 +552,150 @@ router.post("/refund", async function (req, res, next) {
     res.status(500).json({ error: "Failed to process refund" });
   }
 });
+// GET /api/payment/filter
+router.get('/filter', async (req, res) => {
+  try {
+      const { status, start_date, end_date, name, email, page = 1, limit = 10, code } = req.query;
+      const offset = (page - 1) * limit;
+
+      // Xây dựng điều kiện where
+      const where = {};
+      if (status) where.payment_status = status;
+      if (start_date || end_date) {
+          where.payment_date = {};
+          if (start_date) where.payment_date[Op.gte] = new Date(start_date);
+          if (end_date) where.payment_date[Op.lte] = new Date(end_date);
+      }
+
+      // Nếu có truyền code, tìm coupon_id
+      if (code) {
+          const coupon = await Coupon.findOne({ where: { code } });
+          console.log("coupon",coupon);
+          if (coupon) {
+              where.coupon_id = coupon.id;
+          } else {
+              // Không tìm thấy coupon, trả về rỗng luôn
+              return res.json({
+                  success: true,
+                  data: {
+                      list: [],
+                      pagination: {
+                          total: 0,
+                          page: parseInt(page),
+                          limit: parseInt(limit),
+                          totalPages: 0
+                      }
+                  }
+              });
+          }
+      }
+      
+      // Join với User để filter theo tn hoặc email
+      const include = [];
+      if (name || email) {
+          const userWhere = {};
+          if (name) userWhere.full_name = { [Op.like]: `%${name}%` };
+          if (email) userWhere.email = { [Op.like]: `%${email}%` };
+          include.push({
+              model: User,
+              attributes: ['id', 'full_name', 'email'],
+              where: userWhere
+          });
+      } else {
+          include.push({
+              model: User,
+              attributes: ['id', 'full_name', 'email']
+          });
+      }
+
+      const { count, rows } = await Payment.findAndCountAll({
+          where,
+          include,
+          limit: parseInt(limit),
+          offset: parseInt(offset),
+          order: [['payment_date', 'DESC']]
+      });
+      // Lấy tất cả coupon_id duy nhất từ kết quả
+      const couponIds = [...new Set(rows.map(p => p.coupon_id).filter(Boolean))];
+      console.log("couponIds123123",couponIds);
+      // Lấy thông tin coupon cho các coupon_id này
+      const coupons = await Coupon.findAll({
+          where: { id: couponIds }
+      });
+      console.log("coupons123123",coupons);
+      // Map coupon_id -> coupon data (ép key về string)
+      const couponMap = {};
+      coupons.forEach(c => { couponMap[String(c.id)] = c; });
+
+      // Lấy tất cả subscription_id duy nhất từ kết quả
+      const subscriptionIds = [...new Set(rows.map(p => p.subscription_id).filter(Boolean))];
+      const subscriptions = await Subscription.findAll({
+          where: { id: subscriptionIds }
+      });
+      const subscriptionMap = {};
+      subscriptions.forEach(s => { subscriptionMap[String(s.id)] = s; });
+
+      // Gắn data coupon và price vào từng payment và chỉ trả về các trường cần thiết
+      const result = rows.map(payment => {
+          const p = payment.toJSON();
+          const coupon = p.coupon_id ? (couponMap[String(p.coupon_id)] ? couponMap[String(p.coupon_id)].toJSON() : null) : null;
+          const subscription = p.subscription_id ? subscriptionMap[String(p.subscription_id)] : null;
+          return {
+              id: p.id,
+              subscription_id: p.subscription_id,
+              price: subscription ? subscription.price : null,
+              amount: p.amount,
+              payment_method: p.payment_method,
+              transaction_id: p.transaction_id,
+              payment_status: p.payment_status,
+              payment_date: p.payment_date,
+              User: p.User ? {
+                  id: p.User.id,
+                  full_name: p.User.full_name,
+                  email: p.User.email
+              } : null,
+              Coupon: coupon ? {
+                  id: coupon.id,
+                  code: coupon.code,
+                  discount: coupon.discount,
+                  type: coupon.type,
+                  expiry_date: coupon.expiry_date,
+                  is_active: coupon.is_active,
+                  created_at: coupon.created_at
+              } : null
+          };
+      });
+
+      res.json({
+          success: true,
+          data: {
+              list: result,
+              pagination: {
+                  total: count,
+                  page: parseInt(page),
+                  limit: parseInt(limit),
+                  totalPages: Math.ceil(count / limit)
+              }
+          }
+      });
+  } catch (error) {
+      console.error('Lỗi khi filter payment:', error);
+      res.status(500).json({ success: false, message: 'Lỗi khi filter payment', error: error.message });
+  }
+});
 
 function sortObject(obj) {
   let sorted = {};
   let str = [];
   let key;
   for (key in obj) {
-    if (obj.hasOwnProperty(key)) {
-      str.push(encodeURIComponent(key));
-    }
+      if (obj.hasOwnProperty(key)) {
+          str.push(encodeURIComponent(key));
+      }
   }
   str.sort();
   for (key = 0; key < str.length; key++) {
-    sorted[str[key]] = encodeURIComponent(obj[str[key]]).replace(/%20/g, "+");
+      sorted[str[key]] = encodeURIComponent(obj[str[key]]).replace(/%20/g, "+");
   }
   return sorted;
 }
