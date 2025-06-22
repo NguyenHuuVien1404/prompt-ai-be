@@ -228,7 +228,11 @@ router.get("/vnpay_ipn", async function (req, res, next) {
       });
     }
 
-    // 6. Trích xuất user_id và subscription_id từ vnp_OrderInfo
+    console.log({
+      vnp_Params,
+    });
+
+    // // 6. Trích xuất user_id và subscription_id từ vnp_OrderInfo
     const orderInfo = vnp_Params["vnp_OrderInfo"];
     if (!orderInfo || orderInfo === "undefined" || !orderInfo.includes("-")) {
       return res.status(200).json({
@@ -240,7 +244,6 @@ router.get("/vnpay_ipn", async function (req, res, next) {
         Signature: null,
       });
     }
-
     const [userId, subscriptionId] = orderInfo.split("-").map(Number);
     if (!userId || !subscriptionId) {
       return res.status(200).json({
@@ -275,7 +278,6 @@ router.get("/vnpay_ipn", async function (req, res, next) {
       vnp_Params["vnp_PayDate"].slice(12, 14) // Giây
     );
 
-    console.log("vnp_Params:", vnp_Params);
     try {
       await order.update({
         transaction_id: vnp_Params["vnp_TransactionNo"],
@@ -290,59 +292,78 @@ router.get("/vnpay_ipn", async function (req, res, next) {
 
     // 9. Cập nhật UserSub nếu giao dịch thành công
     if (rspCode === "00") {
-      let userSub = await UserSub.findOne({
-        where: {
-          user_id: userId,
-          sub_id: subscriptionId,
-        },
-      });
-      let user = await User.findOne({
-        where: {
-          id: userId,
-        },
-      });
       const currentDate = new Date();
-      let endDate;
-      let id = subscriptionId;
-      const subscription = await Subscription.findByPk(id);
+      const subscription = await Subscription.findByPk(subscriptionId);
+      if (!subscription) throw new Error("Subscription not found");
 
-      if (!subscription) {
-        throw new Error("Subscription not found");
-      }
+      const user = await User.findByPk(userId);
+      if (!user) throw new Error("User not found");
 
-      // Tạo một đối tượng Date mới cho endDate
-      endDate = new Date(currentDate);
+      // Lấy UserSub hiện tại nếu có
+      let userSub = await UserSub.findOne({
+        where: { user_id: userId },
+      });
 
-      // Thay đổi tháng của endDate sang tháng tiếp theo
-      endDate.setMonth(currentDate.getMonth() + 1);
-
-      // Đặt ngày của endDate là ngày của currentDate
-      endDate.setDate(currentDate.getDate());
-      if (user) {
-        user.count_promt = user.count_promt + subscription.duration;
+      // Nếu là TOKEN (id = 4)
+      if (subscription.id === 4 && subscription.type === 3) {
+        // Chỉ cộng token, không đụng đến UserSub
+        user.count_promt += subscription.duration;
         await user.save();
-      }
-      if (userSub) {
-        userSub.status = 1;
-        userSub.start_date = currentDate;
-        userSub.end_date = endDate;
-        userSub.token = subscription.duration || 0; // Sửa từ subscription.duration thành subscription.token
-        await userSub.save();
-      } else {
-        userSub = await UserSub.create({
-          user_id: userId,
-          sub_id: subscriptionId,
-          status: 1,
-          start_date: currentDate,
-          end_date: endDate,
-          token: subscription.duration || 0,
+
+        return res.status(200).json({
+          RspCode: "00",
+          Message: "Token added successfully",
+          OrderId: orderId,
+          Localdate: moment().format("YYYYMMDDHHmmss"),
+          Signature: null,
         });
       }
 
+      // Nếu là PREMIUM (id = 3)
+      if (subscription.id === 3 && subscription.type === 2) {
+        const endDate = new Date(currentDate);
+        endDate.setMonth(currentDate.getMonth() + 1);
+        endDate.setDate(currentDate.getDate());
+
+        user.count_promt += subscription.duration;
+        await user.save();
+
+        if (userSub) {
+          // Nếu đang FREE (userSub.sub_id === 1) → cập nhật lên Premium
+          if (userSub.sub_id === 1) {
+            userSub.sub_id = 3;
+            userSub.status = 1;
+            userSub.start_date = currentDate;
+            userSub.end_date = endDate;
+            userSub.token = subscription.duration || 0;
+            await userSub.save();
+          }
+          // Nếu đã Premium thì không thay đổi gì cả (giữ gói, không reset thời hạn)
+        } else {
+          // Chưa có sub (FREE) → tạo Premium mới
+          await UserSub.create({
+            user_id: userId,
+            sub_id: 3,
+            status: 1,
+            start_date: currentDate,
+            end_date: endDate,
+            token: subscription.duration || 0,
+          });
+        }
+
+        return res.status(200).json({
+          RspCode: "00",
+          Message: "Premium activated",
+          OrderId: orderId,
+          Localdate: moment().format("YYYYMMDDHHmmss"),
+          Signature: null,
+        });
+      }
+
+      // Ngược lại không hợp lệ
       return res.status(200).json({
-        RspCode: "00",
-        Message: "Success",
-        TerminalId: null,
+        RspCode: "99",
+        Message: "Invalid subscription type",
         OrderId: orderId,
         Localdate: moment().format("YYYYMMDDHHmmss"),
         Signature: null,
