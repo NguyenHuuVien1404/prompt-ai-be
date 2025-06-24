@@ -336,15 +336,14 @@ router.get("/vnpay_ipn", async function (req, res, next) {
 
       // Nếu là PREMIUM (id = 3)
       if (subscription.id === 3) {
-        // const endDate = new Date(currentDate);
-        // endDate.setMonth(currentDate.getMonth() + 1);
-        // endDate.setDate(currentDate.getDate());
+        const endDate = new Date();
+        endDate.setFullYear(endDate.getFullYear() + 1); // ⏳ Cộng thêm 1 năm
 
         user.count_promt += subscription.duration;
         await user.save();
 
         if (userSub) {
-          // Nếu đang FREE (userSub.sub_id === 1) → cập nhật lên Premium
+          // Nếu đang FREE → nâng cấp lên Premium
           if (userSub.sub_id === 1) {
             userSub.sub_id = 3;
             userSub.status = 1;
@@ -353,9 +352,20 @@ router.get("/vnpay_ipn", async function (req, res, next) {
             userSub.token = subscription.duration || 0;
             await userSub.save();
           }
-          // Nếu đã Premium thì không thay đổi gì cả (giữ gói, không reset thời hạn)
+          // Nếu đã Premium → KHÔNG cập nhật thời hạn (giữ nguyên)
+        } else {
+          // ❗ Nếu chưa có UserSub → tạo mới
+          await UserSub.create({
+            user_id: userId,
+            sub_id: 3,
+            status: 1,
+            start_date: currentDate,
+            end_date: endDate,
+            token: subscription.duration || 0,
+          });
         }
 
+        // ✅ Gửi tracking Permate nếu có click_uuid + offer_id
         if (order.click_uuid && order.offer_id) {
           await trackPermate(order, vnp_Params["vnp_TxnRef"]);
         }
