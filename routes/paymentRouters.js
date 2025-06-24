@@ -322,6 +322,9 @@ router.get("/vnpay_ipn", async function (req, res, next) {
         // Chỉ cộng token, không đụng đến UserSub
         user.count_promt += subscription.duration;
         await user.save();
+        if (order.click_uuid && order.offer_id) {
+          await trackPermate(order, vnp_Params["vnp_TxnRef"]);
+        }
         return res.status(200).json({
           RspCode: "00",
           Message: "Token added successfully",
@@ -353,6 +356,10 @@ router.get("/vnpay_ipn", async function (req, res, next) {
           // Nếu đã Premium thì không thay đổi gì cả (giữ gói, không reset thời hạn)
         }
 
+        if (order.click_uuid && order.offer_id) {
+          await trackPermate(order, vnp_Params["vnp_TxnRef"]);
+        }
+
         return res.status(200).json({
           RspCode: "00",
           Message: "Premium activated",
@@ -361,7 +368,7 @@ router.get("/vnpay_ipn", async function (req, res, next) {
           Signature: null,
         });
       }
-      
+
       // Ngược lại không hợp lệ
       return res.status(200).json({
         RspCode: "99",
@@ -718,13 +725,11 @@ router.get("/filter", async (req, res) => {
     });
   } catch (error) {
     console.error("Lỗi khi filter payment:", error);
-    res
-      .status(500)
-      .json({
-        success: false,
-        message: "Lỗi khi filter payment",
-        error: error.message,
-      });
+    res.status(500).json({
+      success: false,
+      message: "Lỗi khi filter payment",
+      error: error.message,
+    });
   }
 });
 
@@ -742,6 +747,37 @@ function sortObject(obj) {
     sorted[str[key]] = encodeURIComponent(obj[str[key]]).replace(/%20/g, "+");
   }
   return sorted;
+}
+
+async function trackPermate(order, vnpTxnRef) {
+  if (!order.click_uuid || !order.offer_id) return;
+  try {
+    await axios.post(
+      "https://pmcloud1.com/conversions/update",
+      {
+        update_status: [
+          {
+            external_conversion_id: vnpTxnRef,
+            offer_id: order.offer_id,
+            status: 1,
+          },
+        ],
+      },
+      {
+        headers: {
+          api_key: "b7da56f57a5144f48e0f697ce797",
+          pm_adv_id: 11458,
+          "Content-Type": "application/json",
+        },
+      }
+    );
+    console.log("✅ Gửi tracking Permate thành công");
+  } catch (error) {
+    console.error(
+      "❌ Gửi tracking Permate thất bại:",
+      error?.response?.data || error.message
+    );
+  }
 }
 
 module.exports = router;
