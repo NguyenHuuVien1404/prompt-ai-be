@@ -336,54 +336,57 @@ router.get("/vnpay_ipn", async function (req, res, next) {
 
       // Nếu là PREMIUM (id = 3)
       if (subscription.id === 3) {
-        const endDate = new Date();
-        endDate.setFullYear(endDate.getFullYear() + 1); // ⏳ Cộng thêm 1 năm
+        const currentDate = new Date();
+        const subscription = await Subscription.findByPk(subscriptionId);
+        const userSub = await UserSub.findOne({ where: { user_id: userId } });
+
+        const newEndDate = new Date();
+        newEndDate.setFullYear(newEndDate.getFullYear() + 1);
 
         user.count_promt += subscription.duration;
         await user.save();
 
         if (userSub) {
-          // Nếu đang FREE → nâng cấp lên Premium
-          if (userSub.sub_id === 1) {
+          // Nếu đang FREE hoặc gói khác
+          if (
+            userSub.sub_id !== 3 ||
+            !userSub.end_date ||
+            userSub.end_date < currentDate
+          ) {
             userSub.sub_id = 3;
             userSub.status = 1;
             userSub.start_date = currentDate;
-            userSub.end_date = endDate;
+            userSub.end_date = newEndDate;
             userSub.token = subscription.duration || 0;
             await userSub.save();
+          } else {
+            // Nếu đã là Premium, thì cộng thêm thời gian
+            const extendedDate = new Date(userSub.end_date);
+            extendedDate.setFullYear(extendedDate.getFullYear() + 1);
+            userSub.end_date = extendedDate;
+            userSub.token += subscription.duration || 0;
+            await userSub.save();
           }
-          // Nếu đã Premium → KHÔNG cập nhật thời hạn (giữ nguyên)
-        }
-
-        // ✅ Nếu đã Premium → cộng thêm 1 năm
-        else if (userSub.sub_id === 3) {
-          const existingEndDate = userSub.end_date || new Date();
-          const newEndDate = new Date(existingEndDate);
-          newEndDate.setFullYear(newEndDate.getFullYear() + 1);
-
-          userSub.end_date = newEndDate;
-          userSub.token += subscription.duration || 0;
-          await userSub.save();
         } else {
-          // ❗ Nếu chưa có UserSub → tạo mới
+          // Nếu chưa có thì tạo mới
           await UserSub.create({
             user_id: userId,
             sub_id: 3,
             status: 1,
             start_date: currentDate,
-            end_date: endDate,
+            end_date: newEndDate,
             token: subscription.duration || 0,
           });
         }
 
-        // ✅ Gửi tracking Permate nếu có click_uuid + offer_id
+        // Tracking nếu có
         if (order.click_uuid && order.offer_id) {
           await trackPermate(order, vnp_Params["vnp_TxnRef"]);
         }
 
         return res.status(200).json({
           RspCode: "00",
-          Message: "Premium activated",
+          Message: "Premium activated or extended",
           OrderId: orderId,
           Localdate: moment().format("YYYYMMDDHHmmss"),
           Signature: null,
