@@ -353,6 +353,17 @@ router.get("/vnpay_ipn", async function (req, res, next) {
             await userSub.save();
           }
           // Nếu đã Premium → KHÔNG cập nhật thời hạn (giữ nguyên)
+        }
+
+        // ✅ Nếu đã Premium → cộng thêm 1 năm
+        else if (userSub.sub_id === 3) {
+          const existingEndDate = userSub.end_date || new Date();
+          const newEndDate = new Date(existingEndDate);
+          newEndDate.setFullYear(newEndDate.getFullYear() + 1);
+
+          userSub.end_date = newEndDate;
+          userSub.token += subscription.duration || 0;
+          await userSub.save();
         } else {
           // ❗ Nếu chưa có UserSub → tạo mới
           await UserSub.create({
