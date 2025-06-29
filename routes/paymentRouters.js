@@ -359,28 +359,37 @@ router.get("/vnpay_ipn", async function (req, res, next) {
         console.log(`[IPN] Đã cộng ${subscription.duration} token cho user ${userId}. Token mới: ${user.count_promt}`);
 
         if (userSub) {
-          // Nếu đang FREE hoặc gói khác
+          // Nếu đang FREE hoặc gói khác hoặc đã hết hạn
           if (
             userSub.sub_id !== 3 ||
             !userSub.end_date ||
             userSub.end_date < currentDate
           ) {
-            console.log(`[IPN] Chuyển UserSub từ FREE/khác sang PREMIUM cho user ${userId}`);
+            // CASE 1: Free hoặc Premium đã hết hạn
+            console.log(`[IPN][CASE 1] User ${userId} đang FREE hoặc Premium đã hết hạn.`);
+            console.log(`[IPN][CASE 1] Thời điểm hiện tại:`, currentDate);
+            if (userSub.end_date) {
+              console.log(`[IPN][CASE 1] end_date cũ:`, userSub.end_date);
+            }
             userSub.sub_id = 3;
             userSub.status = 1;
             userSub.start_date = currentDate;
             userSub.end_date = newEndDate;
             userSub.token = subscription.duration || 0;
             await userSub.save();
+            console.log(`[IPN][CASE 1] end_date mới:`, userSub.end_date);
             console.log(`[IPN] Đã cập nhật UserSub:`, userSub.toJSON());
           } else {
-            // Nếu đã là Premium, thì cộng thêm thời gian
-            console.log(`[IPN] UserSub đã là PREMIUM, gia hạn thêm 1 năm cho user ${userId}`);
+            // CASE 2: Premium còn hạn
+            console.log(`[IPN][CASE 2] User ${userId} đang còn hạn Premium.`);
+            console.log(`[IPN][CASE 2] Thời điểm hiện tại:`, currentDate);
+            console.log(`[IPN][CASE 2] end_date cũ:`, userSub.end_date);
             const extendedDate = new Date(userSub.end_date);
             extendedDate.setFullYear(extendedDate.getFullYear() + 1);
             userSub.end_date = extendedDate;
             userSub.token += subscription.duration || 0;
             await userSub.save();
+            console.log(`[IPN][CASE 2] end_date mới:`, userSub.end_date);
             console.log(`[IPN] Đã gia hạn UserSub:`, userSub.toJSON());
           }
         } else {
