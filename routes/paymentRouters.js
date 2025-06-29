@@ -298,33 +298,43 @@ router.get("/vnpay_ipn", async function (req, res, next) {
 
     // 9. Cập nhật UserSub nếu giao dịch thành công
     if (rspCode === "00") {
+      console.log("[IPN] Thanh toán thành công cho order:", orderId);
       // Tăng usage_count của coupon nếu có
       if (order.coupon_id) {
         const coupon = await Coupon.findByPk(order.coupon_id);
         if (coupon) {
           await coupon.increment("usage_count");
+          console.log(`[IPN] Coupon ${coupon.code} đã tăng usage_count.`);
         }
       }
       const currentDate = new Date();
       const subscription = await Subscription.findByPk(subscriptionId);
-      if (!subscription) throw new Error("Subscription not found");
+      if (!subscription) {
+        console.error(`[IPN] Subscription not found: ${subscriptionId}`);
+        throw new Error("Subscription not found");
+      }
 
       const user = await User.findByPk(userId);
-      if (!user) throw new Error("User not found");
+      if (!user) {
+        console.error(`[IPN] User not found: ${userId}`);
+        throw new Error("User not found");
+      }
 
       // Lấy UserSub hiện tại nếu có
       let userSub = await UserSub.findOne({
         where: { user_id: userId },
       });
+      console.log(`[IPN] UserSub hiện tại: ", userSub ? JSON.stringify(userSub.toJSON()) : 'null'`);
 
       // Nếu là TOKEN (id = 4)
       if (subscription.id === 4) {
-        // Chỉ cộng token, không đụng đến UserSub
+        console.log(`[IPN] Gói TOKEN: Cộng token cho user ${userId}, không cập nhật UserSub.`);
         user.count_promt += subscription.duration;
         await user.save();
         if (order.click_uuid && order.offer_id) {
           await trackPermate(order, vnp_Params["vnp_TxnRef"]);
         }
+        console.log(`[IPN] Đã cộng ${subscription.duration} token cho user ${userId}. Token mới: ${user.count_promt}`);
         return res.status(200).json({
           RspCode: "00",
           Message: "Token added successfully",
@@ -336,6 +346,7 @@ router.get("/vnpay_ipn", async function (req, res, next) {
 
       // Nếu là PREMIUM (id = 3)
       if (subscription.id === 3) {
+        console.log(`[IPN] Gói PREMIUM: Xử lý cập nhật UserSub cho user ${userId}`);
         const currentDate = new Date();
         const subscription = await Subscription.findByPk(subscriptionId);
         const userSub = await UserSub.findOne({ where: { user_id: userId } });
@@ -345,6 +356,7 @@ router.get("/vnpay_ipn", async function (req, res, next) {
 
         user.count_promt += subscription.duration;
         await user.save();
+        console.log(`[IPN] Đã cộng ${subscription.duration} token cho user ${userId}. Token mới: ${user.count_promt}`);
 
         if (userSub) {
           // Nếu đang FREE hoặc gói khác
@@ -353,23 +365,28 @@ router.get("/vnpay_ipn", async function (req, res, next) {
             !userSub.end_date ||
             userSub.end_date < currentDate
           ) {
+            console.log(`[IPN] Chuyển UserSub từ FREE/khác sang PREMIUM cho user ${userId}`);
             userSub.sub_id = 3;
             userSub.status = 1;
             userSub.start_date = currentDate;
             userSub.end_date = newEndDate;
             userSub.token = subscription.duration || 0;
             await userSub.save();
+            console.log(`[IPN] Đã cập nhật UserSub:`, userSub.toJSON());
           } else {
             // Nếu đã là Premium, thì cộng thêm thời gian
+            console.log(`[IPN] UserSub đã là PREMIUM, gia hạn thêm 1 năm cho user ${userId}`);
             const extendedDate = new Date(userSub.end_date);
             extendedDate.setFullYear(extendedDate.getFullYear() + 1);
             userSub.end_date = extendedDate;
             userSub.token += subscription.duration || 0;
             await userSub.save();
+            console.log(`[IPN] Đã gia hạn UserSub:`, userSub.toJSON());
           }
         } else {
           // Nếu chưa có thì tạo mới
-          await UserSub.create({
+          console.log(`[IPN] Tạo mới UserSub PREMIUM cho user ${userId}`);
+          const newUserSub = await UserSub.create({
             user_id: userId,
             sub_id: 3,
             status: 1,
@@ -377,6 +394,7 @@ router.get("/vnpay_ipn", async function (req, res, next) {
             end_date: newEndDate,
             token: subscription.duration || 0,
           });
+          console.log(`[IPN] Đã tạo UserSub mới:`, newUserSub.toJSON());
         }
 
         // Tracking nếu có
@@ -394,6 +412,7 @@ router.get("/vnpay_ipn", async function (req, res, next) {
       }
 
       // Ngược lại không hợp lệ
+      console.error(`[IPN] Invalid subscription type: ${subscription.id}`);
       return res.status(200).json({
         RspCode: "99",
         Message: "Invalid subscription type",
