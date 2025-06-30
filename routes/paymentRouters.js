@@ -324,17 +324,23 @@ router.get("/vnpay_ipn", async function (req, res, next) {
       let userSub = await UserSub.findOne({
         where: { user_id: userId },
       });
-      console.log(`[IPN] UserSub hiện tại: ", userSub ? JSON.stringify(userSub.toJSON()) : 'null'`);
+      console.log(
+        `[IPN] UserSub hiện tại: ", userSub ? JSON.stringify(userSub.toJSON()) : 'null'`
+      );
 
       // Nếu là TOKEN (id = 4)
       if (subscription.id === 4) {
-        console.log(`[IPN] Gói TOKEN: Cộng token cho user ${userId}, không cập nhật UserSub.`);
+        console.log(
+          `[IPN] Gói TOKEN: Cộng token cho user ${userId}, không cập nhật UserSub.`
+        );
         user.count_promt += subscription.duration;
         await user.save();
         if (order.click_uuid && order.offer_id) {
           await trackPermate(order, vnp_Params["vnp_TxnRef"]);
         }
-        console.log(`[IPN] Đã cộng ${subscription.duration} token cho user ${userId}. Token mới: ${user.count_promt}`);
+        console.log(
+          `[IPN] Đã cộng ${subscription.duration} token cho user ${userId}. Token mới: ${user.count_promt}`
+        );
         return res.status(200).json({
           RspCode: "00",
           Message: "Token added successfully",
@@ -346,7 +352,9 @@ router.get("/vnpay_ipn", async function (req, res, next) {
 
       // Nếu là PREMIUM (id = 3)
       if (subscription.id === 3) {
-        console.log(`[IPN] Gói PREMIUM: Xử lý cập nhật UserSub cho user ${userId}`);
+        console.log(
+          `[IPN] Gói PREMIUM: Xử lý cập nhật UserSub cho user ${userId}`
+        );
         const currentDate = new Date();
         const subscription = await Subscription.findByPk(subscriptionId);
         const userSub = await UserSub.findOne({ where: { user_id: userId } });
@@ -356,7 +364,9 @@ router.get("/vnpay_ipn", async function (req, res, next) {
 
         user.count_promt += subscription.duration;
         await user.save();
-        console.log(`[IPN] Đã cộng ${subscription.duration} token cho user ${userId}. Token mới: ${user.count_promt}`);
+        console.log(
+          `[IPN] Đã cộng ${subscription.duration} token cho user ${userId}. Token mới: ${user.count_promt}`
+        );
 
         if (userSub) {
           // Nếu đang FREE hoặc gói khác hoặc đã hết hạn
@@ -366,7 +376,9 @@ router.get("/vnpay_ipn", async function (req, res, next) {
             userSub.end_date < currentDate
           ) {
             // CASE 1: Free hoặc Premium đã hết hạn
-            console.log(`[IPN][CASE 1] User ${userId} đang FREE hoặc Premium đã hết hạn.`);
+            console.log(
+              `[IPN][CASE 1] User ${userId} đang FREE hoặc Premium đã hết hạn.`
+            );
             console.log(`[IPN][CASE 1] Thời điểm hiện tại:`, currentDate);
             if (userSub.end_date) {
               console.log(`[IPN][CASE 1] end_date cũ:`, userSub.end_date);
@@ -811,14 +823,15 @@ async function trackPermate(order, vnpTxnRef) {
           {
             external_conversion_id: vnpTxnRef,
             offer_id: order.offer_id,
-            status: 1,
+            event_id: 2355,
+            pm_adv_id: "11458",
+            click_uuid: order.click_uuid,
+            api_key: "b7da56f57a5144f48e0f697ce797",
           },
         ],
       },
       {
         headers: {
-          api_key: "b7da56f57a5144f48e0f697ce797",
-          pm_adv_id: 11458,
           "Content-Type": "application/json",
         },
       }
