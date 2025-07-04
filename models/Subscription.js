@@ -19,7 +19,9 @@ const Subscription = sequelize.define("Subscription", {
 
     price_per_month_year: { type: DataTypes.DECIMAL(10, 2), allowNull: true },
     price_total_yearly: { type: DataTypes.DECIMAL(10, 2), allowNull: true },
- 
+
+    imageDiscount: { type: DataTypes.STRING, allowNull: true },
+
 }, {
     tableName: "subscriptions",
     timestamps: true,

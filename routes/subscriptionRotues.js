@@ -108,8 +108,8 @@ router.get("/:id", async (req, res) => {
 // 📌 Tạo Subscription mới
 router.post("/", authMiddleware, adminMiddleware, async (req, res) => {
     try {
-        const { name_sub, type, duration, price, price_year, description } = req.body;
-        const newSubscription = await Subscription.create({ name_sub, type, duration, price, price_year, description });
+        const { name_sub, type, duration, price, price_year, description, imageDiscount } = req.body;
+        const newSubscription = await Subscription.create({ name_sub, type, duration, price, price_year, description, imageDiscount });
         res.status(201).json(newSubscription);
     } catch (error) {
         res.status(500).json(error);
@@ -119,12 +119,12 @@ router.post("/", authMiddleware, adminMiddleware, async (req, res) => {
 // 📌 Cập nhật Subscription
 router.put("/:id", async (req, res) => {
     try {
-        const { name_sub, type, duration, price, price_year, description } = req.body;
+        const { name_sub, type, duration, price, price_year, description, imageDiscount } = req.body;
         const subscription = await Subscription.findByPk(req.params.id);
         if (!subscription) {
             return res.status(404).json({ error: "Không tìm thấy Subscription!" });
         }
-        await subscription.update({ name_sub, type, duration, price, price_year, description });
+        await subscription.update({ name_sub, type, duration, price, price_year, description, imageDiscount });
         res.json(subscription);
     } catch (error) {
         res.status(500).json({ error: "Lỗi khi cập nhật Subscription!" });
