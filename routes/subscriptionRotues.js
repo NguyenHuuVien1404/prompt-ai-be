@@ -14,7 +14,7 @@ router.get("/", async (req, res) => {
 });
 router.get("/list", async (req, res) => {
     try {
-        let { page = 1, limit = 10 } = req.query;
+        let { page = 1, limit = 10, duration } = req.query;
         page = parseInt(page);
         limit = parseInt(limit);
 
@@ -23,7 +23,15 @@ router.get("/list", async (req, res) => {
         }
 
         const offset = (page - 1) * limit;
+
+        // Tạo điều kiện lọc nếu có duration
+        const whereClause = {};
+        if (duration) {
+            whereClause.duration = duration;
+        }
+
         const { count, rows } = await Subscription.findAndCountAll({
+            where: whereClause, // Thêm điều kiện lọc
             limit,
             offset,
             order: [["created_at", "DESC"]], // Sắp xếp theo thời gian tạo mới nhất
@@ -36,7 +44,7 @@ router.get("/list", async (req, res) => {
             data: rows,
         });
     } catch (error) {
-        res.status(500).json({ error: error });
+        res.status(500).json({ error: error.message });
     }
 });
 router.get("/by-duration", async (req, res) => {
@@ -100,8 +108,8 @@ router.get("/:id", async (req, res) => {
 // 📌 Tạo Subscription mới
 router.post("/", authMiddleware, adminMiddleware, async (req, res) => {
     try {
-        const { name_sub, type, duration, price, description } = req.body;
-        const newSubscription = await Subscription.create({ name_sub, type, duration, price, description });
+        const { name_sub, type, duration, price, price_year, description } = req.body;
+        const newSubscription = await Subscription.create({ name_sub, type, duration, price, price_year, description });
         res.status(201).json(newSubscription);
     } catch (error) {
         res.status(500).json(error);
@@ -111,12 +119,12 @@ router.post("/", authMiddleware, adminMiddleware, async (req, res) => {
 // 📌 Cập nhật Subscription
 router.put("/:id", async (req, res) => {
     try {
-        const { name_sub, type, duration, price, description } = req.body;
+        const { name_sub, type, duration, price, price_year, description } = req.body;
         const subscription = await Subscription.findByPk(req.params.id);
         if (!subscription) {
             return res.status(404).json({ error: "Không tìm thấy Subscription!" });
         }
-        await subscription.update({ name_sub, type, duration, price, description });
+        await subscription.update({ name_sub, type, duration, price, price_year, description });
         res.json(subscription);
     } catch (error) {
         res.status(500).json({ error: "Lỗi khi cập nhật Subscription!" });
@@ -136,40 +144,4 @@ router.delete("/:id", async (req, res) => {
         res.status(500).json({ error: "Lỗi khi xóa Subscription!" });
     }
 });
-router.get("/list", async (req, res) => {
-    try {
-        let { page = 1, limit = 10, duration } = req.query;
-        page = parseInt(page);
-        limit = parseInt(limit);
-
-        if (isNaN(page) || isNaN(limit) || page < 1 || limit < 1) {
-            return res.status(400).json({ error: "Invalid page or limit value" });
-        }
-
-        const offset = (page - 1) * limit;
-
-        // Tạo điều kiện lọc nếu có duration
-        const whereClause = {};
-        if (duration) {
-            whereClause.duration = duration;
-        }
-
-        const { count, rows } = await Subscription.findAndCountAll({
-            where: whereClause, // Thêm điều kiện lọc
-            limit,
-            offset,
-            order: [["created_at", "DESC"]], // Sắp xếp theo thời gian tạo mới nhất
-        });
-
-        res.json({
-            totalItems: count,
-            totalPages: Math.ceil(count / limit),
-            currentPage: page,
-            data: rows,
-        });
-    } catch (error) {
-        res.status(500).json({ error: error.message });
-    }
-});
-
 module.exports = router;
