@@ -56,8 +56,13 @@ router.get("/by-duration", async (req, res) => {
         //     return res.status(400).json({ error: "Duration is required" });
         // }
 
-        // Lấy danh sách subscription theo duration
+        // Lấy danh sách subscription theo duration, trừ subscription có id=3
         const subscriptions = await Subscription.findAll({
+            where: {
+                id: {
+                    [require('sequelize').Op.ne]: 3
+                }
+            },
             include: [
                 { model: ContentSubscription, attributes: ["id", "content", "included", "created_at", "updated_at"] },
             ],
