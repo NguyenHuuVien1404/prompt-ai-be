@@ -6,6 +6,10 @@ const Subscription = sequelize.define("Subscription", {
     name_sub: { type: DataTypes.STRING, allowNull: false },
     type: { type: DataTypes.INTEGER, defaultValue: 1 },
     duration: { type: DataTypes.INTEGER, defaultValue: 1 },
+    billing_cycle: { 
+        type: DataTypes.ENUM('monthly', 'yearly', 'token', 'lifetime'), 
+        defaultValue: 'lifetime' 
+    },
 
     price: { type: DataTypes.DECIMAL(10, 2), allowNull: true },
     price_year: { type: DataTypes.DECIMAL(10, 2), allowNull: true },

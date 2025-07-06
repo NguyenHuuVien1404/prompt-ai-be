@@ -8,6 +8,7 @@ const request = require("request-promise-native");
 const moment = require("moment");
 const crypto = require("crypto");
 const querystring = require("qs");
+const axios = require("axios");
 const UserSub = require("../models/UserSub");
 const Payment = require("../models/Payment");
 const Subscription = require("../models/Subscription"); // Thêm model Subscription để lấy thông tin duration, token
@@ -296,9 +297,10 @@ router.get("/vnpay_ipn", async function (req, res, next) {
       console.error("Error updating payment:", error);
     }
 
-    // 9. Cập nhật UserSub nếu giao dịch thành công
+    // 9. Cập nhật User và UserSub nếu giao dịch thành công
     if (rspCode === "00") {
       console.log("[IPN] Thanh toán thành công cho order:", orderId);
+      
       // Tăng usage_count của coupon nếu có
       if (order.coupon_id) {
         const coupon = await Coupon.findByPk(order.coupon_id);
@@ -307,136 +309,117 @@ router.get("/vnpay_ipn", async function (req, res, next) {
           console.log(`[IPN] Coupon ${coupon.code} đã tăng usage_count.`);
         }
       }
-      const currentDate = new Date();
+
+      // Lấy thông tin subscription từ DB để có duration gốc
       const subscription = await Subscription.findByPk(subscriptionId);
       if (!subscription) {
         console.error(`[IPN] Subscription not found: ${subscriptionId}`);
         throw new Error("Subscription not found");
       }
 
+      // Lấy thông tin user
       const user = await User.findByPk(userId);
       if (!user) {
         console.error(`[IPN] User not found: ${userId}`);
         throw new Error("User not found");
       }
 
-      // Lấy UserSub hiện tại nếu có
+      // ✅ Update count_promt trong bảng users
+      user.count_promt += subscription.duration;
+      await user.save();
+      console.log(`[IPN] Đã cộng ${subscription.duration} token cho user ${userId}. Token mới: ${user.count_promt}`);
+
+      // ✅ Update/Create sub_id trong bảng usersubs
       let userSub = await UserSub.findOne({
         where: { user_id: userId },
       });
-      console.log(
-        `[IPN] UserSub hiện tại: ", userSub ? JSON.stringify(userSub.toJSON()) : 'null'`
-      );
+      console.log(`[IPN] UserSub hiện tại:`, userSub ? JSON.stringify(userSub.toJSON()) : 'null');
 
-      // Nếu là TOKEN (id = 4)
-      if (subscription.id === 4) {
-        console.log(
-          `[IPN] Gói TOKEN: Cộng token cho user ${userId}, không cập nhật UserSub.`
-        );
-        user.count_promt += subscription.duration;
-        await user.save();
-        if (order.click_uuid && order.offer_id) {
-          await trackPermate(order, vnp_Params["vnp_TxnRef"]);
-        }
-        console.log(
-          `[IPN] Đã cộng ${subscription.duration} token cho user ${userId}. Token mới: ${user.count_promt}`
-        );
-        return res.status(200).json({
-          RspCode: "00",
-          Message: "Token added successfully",
-          OrderId: orderId,
-          Localdate: moment().format("YYYYMMDDHHmmss"),
-          Signature: null,
-        });
+      const currentDate = new Date();
+
+      // ✅ Tính toán end_date dựa trên billing_cycle
+      let endDate;
+      switch(subscription.billing_cycle) {
+        case 'monthly':
+          endDate = new Date(currentDate);
+          endDate.setDate(endDate.getDate() + 30); // +30 ngày
+          break;
+        case 'yearly':
+          endDate = new Date(currentDate);
+          endDate.setFullYear(endDate.getFullYear() + 1); // +1 năm
+          break;
+        case 'token':
+        case 'lifetime':
+          endDate = new Date(currentDate);
+          endDate.setFullYear(endDate.getFullYear() + 30); // +30 năm
+          break;
+        default:
+          endDate = new Date(currentDate);
+          endDate.setDate(endDate.getDate() + 30); // Mặc định +30 ngày
       }
+      
+      console.log(`[IPN] Subscription: ${subscription.name_sub} (ID: ${subscription.id})`);
+      console.log(`[IPN] Billing cycle: ${subscription.billing_cycle}`);
+      console.log(`[IPN] Tính toán end_date: ${currentDate} -> ${endDate}`);
 
-      // Nếu là PREMIUM (id = 3)
-      if (subscription.id === 3) {
-        console.log(
-          `[IPN] Gói PREMIUM: Xử lý cập nhật UserSub cho user ${userId}`
-        );
-        const currentDate = new Date();
-        const subscription = await Subscription.findByPk(subscriptionId);
-        const userSub = await UserSub.findOne({ where: { user_id: userId } });
-
-        const newEndDate = new Date();
-        newEndDate.setFullYear(newEndDate.getFullYear() + 1);
-
-        user.count_promt += subscription.duration;
-        await user.save();
-        console.log(
-          `[IPN] Đã cộng ${subscription.duration} token cho user ${userId}. Token mới: ${user.count_promt}`
-        );
-
-        if (userSub) {
-          // Nếu đang FREE hoặc gói khác hoặc đã hết hạn
-          if (
-            userSub.sub_id !== 3 ||
-            !userSub.end_date ||
-            userSub.end_date < currentDate
-          ) {
-            // CASE 1: Free hoặc Premium đã hết hạn
-            console.log(
-              `[IPN][CASE 1] User ${userId} đang FREE hoặc Premium đã hết hạn.`
-            );
-            console.log(`[IPN][CASE 1] Thời điểm hiện tại:`, currentDate);
-            if (userSub.end_date) {
-              console.log(`[IPN][CASE 1] end_date cũ:`, userSub.end_date);
-            }
-            userSub.sub_id = 3;
-            userSub.status = 1;
-            userSub.start_date = currentDate;
-            userSub.end_date = newEndDate;
-            userSub.token = subscription.duration || 0;
-            await userSub.save();
-            console.log(`[IPN][CASE 1] end_date mới:`, userSub.end_date);
-            console.log(`[IPN] Đã cập nhật UserSub:`, userSub.toJSON());
-          } else {
-            // CASE 2: Premium còn hạn
-            console.log(`[IPN][CASE 2] User ${userId} đang còn hạn Premium.`);
-            console.log(`[IPN][CASE 2] Thời điểm hiện tại:`, currentDate);
-            console.log(`[IPN][CASE 2] end_date cũ:`, userSub.end_date);
-            const extendedDate = new Date(userSub.end_date);
-            extendedDate.setFullYear(extendedDate.getFullYear() + 1);
-            userSub.end_date = extendedDate;
-            userSub.token += subscription.duration || 0;
-            await userSub.save();
-            console.log(`[IPN][CASE 2] end_date mới:`, userSub.end_date);
-            console.log(`[IPN] Đã gia hạn UserSub:`, userSub.toJSON());
+      // ✅ Cập nhật/Create UserSub cho tất cả subscription types
+      if (userSub) {
+        // Nếu đang FREE hoặc gói khác hoặc đã hết hạn
+        if (
+          userSub.sub_id !== subscription.id ||
+          !userSub.end_date ||
+          userSub.end_date < currentDate
+        ) {
+          // CASE 1: Free hoặc subscription đã hết hạn
+          console.log(`[IPN][CASE 1] User ${userId} đang FREE hoặc subscription đã hết hạn.`);
+          console.log(`[IPN][CASE 1] Thời điểm hiện tại:`, currentDate);
+          if (userSub.end_date) {
+            console.log(`[IPN][CASE 1] end_date cũ:`, userSub.end_date);
           }
+          
+          userSub.sub_id = subscription.id;
+          userSub.status = 1;
+          userSub.start_date = currentDate;
+          userSub.end_date = endDate;
+          userSub.token = subscription.duration || 0;
+          await userSub.save();
+          
+          console.log(`[IPN][CASE 1] end_date mới:`, userSub.end_date);
+          console.log(`[IPN] Đã cập nhật UserSub:`, userSub.toJSON());
         } else {
-          // Nếu chưa có thì tạo mới
-          console.log(`[IPN] Tạo mới UserSub PREMIUM cho user ${userId}`);
-          const newUserSub = await UserSub.create({
-            user_id: userId,
-            sub_id: 3,
-            status: 1,
-            start_date: currentDate,
-            end_date: newEndDate,
-            token: subscription.duration || 0,
-          });
-          console.log(`[IPN] Đã tạo UserSub mới:`, newUserSub.toJSON());
+          // CASE 2: Subscription còn hạn - không gia hạn, chỉ cập nhật token
+          console.log(`[IPN][CASE 2] User ${userId} đang còn hạn subscription. Không gia hạn, chỉ cập nhật token.`);
+          console.log(`[IPN][CASE 2] Thời điểm hiện tại:`, currentDate);
+          console.log(`[IPN][CASE 2] end_date hiện tại:`, userSub.end_date);
+          
+          userSub.token += subscription.duration || 0;
+          await userSub.save();
+          
+          console.log(`[IPN][CASE 2] Token mới:`, userSub.token);
+          console.log(`[IPN] Đã cập nhật token UserSub:`, userSub.toJSON());
         }
-
-        // Tracking nếu có
-        if (order.click_uuid && order.offer_id) {
-          await trackPermate(order, vnp_Params["vnp_TxnRef"]);
-        }
-
-        return res.status(200).json({
-          RspCode: "00",
-          Message: "Premium activated or extended",
-          OrderId: orderId,
-          Localdate: moment().format("YYYYMMDDHHmmss"),
-          Signature: null,
+      } else {
+        // Nếu chưa có thì tạo mới
+        console.log(`[IPN] Tạo mới UserSub ${subscription.name_sub} cho user ${userId}`);
+        const newUserSub = await UserSub.create({
+          user_id: userId,
+          sub_id: subscription.id,
+          status: 1,
+          start_date: currentDate,
+          end_date: endDate,
+          token: subscription.duration || 0,
         });
+        console.log(`[IPN] Đã tạo UserSub mới:`, newUserSub.toJSON());
       }
 
-      // Ngược lại không hợp lệ
-      console.error(`[IPN] Invalid subscription type: ${subscription.id}`);
+      // Tracking nếu có
+      if (order.click_uuid && order.offer_id) {
+        await trackPermate(order, vnp_Params["vnp_TxnRef"]);
+      }
+
       return res.status(200).json({
-        RspCode: "99",
-        Message: "Invalid subscription type",
+        RspCode: "00",
+        Message: `${subscription.name_sub} activated successfully`,
         OrderId: orderId,
         Localdate: moment().format("YYYYMMDDHHmmss"),
         Signature: null,
