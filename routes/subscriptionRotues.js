@@ -108,8 +108,36 @@ router.get("/:id", async (req, res) => {
 // 📌 Tạo Subscription mới
 router.post("/", authMiddleware, adminMiddleware, async (req, res) => {
     try {
-        const { name_sub, type, duration, price, price_year, description, imageDiscount } = req.body;
-        const newSubscription = await Subscription.create({ name_sub, type, duration, price, price_year, description, imageDiscount });
+        const { 
+            name_sub, 
+            type, 
+            duration, 
+            billing_cycle,
+            price, 
+            price_year, 
+            price_per_month_year,
+            price_total_yearly,
+            description, 
+            description_per_year,
+            imageDiscount,
+            is_popular
+        } = req.body;
+        
+        const newSubscription = await Subscription.create({ 
+            name_sub, 
+            type, 
+            duration, 
+            billing_cycle,
+            price, 
+            price_year, 
+            price_per_month_year,
+            price_total_yearly,
+            description, 
+            description_per_year,
+            imageDiscount,
+            is_popular
+        });
+        
         res.status(201).json(newSubscription);
     } catch (error) {
         res.status(500).json(error);
@@ -117,14 +145,43 @@ router.post("/", authMiddleware, adminMiddleware, async (req, res) => {
 });
 
 // 📌 Cập nhật Subscription
-router.put("/:id", async (req, res) => {
+router.put("/:id", authMiddleware, adminMiddleware, async (req, res) => {
     try {
-        const { name_sub, type, duration, price, price_year, description, imageDiscount } = req.body;
+        const { 
+            name_sub, 
+            type, 
+            duration, 
+            billing_cycle,
+            price, 
+            price_year, 
+            price_per_month_year,
+            price_total_yearly,
+            description, 
+            description_per_year,
+            imageDiscount,
+            is_popular
+        } = req.body;
+        
         const subscription = await Subscription.findByPk(req.params.id);
         if (!subscription) {
             return res.status(404).json({ error: "Không tìm thấy Subscription!" });
         }
-        await subscription.update({ name_sub, type, duration, price, price_year, description, imageDiscount });
+        
+        await subscription.update({ 
+            name_sub, 
+            type, 
+            duration, 
+            billing_cycle,
+            price, 
+            price_year, 
+            price_per_month_year,
+            price_total_yearly,
+            description, 
+            description_per_year,
+            imageDiscount,
+            is_popular
+        });
+        
         res.json(subscription);
     } catch (error) {
         res.status(500).json({ error: "Lỗi khi cập nhật Subscription!" });
