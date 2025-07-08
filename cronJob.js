@@ -4,20 +4,6 @@ const UserSub = require('./models/UserSub');
 const Subscription = require('./models/Subscription');
 const { Op } = require('sequelize');
 
-// Lập lịch cron để cập nhật count_promt mỗi đêm lúc 0h
-cron.schedule('0 0 1 * *    ', async () => {
-    try {
-        // Cập nhật count_promt của tất cả user về 5
-        await User.update(
-            { count_promt: 5 }, // Cập nhật giá trị mới
-            { where: { account_status: 1 } } // Cập nhật cho tất cả người dùng có account_status = 1
-        );
-        console.log('✅ Đã reset count_promt cho tất cả users');
-    } catch (error) {
-        console.error('Error resetting count_promt for all users:', error);
-    }
-});
-
 // Lập lịch cron để kiểm tra subscription hết hạn mỗi đêm lúc 12h
 cron.schedule('0 0 * * *', async () => {
     try {
