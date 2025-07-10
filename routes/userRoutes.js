@@ -292,7 +292,7 @@ router.post('/register', async (req, res) => {
             otp_expires_at: new Date(Date.now() + 10 * 60 * 1000), // OTP hết hạn sau 10 phút
             account_status: 1,
             role: 1,
-            count_promt: 5
+            count_promt: 15,
         });
 
         // Lấy ID của subscription miễn phí
