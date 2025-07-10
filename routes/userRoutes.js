@@ -388,7 +388,7 @@ router.post("/login", async (req, res) => {
             
                 account_status: 1,
                 role: 1,
-                count_promt: 5
+                count_promt: 15
             });
     
             // Lấy ID của subscription miễn phí
@@ -1001,7 +1001,7 @@ router.post("/auth/google", async (req, res) => {
                     profile_image: picture,
                     role: 1,
                     is_verified: true,
-                    count_promt: 5
+                    count_promt: 15
                 });
                 await UserSub.create({
                     user_id: user.id,
