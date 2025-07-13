@@ -235,10 +235,6 @@ router.get("/vnpay_ipn", async function (req, res, next) {
       });
     }
 
-    console.log({
-      vnp_Params,
-    });
-
     // // 6. Trích xuất user_id và subscription_id từ vnp_OrderInfo
     const orderInfo = vnp_Params["vnp_OrderInfo"];
     if (!orderInfo || orderInfo === "undefined" || !orderInfo.includes("-")) {
@@ -299,14 +295,11 @@ router.get("/vnpay_ipn", async function (req, res, next) {
 
     // 9. Cập nhật User và UserSub nếu giao dịch thành công
     if (rspCode === "00") {
-      console.log("[IPN] Thanh toán thành công cho order:", orderId);
-
       // Tăng usage_count của coupon nếu có
       if (order.coupon_id) {
         const coupon = await Coupon.findByPk(order.coupon_id);
         if (coupon) {
           await coupon.increment("usage_count");
-          console.log(`[IPN] Coupon ${coupon.code} đã tăng usage_count.`);
         }
       }
 
@@ -327,18 +320,11 @@ router.get("/vnpay_ipn", async function (req, res, next) {
       // ✅ Update count_promt trong bảng users
       user.count_promt += subscription.duration;
       await user.save();
-      console.log(
-        `[IPN] Đã cộng ${subscription.duration} token cho user ${userId}. Token mới: ${user.count_promt}`
-      );
 
       // ✅ Update/Create sub_id trong bảng usersubs
       let userSub = await UserSub.findOne({
         where: { user_id: userId },
       });
-      console.log(
-        `[IPN] UserSub hiện tại:`,
-        userSub ? JSON.stringify(userSub.toJSON()) : "null"
-      );
 
       const currentDate = new Date();
 
@@ -363,12 +349,6 @@ router.get("/vnpay_ipn", async function (req, res, next) {
           endDate.setDate(endDate.getDate() + 30); // Mặc định +30 ngày
       }
 
-      console.log(
-        `[IPN] Subscription: ${subscription.name_sub} (ID: ${subscription.id})`
-      );
-      console.log(`[IPN] Billing cycle: ${subscription.billing_cycle}`);
-      console.log(`[IPN] Tính toán end_date: ${currentDate} -> ${endDate}`);
-
       // ✅ Cập nhật/Create UserSub cho tất cả subscription types
       if (userSub) {
         // Nếu đang FREE hoặc gói khác hoặc đã hết hạn
@@ -378,42 +358,19 @@ router.get("/vnpay_ipn", async function (req, res, next) {
           userSub.end_date < currentDate
         ) {
           // CASE 1: Free hoặc subscription đã hết hạn
-          console.log(
-            `[IPN][CASE 1] User ${userId} đang FREE hoặc subscription đã hết hạn.`
-          );
-          console.log(`[IPN][CASE 1] Thời điểm hiện tại:`, currentDate);
-          if (userSub.end_date) {
-            console.log(`[IPN][CASE 1] end_date cũ:`, userSub.end_date);
-          }
-
           userSub.sub_id = subscription.id;
           userSub.status = 1;
           userSub.start_date = currentDate;
           userSub.end_date = endDate;
           userSub.token = subscription.duration || 0;
           await userSub.save();
-
-          console.log(`[IPN][CASE 1] end_date mới:`, userSub.end_date);
-          console.log(`[IPN] Đã cập nhật UserSub:`, userSub.toJSON());
         } else {
           // CASE 2: Subscription còn hạn - không gia hạn, chỉ cập nhật token
-          console.log(
-            `[IPN][CASE 2] User ${userId} đang còn hạn subscription. Không gia hạn, chỉ cập nhật token.`
-          );
-          console.log(`[IPN][CASE 2] Thời điểm hiện tại:`, currentDate);
-          console.log(`[IPN][CASE 2] end_date hiện tại:`, userSub.end_date);
-
           userSub.token += subscription.duration || 0;
           await userSub.save();
-
-          console.log(`[IPN][CASE 2] Token mới:`, userSub.token);
-          console.log(`[IPN] Đã cập nhật token UserSub:`, userSub.toJSON());
         }
       } else {
         // Nếu chưa có thì tạo mới
-        console.log(
-          `[IPN] Tạo mới UserSub ${subscription.name_sub} cho user ${userId}`
-        );
         const newUserSub = await UserSub.create({
           user_id: userId,
           sub_id: subscription.id,
@@ -422,7 +379,6 @@ router.get("/vnpay_ipn", async function (req, res, next) {
           end_date: endDate,
           token: subscription.duration || 0,
         });
-        console.log(`[IPN] Đã tạo UserSub mới:`, newUserSub.toJSON());
       }
 
       // Tracking nếu có
@@ -659,7 +615,6 @@ router.get("/filter", async (req, res) => {
     // Nếu có truyền code, tìm coupon_id
     if (code) {
       const coupon = await Coupon.findOne({ where: { code } });
-      console.log("coupon", coupon);
       if (coupon) {
         where.coupon_id = coupon.id;
       } else {
@@ -708,12 +663,10 @@ router.get("/filter", async (req, res) => {
     const couponIds = [
       ...new Set(rows.map((p) => p.coupon_id).filter(Boolean)),
     ];
-    console.log("couponIds123123", couponIds);
     // Lấy thông tin coupon cho các coupon_id này
     const coupons = await Coupon.findAll({
       where: { id: couponIds },
     });
-    console.log("coupons123123", coupons);
     // Map coupon_id -> coupon data (ép key về string)
     const couponMap = {};
     coupons.forEach((c) => {
