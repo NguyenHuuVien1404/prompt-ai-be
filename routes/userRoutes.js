@@ -378,12 +378,9 @@ router.post("/resend-otp", async (req, res) => {
     await sendOtpEmail(email, otp);
 
     // Trả về thông báo thành công
-    res
-      .status(200)
-      .json({
-        message:
-          "Mã OTP đã được gửi lại đến email. Vui lòng xác thực tài khoản.",
-      });
+    res.status(200).json({
+      message: "Mã OTP đã được gửi lại đến email. Vui lòng xác thực tài khoản.",
+    });
   } catch (error) {
     console.error("Lỗi khi gửi lại OTP:", error);
     res.status(500).json({ error: "Đã xảy ra lỗi khi gửi lại mã OTP" });
