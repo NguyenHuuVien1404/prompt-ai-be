@@ -213,7 +213,16 @@ router.post("/", authMiddleware, adminMiddleware, async (req, res) => {
 // Lấy user theo ID
 router.get("/:id", async (req, res) => {
   try {
-    const user = await User.findByPk(req.params.id);
+    const user = await User.findByPk(req.params.id, {
+      include: [
+        {
+          model: require("../models").Role,
+          attributes: ["id", "name", "description", "permissions"],
+          as: "Role",
+        },
+      ],
+    });
+
     if (!user) return res.status(404).json({ message: "User not found" });
 
     const userSubs = await user.getUserSubs({
@@ -248,9 +257,31 @@ router.get("/:id", async (req, res) => {
       }))
       .sort((a, b) => b.sub_id - a.sub_id);
 
+    // ✅ Lấy permissions từ role
+    let permissions = [];
+    if (user.Role && user.Role.permissions) {
+      try {
+        permissions = JSON.parse(user.Role.permissions);
+      } catch (error) {
+        console.error("Error parsing permissions:", error);
+        permissions = [];
+      }
+    } else {
+      // ✅ Fallback permissions dựa trên role cũ
+      const rolePermissions = {
+        1: ["user:read", "user:update"], // User permissions
+        2: ["admin:all", "user:all", "role:all", "stats:all"], // Admin permissions
+        3: ["marketer:all", "user:read", "stats:read"], // Marketer permissions
+      };
+      permissions = rolePermissions[user.role] || ["user:read"];
+    }
+
     res.json({
       data: {
-        user: user,
+        user: {
+          ...user.toJSON(),
+          permissions: permissions, // ✅ Thêm permissions array
+        },
         userSub: sortedUserSubs.length > 0 ? sortedUserSubs[0] : null,
         // allUserSubs: sortedUserSubs  // Thêm để debug
       },
@@ -618,6 +649,25 @@ router.post("/login-verify", async (req, res) => {
       });
     }
 
+    // ✅ Lấy permissions từ role
+    let permissions = [];
+    if (user.Role && user.Role.permissions) {
+      try {
+        permissions = JSON.parse(user.Role.permissions);
+      } catch (error) {
+        console.error("Error parsing permissions:", error);
+        permissions = [];
+      }
+    } else {
+      // ✅ Fallback permissions dựa trên role cũ
+      const rolePermissions = {
+        1: ["user:read", "user:update"], // User permissions
+        2: ["admin:all", "user:all", "role:all", "stats:all"], // Admin permissions
+        3: ["marketer:all", "user:read", "stats:read"], // Marketer permissions
+      };
+      permissions = rolePermissions[user.role] || ["user:read"];
+    }
+
     // ✅ Tạo JWT token - hỗ trợ cả role cũ và role_id mới
     const token = jwt.sign(
       {
@@ -626,6 +676,7 @@ router.post("/login-verify", async (req, res) => {
         role: user.role, // ✅ Giữ nguyên cho backward compatible
         role_id: user.role_id, // ✅ Thêm mới cho role system
         role_name: user.Role?.name || user.getRoleName?.() || "User", // ✅ Thêm role name
+        permissions: permissions, // ✅ Thêm permissions vào token
       },
       process.env.JWT_SECRET || "your_jwt_secret_key",
       { expiresIn: 60 * 60 * 24 * 30 * 6 }
@@ -643,6 +694,7 @@ router.post("/login-verify", async (req, res) => {
         count_prompt: user.count_promt,
         updated_at: user.updated_at,
         profile_image: user.profile_image,
+        permissions: permissions, // ✅ Thêm permissions vào response
         userSub: sortedUserSubs.length > 0 ? sortedUserSubs[0] : null, // Lấy userSub có type lớn nhất
       },
     });
@@ -719,6 +771,25 @@ router.post("/login-password", async (req, res) => {
         });
       }
 
+      // ✅ Lấy permissions từ role
+      let permissions = [];
+      if (user.Role && user.Role.permissions) {
+        try {
+          permissions = JSON.parse(user.Role.permissions);
+        } catch (error) {
+          console.error("Error parsing permissions:", error);
+          permissions = [];
+        }
+      } else {
+        // ✅ Fallback permissions dựa trên role cũ
+        const rolePermissions = {
+          1: ["user:read", "user:update"], // User permissions
+          2: ["admin:all", "user:all", "role:all", "stats:all"], // Admin permissions
+          3: ["marketer:all", "user:read", "stats:read"], // Marketer permissions
+        };
+        permissions = rolePermissions[user.role] || ["user:read"];
+      }
+
       // ✅ Tạo JWT token - hỗ trợ cả role cũ và role_id mới
       const token = jwt.sign(
         {
@@ -727,6 +798,7 @@ router.post("/login-password", async (req, res) => {
           role: user.role, // ✅ Giữ nguyên cho backward compatible
           role_id: user.role_id, // ✅ Thêm mới cho role system
           role_name: user.Role?.name || user.getRoleName?.() || "User", // ✅ Thêm role name
+          permissions: permissions, // ✅ Thêm permissions vào token
         },
         process.env.JWT_SECRET || "your_jwt_secret_key",
         { expiresIn: 60 * 60 * 24 * 30 * 6 }
@@ -743,6 +815,7 @@ router.post("/login-password", async (req, res) => {
           count_prompt: user.count_promt,
           updated_at: user.updated_at,
           profile_image: user.profile_image,
+          permissions: permissions, // ✅ Thêm permissions vào response
           userSub: sortedUserSubs.length > 0 ? sortedUserSubs[0] : null,
         },
       });
@@ -1194,6 +1267,25 @@ router.post("/auth/google", async (req, res) => {
       }
     }
 
+    // ✅ Lấy permissions từ role
+    let permissions = [];
+    if (user.Role && user.Role.permissions) {
+      try {
+        permissions = JSON.parse(user.Role.permissions);
+      } catch (error) {
+        console.error("Error parsing permissions:", error);
+        permissions = [];
+      }
+    } else {
+      // ✅ Fallback permissions dựa trên role cũ
+      const rolePermissions = {
+        1: ["user:read", "user:update"], // User permissions
+        2: ["admin:all", "user:all", "role:all", "stats:all"], // Admin permissions
+        3: ["marketer:all", "user:read", "stats:read"], // Marketer permissions
+      };
+      permissions = rolePermissions[user.role] || ["user:read"];
+    }
+
     // ✅ Tạo JWT token - hỗ trợ cả role cũ và role_id mới
     const token = jwt.sign(
       {
@@ -1202,6 +1294,7 @@ router.post("/auth/google", async (req, res) => {
         role: user.role, // ✅ Giữ nguyên cho backward compatible
         role_id: user.role_id, // ✅ Thêm mới cho role system
         role_name: user.Role?.name || user.getRoleName?.() || "User", // ✅ Thêm role name
+        permissions: permissions, // ✅ Thêm permissions vào token
       },
       process.env.JWT_SECRET || "your_jwt_secret_key",
       { expiresIn: 60 * 60 * 24 * 30 * 6 }
@@ -1221,6 +1314,7 @@ router.post("/auth/google", async (req, res) => {
         count_prompt: user.count_promt,
         updated_at: user.updated_at,
         profile_image: user.profile_image,
+        permissions: permissions, // ✅ Thêm permissions vào response
         userSub: {
           subscription: subType,
         },
