@@ -267,13 +267,15 @@ router.get("/:id", async (req, res) => {
         permissions = [];
       }
     } else {
-      // ✅ Fallback permissions dựa trên role cũ
+      // ✅ Fallback permissions dựa trên role_id hoặc role cũ
       const rolePermissions = {
         1: ["user:read", "user:update"], // User permissions
         2: ["admin:all", "user:all", "role:all", "stats:all"], // Admin permissions
         3: ["marketer:all", "user:read", "stats:read"], // Marketer permissions
       };
-      permissions = rolePermissions[user.role] || ["user:read"];
+      // Ưu tiên role_id trước, nếu không có thì dùng role cũ
+      const roleId = user.role_id || user.role;
+      permissions = rolePermissions[roleId] || ["user:read"];
     }
 
     res.json({
@@ -659,13 +661,15 @@ router.post("/login-verify", async (req, res) => {
         permissions = [];
       }
     } else {
-      // ✅ Fallback permissions dựa trên role cũ
+      // ✅ Fallback permissions dựa trên role_id hoặc role cũ
       const rolePermissions = {
         1: ["user:read", "user:update"], // User permissions
         2: ["admin:all", "user:all", "role:all", "stats:all"], // Admin permissions
         3: ["marketer:all", "user:read", "stats:read"], // Marketer permissions
       };
-      permissions = rolePermissions[user.role] || ["user:read"];
+      // Ưu tiên role_id trước, nếu không có thì dùng role cũ
+      const roleId = user.role_id || user.role;
+      permissions = rolePermissions[roleId] || ["user:read"];
     }
 
     // ✅ Tạo JWT token - hỗ trợ cả role cũ và role_id mới
@@ -1277,13 +1281,15 @@ router.post("/auth/google", async (req, res) => {
         permissions = [];
       }
     } else {
-      // ✅ Fallback permissions dựa trên role cũ
+      // ✅ Fallback permissions dựa trên role_id hoặc role cũ
       const rolePermissions = {
         1: ["user:read", "user:update"], // User permissions
         2: ["admin:all", "user:all", "role:all", "stats:all"], // Admin permissions
         3: ["marketer:all", "user:read", "stats:read"], // Marketer permissions
       };
-      permissions = rolePermissions[user.role] || ["user:read"];
+      // Ưu tiên role_id trước, nếu không có thì dùng role cũ
+      const roleId = user.role_id || user.role;
+      permissions = rolePermissions[roleId] || ["user:read"];
     }
 
     // ✅ Tạo JWT token - hỗ trợ cả role cũ và role_id mới

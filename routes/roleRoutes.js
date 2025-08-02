@@ -5,6 +5,7 @@ const {
   adminMiddleware,
   adminOrMarketerMiddleware,
 } = require("../middleware/roleMiddleware");
+const { getRolePermissions } = require("../utils/permissionUtils");
 const router = express.Router();
 const { Op } = require("sequelize");
 const sequelize = require("../config/database");
@@ -294,16 +295,45 @@ router.get(
           "account_status",
           "created_at",
         ],
+        include: [
+          {
+            model: Role,
+            as: "Role",
+            attributes: ["id", "name", "description", "permissions"],
+          },
+        ],
         order: [["created_at", "DESC"]],
         limit: parseInt(limit),
         offset: (parseInt(page) - 1) * parseInt(limit),
       });
 
-      // Thêm role_name cho mỗi user
-      const usersWithRole = users.map((user) => ({
-        ...user.toJSON(),
-        role_name: user.Role?.name || user.getRoleName(),
-      }));
+      // Thêm role_name và permissions cho mỗi user
+      const usersWithRole = users.map((user) => {
+        const userData = user.toJSON();
+
+        // Parse permissions từ Role.permissions hoặc fallback về default
+        let permissions = [];
+        if (user.Role && user.Role.permissions) {
+          try {
+            permissions =
+              typeof user.Role.permissions === "string"
+                ? JSON.parse(user.Role.permissions)
+                : user.Role.permissions;
+          } catch (error) {
+            console.error("Error parsing permissions:", error);
+            permissions = [];
+          }
+        } else {
+          // Fallback to default role permissions
+          permissions = getRolePermissions(user.role_id || user.role);
+        }
+
+        return {
+          ...userData,
+          role_name: user.Role?.name || user.getRoleName(),
+          permissions: permissions,
+        };
+      });
 
       res.json({
         success: true,
