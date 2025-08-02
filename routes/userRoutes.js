@@ -16,6 +16,7 @@ const {
   authMiddleware,
   adminMiddleware,
 } = require("../middleware/authMiddleware");
+const { adminOrMarketerMiddleware } = require("../middleware/roleMiddleware");
 const { Op } = require("sequelize");
 const { OAuth2Client } = require("google-auth-library");
 const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
@@ -65,106 +66,139 @@ const upload = multer({
 router.use("/upload", express.static("uploads")); // Cho phép truy cập ảnh đã upload
 
 // Lấy tất cả users (chuyển từ GET thành POST)
-router.post("/list", authMiddleware, adminMiddleware, async (req, res) => {
-  try {
-    // Lấy tham số từ request body thay vì query
-    let {
-      page = 1,
-      pageSize = 10,
-      search,
-      account_status,
-      is_verified,
-      role,
-    } = req.body;
+router.post(
+  "/list",
+  authMiddleware,
+  adminOrMarketerMiddleware,
+  async (req, res) => {
+    try {
+      // Lấy tham số từ request body thay vì query
+      let {
+        page = 1,
+        pageSize = 10,
+        search,
+        account_status,
+        is_verified,
+        role,
+      } = req.body;
 
-    // Đảm bảo các tham số số nguyên không bị NaN
-    page = parseInt(page) || 1; // Mặc định là 1 nếu không phải số
-    pageSize = parseInt(pageSize) || 10; // Mặc định là 10 nếu không phải số
+      // Đảm bảo các tham số số nguyên không bị NaN
+      page = parseInt(page) || 1; // Mặc định là 1 nếu không phải số
+      pageSize = parseInt(pageSize) || 10; // Mặc định là 10 nếu không phải số
 
-    const offset = (page - 1) * pageSize;
-    const limit = pageSize;
+      const offset = (page - 1) * pageSize;
+      const limit = pageSize;
 
-    // Xây dựng điều kiện tìm kiếm
-    const whereConditions = {};
+      // Xây dựng điều kiện tìm kiếm
+      const whereConditions = {};
 
-    // Tìm kiếm theo tên hoặc email
-    if (search) {
-      whereConditions[Op.or] = [
-        { full_name: { [Op.like]: `%${search}%` } },
-        { email: { [Op.like]: `%${search}%` } },
-      ];
-    }
-
-    // Lọc theo trạng thái
-    if (account_status !== undefined && account_status !== null) {
-      const parsedStatus = parseInt(account_status);
-      // Chỉ thêm nếu là số hợp lệ
-      if (!isNaN(parsedStatus)) {
-        whereConditions.account_status = parsedStatus;
+      // Tìm kiếm theo tên hoặc email
+      if (search) {
+        whereConditions[Op.or] = [
+          { full_name: { [Op.like]: `%${search}%` } },
+          { email: { [Op.like]: `%${search}%` } },
+        ];
       }
-    }
 
-    // Lọc theo tình trạng xác thực
-    if (is_verified !== undefined && is_verified !== null) {
-      if (typeof is_verified === "string") {
-        whereConditions.is_verified = is_verified === "true";
-      } else {
-        whereConditions.is_verified = !!is_verified;
+      // Lọc theo trạng thái
+      if (account_status !== undefined && account_status !== null) {
+        const parsedStatus = parseInt(account_status);
+        // Chỉ thêm nếu là số hợp lệ
+        if (!isNaN(parsedStatus)) {
+          whereConditions.account_status = parsedStatus;
+        }
       }
-    }
 
-    // Lọc theo vai trò
-    if (role !== undefined && role !== null) {
-      const parsedRole = parseInt(role);
-      // Chỉ thêm nếu là số hợp lệ
-      if (!isNaN(parsedRole)) {
-        whereConditions.role = parsedRole;
+      // Lọc theo tình trạng xác thực
+      if (is_verified !== undefined && is_verified !== null) {
+        if (typeof is_verified === "string") {
+          whereConditions.is_verified = is_verified === "true";
+        } else {
+          whereConditions.is_verified = !!is_verified;
+        }
       }
-    }
 
-    // Log để debug
+      // ✅ Lọc theo vai trò - hỗ trợ cả role cũ và role_id mới
+      if (role !== undefined && role !== null) {
+        const parsedRole = parseInt(role);
+        // Chỉ thêm nếu là số hợp lệ
+        if (!isNaN(parsedRole)) {
+          // ✅ Hỗ trợ cả role cũ và role_id mới
+          whereConditions[Op.or] = [
+            { role_id: parsedRole },
+            { role: parsedRole },
+          ];
+        }
+      }
 
-    const userSubInclude = {
-      model: UserSub,
-      attributes: ["sub_id"],
-      required: !!req.body.sub_id, // Nếu có truyền sub_id thì required: true, ngược lại false
-      where: {
-        status: 1,
-        ...(req.body.sub_id ? { sub_id: req.body.sub_id } : {}),
-      },
-    };
+      // Log để debug
 
-    const { count, rows } = await User.findAndCountAll({
-      attributes: { exclude: ["password_hash"] },
-      include: [userSubInclude],
-      where: whereConditions,
-      offset,
-      limit,
-      order: [["created_at", "DESC"]],
-    });
-
-    // Transform the data to flatten the structure
-    const transformedRows = rows.map((row) => {
-      const plainRow = row.get({ plain: true });
-      return {
-        ...plainRow,
-        sub_id: plainRow.UserSubs?.[0]?.sub_id || null,
-        UserSubs: undefined, // Remove the UserSubs array
+      const userSubInclude = {
+        model: UserSub,
+        attributes: ["sub_id"],
+        required: !!req.body.sub_id, // Nếu có truyền sub_id thì required: true, ngược lại false
+        where: {
+          status: 1,
+          ...(req.body.sub_id ? { sub_id: req.body.sub_id } : {}),
+        },
       };
-    });
 
-    res.json({
-      data: transformedRows,
-      total: count,
-      currentPage: page,
-      pageSize,
-      totalPages: Math.ceil(count / pageSize),
-    });
-  } catch (error) {
-    console.error("Error fetching users:", error);
-    res.status(500).json({ error: error.message });
+      const { count, rows } = await User.findAndCountAll({
+        attributes: { exclude: ["password_hash"] },
+        include: [
+          userSubInclude,
+          {
+            model: require("../models").Role,
+            attributes: ["id", "name", "description"],
+            as: "Role",
+          },
+        ],
+        where: whereConditions,
+        offset,
+        limit,
+        order: [["created_at", "DESC"]],
+      });
+
+      // ✅ Transform the data to flatten the structure - hỗ trợ cả role cũ và role_id mới
+      const transformedRows = rows.map((row) => {
+        const plainRow = row.get({ plain: true });
+
+        // ✅ Hỗ trợ cả role cũ và role_id mới
+        let roleName = "Unknown";
+        if (plainRow.Role) {
+          roleName = plainRow.Role.name;
+        } else {
+          // Fallback cho role cũ
+          const roleMap = {
+            1: "User",
+            2: "Admin",
+            3: "Marketer",
+          };
+          roleName = roleMap[plainRow.role] || "Unknown";
+        }
+
+        return {
+          ...plainRow,
+          sub_id: plainRow.UserSubs?.[0]?.sub_id || null,
+          UserSubs: undefined, // Remove the UserSubs array
+          role_name: roleName,
+          Role: undefined, // Remove the Role object
+        };
+      });
+
+      res.json({
+        data: transformedRows,
+        total: count,
+        currentPage: page,
+        pageSize,
+        totalPages: Math.ceil(count / pageSize),
+      });
+    } catch (error) {
+      console.error("Error fetching users:", error);
+      res.status(500).json({ error: error.message });
+    }
   }
-});
+);
 
 // Tạo user mới
 router.post("/", authMiddleware, adminMiddleware, async (req, res) => {
@@ -584,12 +618,14 @@ router.post("/login-verify", async (req, res) => {
       });
     }
 
-    // Tạo JWT token
+    // ✅ Tạo JWT token - hỗ trợ cả role cũ và role_id mới
     const token = jwt.sign(
       {
         id: user.id,
         email: user.email,
-        role: user.role, // Thêm role vào token
+        role: user.role, // ✅ Giữ nguyên cho backward compatible
+        role_id: user.role_id, // ✅ Thêm mới cho role system
+        role_name: user.Role?.name || user.getRoleName?.() || "User", // ✅ Thêm role name
       },
       process.env.JWT_SECRET || "your_jwt_secret_key",
       { expiresIn: 60 * 60 * 24 * 30 * 6 }
@@ -683,12 +719,14 @@ router.post("/login-password", async (req, res) => {
         });
       }
 
-      // Tạo JWT token
+      // ✅ Tạo JWT token - hỗ trợ cả role cũ và role_id mới
       const token = jwt.sign(
         {
           id: user.id,
           email: user.email,
-          role: user.role,
+          role: user.role, // ✅ Giữ nguyên cho backward compatible
+          role_id: user.role_id, // ✅ Thêm mới cho role system
+          role_name: user.Role?.name || user.getRoleName?.() || "User", // ✅ Thêm role name
         },
         process.env.JWT_SECRET || "your_jwt_secret_key",
         { expiresIn: 60 * 60 * 24 * 30 * 6 }
@@ -1156,12 +1194,14 @@ router.post("/auth/google", async (req, res) => {
       }
     }
 
-    // Tạo JWT
+    // ✅ Tạo JWT token - hỗ trợ cả role cũ và role_id mới
     const token = jwt.sign(
       {
         id: user.id,
         email: user.email,
-        role: user.role, // Thêm role vào token
+        role: user.role, // ✅ Giữ nguyên cho backward compatible
+        role_id: user.role_id, // ✅ Thêm mới cho role system
+        role_name: user.Role?.name || user.getRoleName?.() || "User", // ✅ Thêm role name
       },
       process.env.JWT_SECRET || "your_jwt_secret_key",
       { expiresIn: 60 * 60 * 24 * 30 * 6 }
@@ -1232,11 +1272,15 @@ router.post(
         }
       }
 
-      // Lọc theo vai trò
+      // ✅ Lọc theo vai trò - hỗ trợ cả role cũ và role_id mới
       if (role !== undefined && role !== null) {
         const parsedRole = parseInt(role);
         if (!isNaN(parsedRole)) {
-          whereConditions.role = parsedRole;
+          // ✅ Hỗ trợ cả role cũ và role_id mới
+          whereConditions[Op.or] = [
+            { role_id: parsedRole },
+            { role: parsedRole },
+          ];
         }
       }
 
@@ -1274,8 +1318,19 @@ router.post(
           "Trạng thái tài khoản":
             user.account_status === 1 ? "Hoạt động" : "Không hoạt động",
           "Đã xác thực": user.is_verified ? "Có" : "Không",
-          "Vai trò":
-            user.role === 1 ? "User" : user.role === 2 ? "Admin" : "Unknown",
+          "Vai trò": (() => {
+            // ✅ Hỗ trợ cả role cũ và role_id mới
+            if (user.Role) {
+              return user.Role.name;
+            }
+            // Fallback cho role cũ
+            const roleMap = {
+              1: "User",
+              2: "Admin",
+              3: "Marketer",
+            };
+            return roleMap[user.role] || "Unknown";
+          })(),
           "Số prompt còn lại": user.count_promt || 0,
           "Gói đăng ký": subscription?.name_sub || "Không có",
           "Loại gói": subscription?.type || "",

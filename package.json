@@ -6,7 +6,9 @@
     "test": "echo \"Error: no test specified\" && exit 1",
     "start": "node index.js",
     "dev": "nodemon index.js",
-    "cluster": "node cluster.js"
+    "cluster": "node cluster.js",
+    "init-roles": "node utils/initRoles.js",
+    "migrate-roles": "node utils/migrateRolesSoft.js"
   },
   "keywords": [],
   "author": "",
