@@ -9,7 +9,47 @@ const migrateRolesSoft = async () => {
     await Role.sync();
     console.log("✅ Bảng roles đã sẵn sàng");
 
-    // 2. Thêm cột role_id nếu chưa có (không xóa cột role cũ)
+    // 2. Đảm bảo có đủ roles cơ bản TRƯỚC KHI tạo foreign key
+    const defaultRoles = [
+      {
+        id: 1,
+        name: "User",
+        description: "Regular user",
+        permissions: JSON.stringify({}),
+        is_active: true,
+      },
+      {
+        id: 2,
+        name: "Admin",
+        description: "Administrator",
+        permissions: JSON.stringify({}),
+        is_active: true,
+      },
+      {
+        id: 3,
+        name: "Marketer",
+        description: "Marketing user",
+        permissions: JSON.stringify({}),
+        is_active: true,
+      },
+    ];
+
+    for (const roleData of defaultRoles) {
+      try {
+        await Role.findOrCreate({
+          where: { id: roleData.id },
+          defaults: roleData,
+        });
+      } catch (error) {
+        console.log(
+          `ℹ️ Role ${roleData.name} đã tồn tại hoặc có lỗi:`,
+          error.message
+        );
+      }
+    }
+    console.log("✅ Đã đảm bảo có đủ roles cơ bản");
+
+    // 3. Thêm cột role_id nếu chưa có (không xóa cột role cũ)
     try {
       await sequelize.query(`
         ALTER TABLE users 
@@ -24,7 +64,17 @@ const migrateRolesSoft = async () => {
       }
     }
 
-    // 3. Thêm foreign key constraint nếu chưa có
+    // 4. Cập nhật role_id cho users hiện có TRƯỚC KHI tạo foreign key
+    const updateResult = await sequelize.query(`
+      UPDATE users 
+      SET role_id = role 
+      WHERE role_id IS NULL
+    `);
+    console.log(
+      `✅ Đã cập nhật role_id cho ${updateResult[0].affectedRows} users`
+    );
+
+    // 5. Thêm foreign key constraint SAU KHI đã có dữ liệu
     try {
       await sequelize.query(`
         ALTER TABLE users 
@@ -41,17 +91,7 @@ const migrateRolesSoft = async () => {
       }
     }
 
-    // 4. Cập nhật role_id cho users hiện có
-    const updateResult = await sequelize.query(`
-      UPDATE users 
-      SET role_id = role 
-      WHERE role_id IS NULL
-    `);
-    console.log(
-      `✅ Đã cập nhật role_id cho ${updateResult[0].affectedRows} users`
-    );
-
-    // 5. Hiển thị thống kê
+    // 6. Hiển thị thống kê
     const userStats = await sequelize.query(`
       SELECT 
         role,
@@ -65,6 +105,15 @@ const migrateRolesSoft = async () => {
     userStats[0].forEach((stat) => {
       console.log(
         `  - Role: ${stat.role}, Role ID: ${stat.role_id}, Count: ${stat.count}`
+      );
+    });
+
+    // 7. Kiểm tra roles trong bảng roles
+    const roles = await Role.findAll();
+    console.log("\n🎯 Roles hiện có:");
+    roles.forEach((role) => {
+      console.log(
+        `  - ID: ${role.id}, Name: ${role.name}, Active: ${role.is_active}`
       );
     });
 
