@@ -19,6 +19,7 @@ const {
 
 const userRoutes = require("./routes/userRoutes");
 const roleRoutes = require("./routes/roleRoutes");
+const statsRoutes = require("./routes/statsRoutes");
 const promptRoutes = require("./routes/promptRoutes");
 const categoryRoutes = require("./routes/categoryRoutes");
 const contactRoutes = require("./routes/contactRoutes");
@@ -230,6 +231,7 @@ app.post("/api/upload-excel", upload.single("file"), async (req, res) => {
 // Đổi các routes để sử dụng rate limiter
 app.use("/api/users", userRoutes);
 app.use("/api/roles", roleRoutes);
+app.use("/api/stats", statsRoutes);
 app.use("/api/prompts", promptRoutes);
 app.use("/api/categories", categoryRoutes);
 app.use("/api/contact", contactRoutes);

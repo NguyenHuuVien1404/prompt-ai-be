@@ -546,50 +546,42 @@ router.delete(
   }
 );
 
-// Thống kê users theo role
+// Thống kê users theo role (endpoint với role ID)
 router.get(
-  "/stats/users-by-role",
+  "/:roleId/stats",
   authMiddleware,
   adminOrMarketerMiddleware,
   async (req, res) => {
     try {
-      const stats = await User.findAll({
-        attributes: [
-          "role_id",
-          "role",
-          [sequelize.fn("COUNT", sequelize.col("id")), "user_count"],
-        ],
-        group: ["role_id", "role"],
-        raw: true,
-      });
+      const roleId = req.params.roleId;
 
-      // Lấy thông tin roles
-      const roles = await Role.findAll({
-        where: { is_active: true },
-        attributes: ["id", "name", "description"],
-      });
+      // Kiểm tra role có tồn tại không
+      const role = await Role.findByPk(roleId);
+      if (!role) {
+        return res.status(404).json({
+          success: false,
+          message: "Role không tồn tại",
+        });
+      }
 
-      // Kết hợp thông tin
-      const roleStats = roles.map((role) => {
-        const stat = stats.find(
-          (s) => s.role_id === role.id || s.role === role.id
-        );
-        return {
-          role_id: role.id,
-          role_name: role.name,
-          description: role.description,
-          user_count: stat ? parseInt(stat.user_count) : 0,
-        };
+      // Đếm số users trong role này
+      const userCount = await User.count({
+        where: {
+          [Op.or]: [{ role_id: roleId }, { role: roleId }],
+        },
       });
 
       res.json({
         success: true,
-        data: roleStats,
-        total_roles: roleStats.length,
-        total_users: roleStats.reduce((sum, stat) => sum + stat.user_count, 0),
+        data: {
+          role_id: role.id,
+          role_name: role.name,
+          description: role.description,
+          user_count: userCount,
+        },
       });
     } catch (error) {
-      console.error("Error getting user role stats:", error);
+      console.error("Error getting role stats:", error);
       res.status(500).json({
         success: false,
         error: error.message,
