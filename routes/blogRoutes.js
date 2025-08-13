@@ -206,9 +206,10 @@ router.put("/:id", handleUpload, validateBlogData, async (req, res) => {
       blogData.featured_image = `${serverUrl}/uploads/${req.file.filename}`;
     }
 
-    // if (blogData.status === "published" && blog.status === "draft") {
-    //     blogData.published_at = new Date();
-    // }
+    // ✅ Cho phép published_at có thể update thành null trực tiếp
+    if (req.body.published_at !== undefined) {
+      blogData.published_at = req.body.published_at;
+    }
 
     await blog.update(blogData);
     res.json(blog);
