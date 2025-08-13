@@ -206,9 +206,25 @@ router.put("/:id", handleUpload, validateBlogData, async (req, res) => {
       blogData.featured_image = `${serverUrl}/uploads/${req.file.filename}`;
     }
 
-    // ✅ Cho phép published_at có thể update thành null trực tiếp
+    // ✅ Xử lý published_at để tránh lỗi "Invalid date"
     if (req.body.published_at !== undefined) {
-      blogData.published_at = req.body.published_at;
+      if (req.body.published_at === null || req.body.published_at === "") {
+        blogData.published_at = null;
+      } else if (
+        req.body.published_at === "now" ||
+        req.body.published_at === "current"
+      ) {
+        blogData.published_at = new Date();
+      } else {
+        // Kiểm tra xem có phải date hợp lệ không
+        const dateValue = new Date(req.body.published_at);
+        if (isNaN(dateValue.getTime())) {
+          return res
+            .status(400)
+            .json({ error: "Invalid date format for published_at" });
+        }
+        blogData.published_at = dateValue;
+      }
     }
 
     await blog.update(blogData);
