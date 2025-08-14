@@ -14,7 +14,7 @@ const {
 // Cấu hình storage cho multer
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    const uploadDir = "uploads";
+    const uploadDir = "/var/www/promvn/uploads";
     if (!fs.existsSync(uploadDir)) {
       fs.mkdirSync(uploadDir, { recursive: true });
     }
