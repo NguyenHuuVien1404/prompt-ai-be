@@ -51,8 +51,7 @@ const upload = multer({
   limits: { fileSize: 5 * 1024 * 1024 }, // Giới hạn file tối đa 5MB
 });
 
-const path = require("path");
-router.use("/uploads", express.static(path.resolve("/var/www/promvn/uploads"))); // Cho phép truy cập ảnh đã upload
+router.use("/uploads", express.static("uploads")); // Cho phép truy cập ảnh đã upload
 
 // GET: Lấy tất cả Product theo trang
 router.get("/", async (req, res) => {
