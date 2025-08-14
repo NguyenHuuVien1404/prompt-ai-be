@@ -52,8 +52,7 @@ const shouldCompress = (req, res) => {
 app.use(compression({ filter: shouldCompress }));
 // Nén dữ liệu trước khi gửi để giảm bandwith và tăng tốc độ
 
-// Static resources không chịu rate limit
-app.use("/uploads", express.static("uploads"));
+// Static file serving is handled by nginx at /uploads/ path
 
 // Sử dụng helmet để bảo vệ HTTP headers
 app.use(helmet());
@@ -80,7 +79,7 @@ app.use("/api/upload", uploadLimiter);
 // Áp dụng API limiter cho các routes còn lại
 app.use("/api", apiLimiter);
 
-const upload = multer({ dest: "uploads/" });
+const upload = multer({ dest: "/var/www/promvn/uploads/" });
 
 app.post("/api/upload-word", upload.single("file"), async (req, res) => {
   try {
