@@ -8,13 +8,16 @@ const {
   authMiddleware,
   adminMiddleware,
 } = require("../middleware/authMiddleware");
-// Cấu hình Multer để lưu file vào thư mục "uploads"
+const uploadDir = path.join(__dirname, "../uploads");
+
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    cb(null, "/var/www/promvn/uploads"); // Lưu file vào thư mục "uploads"
+    cb(null, "/var/www/promvn/uploads");
   },
   filename: (req, file, cb) => {
-    cb(null, Date.now() + path.extname(file.originalname)); // Tạo tên file duy nhất
+    const ext = path.extname(file.originalname);
+    const uniqueName = Date.now() + "-" + Math.round(Math.random() * 1e9) + ext;
+    cb(null, uniqueName);
   },
 });
 
@@ -51,7 +54,7 @@ const upload = multer({
   limits: { fileSize: 5 * 1024 * 1024 }, // Giới hạn file tối đa 5MB
 });
 
-router.use("/uploads", express.static("uploads")); // Cho phép truy cập ảnh đã upload
+router.use("/uploads", express.static(uploadDir)); // Cho phép truy cập ảnh đã upload
 
 // GET: Lấy tất cả Product theo trang
 router.get("/", async (req, res) => {
