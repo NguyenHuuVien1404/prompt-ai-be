@@ -195,12 +195,13 @@ router.put("/:id", handleUpload, validateBlogData, async (req, res) => {
     if (req.file) {
       // Xóa ảnh cũ nếu có
       if (blog.featured_image) {
-        const oldPath = path.join(
-          "public",
-          blog.featured_image.replace(serverUrl, "")
-        );
-        if (fs.existsSync(oldPath)) {
-          fs.unlinkSync(oldPath);
+        // Extract filename from the full URL path
+        const filename = blog.featured_image.split("/uploads/").pop();
+        if (filename) {
+          const oldPath = path.join("/var/www/promvn/uploads", filename);
+          if (fs.existsSync(oldPath)) {
+            fs.unlinkSync(oldPath);
+          }
         }
       }
       blogData.featured_image = `${serverUrl}/uploads/${req.file.filename}`;
@@ -282,9 +283,13 @@ router.delete("/:id", async (req, res) => {
     if (!blog) return res.status(404).json({ message: "Blog not found" });
 
     if (blog.featured_image) {
-      const imagePath = path.join("public", blog.featured_image);
-      if (fs.existsSync(imagePath)) {
-        fs.unlinkSync(imagePath);
+      // Extract filename from the full URL path
+      const filename = blog.featured_image.split("/uploads/").pop();
+      if (filename) {
+        const imagePath = path.join("/var/www/promvn/uploads", filename);
+        if (fs.existsSync(imagePath)) {
+          fs.unlinkSync(imagePath);
+        }
       }
     }
 
