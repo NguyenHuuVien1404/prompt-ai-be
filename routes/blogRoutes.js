@@ -169,8 +169,50 @@ router.post("/", handleUpload, validateBlogData, async (req, res) => {
       featured_image: req.file
         ? `${serverUrl}/uploads/${req.file.filename}`
         : null,
-      published_at: req.body.status === "published" ? new Date() : null,
     };
+
+    // ✅ Xử lý published_at để tránh lỗi "Invalid date" - giống như route PUT
+    if (req.body.published_at !== undefined) {
+      if (
+        req.body.published_at === null ||
+        req.body.published_at === "" ||
+        req.body.published_at === "null"
+      ) {
+        blogData.published_at = null;
+      } else if (
+        req.body.published_at === "now" ||
+        req.body.published_at === "current"
+      ) {
+        blogData.published_at = new Date();
+      } else if (
+        req.body.published_at === "draft" ||
+        req.body.published_at === "unpublish"
+      ) {
+        blogData.published_at = null;
+      } else {
+        // Kiểm tra xem có phải date hợp lệ không
+        const dateValue = new Date(req.body.published_at);
+
+        if (isNaN(dateValue.getTime())) {
+          return res.status(400).json({
+            error: "Invalid date format for published_at",
+            receivedValue: req.body.published_at,
+            expectedFormats: [
+              "null",
+              "now",
+              "current",
+              "2024-01-01",
+              "2024-01-01T00:00:00.000Z",
+            ],
+          });
+        }
+        blogData.published_at = dateValue;
+      }
+    } else {
+      // Fallback logic cũ nếu không có published_at
+      blogData.published_at =
+        req.body.status === "published" ? new Date() : null;
+    }
 
     const blog = await Blog.create(blogData);
     res.status(201).json(blog);
@@ -209,45 +251,27 @@ router.put("/:id", handleUpload, validateBlogData, async (req, res) => {
 
     // ✅ Xử lý published_at để tránh lỗi "Invalid date"
     if (req.body.published_at !== undefined) {
-      console.log("🔍 Debug published_at:", {
-        value: req.body.published_at,
-        type: typeof req.body.published_at,
-        isNull: req.body.published_at === null,
-        isEmpty: req.body.published_at === "",
-      });
-
       if (
         req.body.published_at === null ||
         req.body.published_at === "" ||
         req.body.published_at === "null"
       ) {
         blogData.published_at = null;
-        console.log("✅ Set published_at = null");
       } else if (
         req.body.published_at === "now" ||
         req.body.published_at === "current"
       ) {
         blogData.published_at = new Date();
-        console.log("✅ Set published_at = current time");
       } else if (
         req.body.published_at === "draft" ||
         req.body.published_at === "unpublish"
       ) {
         blogData.published_at = null;
-        console.log("✅ Set published_at = null (draft/unpublish)");
       } else {
         // Kiểm tra xem có phải date hợp lệ không
-        console.log("🔍 Attempting to parse date:", req.body.published_at);
         const dateValue = new Date(req.body.published_at);
-        console.log(
-          "🔍 Parsed date result:",
-          dateValue,
-          "isValid:",
-          !isNaN(dateValue.getTime())
-        );
 
         if (isNaN(dateValue.getTime())) {
-          console.log("❌ Invalid date detected");
           return res.status(400).json({
             error: "Invalid date format for published_at",
             receivedValue: req.body.published_at,
@@ -261,7 +285,6 @@ router.put("/:id", handleUpload, validateBlogData, async (req, res) => {
           });
         }
         blogData.published_at = dateValue;
-        console.log("✅ Set published_at =", dateValue);
       }
     }
 
