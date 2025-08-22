@@ -93,24 +93,57 @@ router.post(
   }
 );
 
-// Get all categories with pagination
+// Get all categories with pagination and filters
 router.get("/", async (req, res) => {
   try {
     const page = parseInt(req.query.page) || 1;
     const pageSize = parseInt(req.query.pageSize) || 10;
+    const type = req.query.type;
+    const sectionId = req.query.sectionId;
+    const isCommingSoon = req.query.isCommingSoon;
+    const searchTxt = req.query.searchTxt;
 
-    // Create cache key based on query parameters
-    // const cacheKey = `categories_list_${page}_${pageSize}`;
+    // Create cache key based on all query parameters
+    const cacheKey = `categories_list_${page}_${pageSize}_${type || "all"}_${
+      sectionId || "all"
+    }_${isCommingSoon || "all"}_${searchTxt || "all"}`;
 
-    // // Try to get from cache first
-    // const cachedData = await cache.getCache(cacheKey);
-    // if (cachedData) {
-    //     return res.status(200).json(JSON.parse(cachedData));
-    // }
+    // Try to get from cache first
+    const cachedData = await cache.getCache(cacheKey);
+    if (cachedData) {
+      return res.status(200).json(JSON.parse(cachedData));
+    }
 
     const offset = (page - 1) * pageSize;
 
+    let whereCondition = {};
+
+    // Filter theo type
+    if (type && ["free", "premium"].includes(type)) {
+      whereCondition.type = type;
+    }
+
+    // Filter theo section_id
+    if (sectionId) {
+      whereCondition.section_id = parseInt(sectionId);
+    }
+
+    // Filter theo is_comming_soon
+    if (isCommingSoon !== undefined) {
+      whereCondition.is_comming_soon = isCommingSoon === "true";
+    }
+
+    // Filter theo name
+    if (searchTxt && searchTxt.trim() !== "") {
+      whereCondition[Op.or] = [
+        { name: { [Op.like]: `%${searchTxt}%` } },
+        { name: { [Op.like]: `%${searchTxt.toLowerCase()}%` } },
+        { name: { [Op.like]: `%${searchTxt.toUpperCase()}%` } },
+      ];
+    }
+
     const { count, rows } = await Category.findAndCountAll({
+      where: whereCondition,
       include: [{ model: Section, attributes: ["id", "name"] }],
       limit: pageSize,
       offset: offset,
@@ -121,11 +154,12 @@ router.get("/", async (req, res) => {
       total: count,
       page,
       pageSize,
+      filters: { type, sectionId, isCommingSoon, searchTxt },
       data: rows,
     };
 
     // Store in cache for 10 minutes (categories change less frequently)
-    // await cache.setCache(cacheKey, JSON.stringify(result), 600);
+    await cache.setCache(cacheKey, JSON.stringify(result), 600);
 
     res.status(200).json(result);
   } catch (error) {
