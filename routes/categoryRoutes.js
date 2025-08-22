@@ -298,16 +298,17 @@ router.put(
         : category.image_card;
 
       await category.update({
-        name: name || category.name,
+        name: name !== undefined ? name : category.name,
         image,
-        description: description || category.description,
+        description:
+          description !== undefined ? description : category.description,
         image_card,
         section_id: newSectionId,
         is_comming_soon:
           is_comming_soon !== undefined
             ? is_comming_soon
             : category.is_comming_soon,
-        type: type || category.type,
+        type: type !== undefined ? type : category.type,
       });
 
       // Invalidate relevant caches
