@@ -271,12 +271,39 @@ router.put(
   async (req, res) => {
     try {
       const categoryId = req.params.id;
+
+      // Debug logging
+      console.log("=== UPDATE CATEGORY DEBUG ===");
+      console.log("Category ID:", categoryId);
+      console.log("Raw req.body:", req.body);
+      console.log("req.files:", req.files);
+
       const { name, description, section_id, is_comming_soon, type } = req.body;
+
+      // Debug parsed values
+      console.log("Parsed values:");
+      console.log("- name:", name, "type:", typeof name);
+      console.log("- description:", description, "type:", typeof description);
+      console.log("- section_id:", section_id, "type:", typeof section_id);
+      console.log(
+        "- is_comming_soon:",
+        is_comming_soon,
+        "type:",
+        typeof is_comming_soon
+      );
+      console.log("- type:", type, "type:", typeof type);
 
       const category = await Category.findByPk(categoryId);
       if (!category) {
         return res.status(404).json({ message: "Category not found" });
       }
+
+      console.log("Current category data:", {
+        id: category.id,
+        name: category.name,
+        type: category.type,
+        is_comming_soon: category.is_comming_soon,
+      });
 
       // Validate type field if provided
       if (type && !["free", "premium"].includes(type)) {
@@ -297,7 +324,8 @@ router.put(
         ? `${baseUrl}/uploads/${req.files["image_card"][0].filename}`
         : category.image_card;
 
-      await category.update({
+      // Prepare update data
+      const updateData = {
         name: name !== undefined ? name : category.name,
         image,
         description:
@@ -309,6 +337,20 @@ router.put(
             ? is_comming_soon
             : category.is_comming_soon,
         type: type !== undefined ? type : category.type,
+      };
+
+      console.log("Update data to be applied:", updateData);
+
+      await category.update(updateData);
+
+      // Refresh category data after update
+      await category.reload();
+
+      console.log("Category after update:", {
+        id: category.id,
+        name: category.name,
+        type: category.type,
+        is_comming_soon: category.is_comming_soon,
       });
 
       // Invalidate relevant caches
@@ -321,6 +363,7 @@ router.put(
 
       res.status(200).json(category);
     } catch (error) {
+      console.error("Error updating category:", error);
       res
         .status(500)
         .json({ message: "Error updating category", error: error.message });

@@ -70,6 +70,7 @@ app.use(
 );
 
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
 // Áp dụng rate limiter cho các loại API khác nhau
 app.use("/api/users", authLimiter);
