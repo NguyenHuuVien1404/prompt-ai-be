@@ -208,7 +208,8 @@ router.post(
   upload.fields([{ name: "image" }, { name: "image_card" }]),
   async (req, res) => {
     try {
-      const { name, description, section_id, is_comming_soon, type } = req.body;
+      const { name, description, section_id, is_comming_soon, category_type } =
+        req.body;
 
       // Validate required fields
       if (!name || !section_id) {
@@ -218,7 +219,7 @@ router.post(
       }
 
       // Validate type field
-      if (type && !["free", "premium"].includes(type)) {
+      if (category_type && !["free", "premium"].includes(category_type)) {
         return res
           .status(400)
           .json({ message: "Type must be either 'free' or 'premium'" });
@@ -246,7 +247,7 @@ router.post(
         image_card,
         section_id,
         is_comming_soon,
-        type: type || "free", // Default to 'free' if not provided
+        type: category_type || "free", // Default to 'free' if not provided
       });
 
       // Invalidate relevant caches
@@ -278,7 +279,18 @@ router.put(
       console.log("Raw req.body:", req.body);
       console.log("req.files:", req.files);
 
-      const { name, description, section_id, is_comming_soon, type } = req.body;
+      // Check if we have form data in req.body (from multer().any() in index.js)
+      let formData = req.body;
+
+      // If req.body is empty but we have form data, try to get it from raw body
+      if (!formData || Object.keys(formData).length === 0) {
+        console.log("req.body is empty, checking for form data...");
+        // This might happen if upload.fields() overwrites the body
+        // We'll need to handle this case
+      }
+
+      const { name, description, section_id, is_comming_soon, category_type } =
+        formData;
 
       // Debug parsed values
       console.log("Parsed values:");
@@ -291,7 +303,12 @@ router.put(
         "type:",
         typeof is_comming_soon
       );
-      console.log("- type:", type, "type:", typeof type);
+      console.log(
+        "- category_type:",
+        category_type,
+        "type:",
+        typeof category_type
+      );
 
       const category = await Category.findByPk(categoryId);
       if (!category) {
@@ -306,7 +323,7 @@ router.put(
       });
 
       // Validate type field if provided
-      if (type && !["free", "premium"].includes(type)) {
+      if (category_type && !["free", "premium"].includes(category_type)) {
         return res
           .status(400)
           .json({ message: "Type must be either 'free' or 'premium'" });
@@ -317,12 +334,14 @@ router.put(
 
       // Lấy URL của ảnh từ req.files (nếu có)
       const baseUrl = `${req.protocol}://${req.get("host")}`;
-      const image = req.files["image"]
-        ? `${baseUrl}/uploads/${req.files["image"][0].filename}`
-        : category.image;
-      const image_card = req.files["image_card"]
-        ? `${baseUrl}/uploads/${req.files["image_card"][0].filename}`
-        : category.image_card;
+      const image =
+        req.files && req.files["image"]
+          ? `${baseUrl}/uploads/${req.files["image"][0].filename}`
+          : category.image;
+      const image_card =
+        req.files && req.files["image_card"]
+          ? `${baseUrl}/uploads/${req.files["image_card"][0].filename}`
+          : category.image_card;
 
       // Prepare update data
       const updateData = {
@@ -336,7 +355,7 @@ router.put(
           is_comming_soon !== undefined
             ? is_comming_soon
             : category.is_comming_soon,
-        type: type !== undefined ? type : category.type,
+        type: category_type !== undefined ? category_type : category.type,
       };
 
       console.log("Update data to be applied:", updateData);
