@@ -1,7 +1,6 @@
 const express = require("express");
 const router = express.Router();
 const { Op, Sequelize } = require("sequelize");
-const sequelize = require("../config/database");
 const Category = require("../models/Category");
 const Section = require("../models/Section");
 const multer = require("multer");
@@ -142,8 +141,6 @@ router.get("/", async (req, res) => {
       order: [["created_at", "DESC"]],
     });
 
-    
-
     const result = {
       total: count,
       page,
@@ -152,11 +149,8 @@ router.get("/", async (req, res) => {
       data: rows,
     };
 
-
-
     res.status(200).json(result);
   } catch (error) {
-    console.error("Error fetching categories:", error);
     res
       .status(500)
       .json({ message: "Error fetching categories", error: error.message });
@@ -257,7 +251,6 @@ router.put(
 
       // Debug logging
 
-
       // Extract form data from req.body
       const formData = req.body;
 
@@ -276,15 +269,11 @@ router.put(
       const { name, description, section_id, is_comming_soon, category_type } =
         formData;
 
-      
+      const category = await Category.findByPk(categoryId);
 
-            const category = await Category.findByPk(categoryId);
-      
       if (!category) {
         return res.status(404).json({ message: "Category not found" });
       }
-
-
 
       // Validate type field if provided
       if (category_type && !["free", "premium"].includes(category_type)) {
@@ -322,29 +311,13 @@ router.put(
         type: category_type !== undefined ? category_type : category.type,
       };
 
-      console.log("Update data to be applied:", updateData);
-
-      
-
       await category.update(updateData);
 
       // Refresh category data after update
       await category.reload();
 
-      console.log("Category after update:", {
-        id: category.id,
-        name: category.name,
-        type: category.type,
-        is_comming_soon: category.is_comming_soon,
-        section_id: category.section_id,
-      });
-
-      // No cache to invalidate - always fresh data
-      console.log("No cache invalidation needed - always fresh data");
-
       res.status(200).json(category);
     } catch (error) {
-      console.error("Error updating category:", error);
       res
         .status(500)
         .json({ message: "Error updating category", error: error.message });
@@ -409,10 +382,6 @@ router.get("/by-type/:type", async (req, res) => {
     const page = parseInt(req.query.page) || 1;
     const pageSize = parseInt(req.query.pageSize) || 10;
 
-    console.log("=== GET CATEGORIES BY TYPE DEBUG ===");
-    console.log("Type:", type);
-    console.log("Pagination:", { page, pageSize });
-
     // Validate type parameter
     if (!["free", "premium"].includes(type)) {
       return res
@@ -430,23 +399,6 @@ router.get("/by-type/:type", async (req, res) => {
       order: [["created_at", "DESC"]],
     });
 
-    console.log(
-      `Found ${count} categories with type '${type}', returning ${rows.length} rows`
-    );
-
-    // Log sample data
-    if (rows.length > 0) {
-      console.log("Sample categories by type:");
-      rows.slice(0, 3).forEach((cat, index) => {
-        console.log(`Category ${index + 1}:`, {
-          id: cat.id,
-          name: cat.name,
-          type: cat.type,
-          section_id: cat.section_id,
-        });
-      });
-    }
-
     const result = {
       type,
       total: count,
@@ -457,7 +409,6 @@ router.get("/by-type/:type", async (req, res) => {
 
     res.status(200).json(result);
   } catch (error) {
-    console.error("Error fetching categories by type:", error);
     res.status(500).json({
       message: "Error fetching categories by type",
       error: error.message,
@@ -472,10 +423,6 @@ router.get("/by-sectionId/:sectionId", async (req, res) => {
     const searchTxt = req.query.searchTxt;
     const listCategory = req.query.listCategory;
     const type = req.query.type; // Thêm filter theo type
-
-    console.log("=== GET CATEGORIES BY SECTION DEBUG ===");
-    console.log("Section ID:", sectionId);
-    console.log("Query parameters:", { searchTxt, listCategory, type });
 
     // if (!sectionId) {
     //     return res.status(400).json({ error: "sectionId is required" });
@@ -557,32 +504,12 @@ router.get("/by-sectionId/:sectionId", async (req, res) => {
       return categoryData;
     });
 
-    // Log sample data
-    if (modifiedCategories.length > 0) {
-      console.log("Sample categories by section:");
-      modifiedCategories.slice(0, 3).forEach((cat, index) => {
-        console.log(`Category ${index + 1}:`, {
-          id: cat.id,
-          name: cat.name,
-          type: cat.type,
-          section_id: cat.section_id,
-          prompt_count: cat.prompt_count,
-        });
-      });
-    }
-
     const result = {
       section_id: sectionId,
       type: type || "all", // Thêm thông tin về type filter
       total: modifiedCategories.length,
       data: modifiedCategories,
     };
-
-    console.log("Result summary:", {
-      section_id: result.section_id,
-      type: result.type,
-      total: result.total,
-    });
 
     // No caching - always fresh data
     console.log("Categories by section returned (no cache)");
