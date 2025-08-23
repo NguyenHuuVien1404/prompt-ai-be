@@ -481,12 +481,17 @@ router.put(
       });
 
       // Invalidate relevant caches
-      // await Promise.all([
-      //     cache.invalidateCache(`category_detail_${categoryId}`),
-      //     cache.invalidateCache(`categories_list_*`),
-      //     cache.invalidateCache(`categories_by_section_${oldSectionId}*`),
-      //     cache.invalidateCache(`categories_by_section_${newSectionId}*`),
-      // ]);
+      try {
+        await Promise.all([
+          cache.invalidateCache(`category_detail_${categoryId}`),
+          cache.invalidateCache(`categories_list_*`),
+          cache.invalidateCache(`categories_by_section_${oldSectionId}*`),
+          cache.invalidateCache(`categories_by_section_${newSectionId}*`),
+        ]);
+        console.log("Cache invalidated successfully");
+      } catch (error) {
+        console.error("Error invalidating cache:", error);
+      }
 
       res.status(200).json(category);
     } catch (error) {
