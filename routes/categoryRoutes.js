@@ -114,22 +114,7 @@ router.get("/", async (req, res) => {
       searchTxt,
     });
 
-    // Create cache key based on all query parameters
-    const cacheKey = `categories_list_${page}_${pageSize}_${type || "all"}_${
-      sectionId || "all"
-    }_${isCommingSoon || "all"}_${searchTxt || "all"}`;
-
-    console.log("Cache key for list:", cacheKey);
-    console.log("Cache key for detail would be:", `category_detail_55`);
-
-    // Try to get from cache first
-    const cachedData = await cache.getCache(cacheKey);
-    if (cachedData) {
-      console.log("Serving categories list from cache");
-      return res.status(200).json(JSON.parse(cachedData));
-    }
-
-    console.log("Fetching categories list from database");
+    console.log("Always fetching fresh data from database (no cache)");
     const offset = (page - 1) * pageSize;
 
     let whereCondition = {};
@@ -204,9 +189,8 @@ router.get("/", async (req, res) => {
       data: rows,
     };
 
-    // Store in cache for 10 minutes (categories change less frequently)
-    await cache.setCache(cacheKey, JSON.stringify(result), 600);
-    console.log("Categories list cached successfully");
+    // No caching - always fresh data
+    console.log("Categories list returned (no cache)");
 
     res.status(200).json(result);
   } catch (error) {
@@ -222,22 +206,9 @@ router.get("/:id", async (req, res) => {
   try {
     const categoryId = req.params.id;
 
-    // Force refresh from database (bypass cache for debugging)
-    const forceRefresh = req.query.refresh === "true";
-
-    if (!forceRefresh) {
-      // Create cache key
-      const cacheKey = `category_detail_${categoryId}`;
-
-      // Try to get from cache first
-      const cachedData = await cache.getCache(cacheKey);
-      if (cachedData) {
-        console.log(`Serving category ${categoryId} from cache`);
-        return res.status(200).json(JSON.parse(cachedData));
-      }
-    }
-
-    console.log(`Fetching category ${categoryId} from database`);
+    console.log(
+      `Always fetching category ${categoryId} from database (no cache)`
+    );
     const category = await Category.findByPk(categoryId, {
       include: [{ model: Section, attributes: ["id", "name"] }],
     });
@@ -270,14 +241,8 @@ router.get("/:id", async (req, res) => {
       });
     }
 
-    // Store in cache for 30 minutes (category details change less frequently)
-    if (!forceRefresh) {
-      await cache.setCache(
-        `category_detail_${categoryId}`,
-        JSON.stringify(category),
-        1800
-      );
-    }
+    // No caching - always fresh data
+    console.log(`Category ${categoryId} returned (no cache)`);
 
     res.status(200).json(category);
   } catch (error) {
@@ -504,18 +469,8 @@ router.put(
         section_id: category.section_id,
       });
 
-      // Invalidate relevant caches
-      try {
-        await Promise.all([
-          cache.invalidateCache(`category_detail_${categoryId}`),
-          cache.invalidateCache(`categories_list_*`),
-          cache.invalidateCache(`categories_by_section_${oldSectionId}*`),
-          cache.invalidateCache(`categories_by_section_${newSectionId}*`),
-        ]);
-        console.log("Cache invalidated successfully");
-      } catch (error) {
-        console.error("Error invalidating cache:", error);
-      }
+      // No cache to invalidate - always fresh data
+      console.log("No cache invalidation needed - always fresh data");
 
       res.status(200).json(category);
     } catch (error) {
@@ -759,8 +714,8 @@ router.get("/by-sectionId/:sectionId", async (req, res) => {
       total: result.total,
     });
 
-    // Cache for 10 minutes
-    // await cache.setCache(cacheKey, JSON.stringify(result), 600);
+    // No caching - always fresh data
+    console.log("Categories by section returned (no cache)");
 
     res.status(200).json(result);
   } catch (error) {
