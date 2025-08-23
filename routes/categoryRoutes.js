@@ -104,17 +104,31 @@ router.get("/", async (req, res) => {
     const isCommingSoon = req.query.isCommingSoon;
     const searchTxt = req.query.searchTxt;
 
+    console.log("=== GET CATEGORIES LIST DEBUG ===");
+    console.log("Query parameters:", {
+      page,
+      pageSize,
+      type,
+      sectionId,
+      isCommingSoon,
+      searchTxt,
+    });
+
     // Create cache key based on all query parameters
     const cacheKey = `categories_list_${page}_${pageSize}_${type || "all"}_${
       sectionId || "all"
     }_${isCommingSoon || "all"}_${searchTxt || "all"}`;
 
+    console.log("Cache key:", cacheKey);
+
     // Try to get from cache first
     const cachedData = await cache.getCache(cacheKey);
     if (cachedData) {
+      console.log("Serving categories list from cache");
       return res.status(200).json(JSON.parse(cachedData));
     }
 
+    console.log("Fetching categories list from database");
     const offset = (page - 1) * pageSize;
 
     let whereCondition = {};
@@ -143,6 +157,8 @@ router.get("/", async (req, res) => {
       ];
     }
 
+    console.log("Where condition:", JSON.stringify(whereCondition, null, 2));
+
     const { count, rows } = await Category.findAndCountAll({
       where: whereCondition,
       include: [{ model: Section, attributes: ["id", "name"] }],
@@ -150,6 +166,22 @@ router.get("/", async (req, res) => {
       offset: offset,
       order: [["created_at", "DESC"]],
     });
+
+    console.log(`Found ${count} categories, returning ${rows.length} rows`);
+
+    // Log first few categories for debugging
+    if (rows.length > 0) {
+      console.log("Sample categories data:");
+      rows.slice(0, 3).forEach((cat, index) => {
+        console.log(`Category ${index + 1}:`, {
+          id: cat.id,
+          name: cat.name,
+          type: cat.type,
+          section_id: cat.section_id,
+          is_comming_soon: cat.is_comming_soon,
+        });
+      });
+    }
 
     const result = {
       total: count,
@@ -161,9 +193,11 @@ router.get("/", async (req, res) => {
 
     // Store in cache for 10 minutes (categories change less frequently)
     await cache.setCache(cacheKey, JSON.stringify(result), 600);
+    console.log("Categories list cached successfully");
 
     res.status(200).json(result);
   } catch (error) {
+    console.error("Error fetching categories:", error);
     res
       .status(500)
       .json({ message: "Error fetching categories", error: error.message });
@@ -204,6 +238,12 @@ router.get("/:id", async (req, res) => {
       name: category.name,
       type: category.type,
       section_id: category.section_id,
+      is_comming_soon: category.is_comming_soon,
+      image: category.image,
+      image_card: category.image_card,
+      description: category.description,
+      created_at: category.created_at,
+      updated_at: category.updated_at,
     });
 
     // Store in cache for 30 minutes (category details change less frequently)
@@ -515,6 +555,10 @@ router.get("/by-type/:type", async (req, res) => {
     const page = parseInt(req.query.page) || 1;
     const pageSize = parseInt(req.query.pageSize) || 10;
 
+    console.log("=== GET CATEGORIES BY TYPE DEBUG ===");
+    console.log("Type:", type);
+    console.log("Pagination:", { page, pageSize });
+
     // Validate type parameter
     if (!["free", "premium"].includes(type)) {
       return res
@@ -532,6 +576,23 @@ router.get("/by-type/:type", async (req, res) => {
       order: [["created_at", "DESC"]],
     });
 
+    console.log(
+      `Found ${count} categories with type '${type}', returning ${rows.length} rows`
+    );
+
+    // Log sample data
+    if (rows.length > 0) {
+      console.log("Sample categories by type:");
+      rows.slice(0, 3).forEach((cat, index) => {
+        console.log(`Category ${index + 1}:`, {
+          id: cat.id,
+          name: cat.name,
+          type: cat.type,
+          section_id: cat.section_id,
+        });
+      });
+    }
+
     const result = {
       type,
       total: count,
@@ -542,6 +603,7 @@ router.get("/by-type/:type", async (req, res) => {
 
     res.status(200).json(result);
   } catch (error) {
+    console.error("Error fetching categories by type:", error);
     res.status(500).json({
       message: "Error fetching categories by type",
       error: error.message,
@@ -556,6 +618,10 @@ router.get("/by-sectionId/:sectionId", async (req, res) => {
     const searchTxt = req.query.searchTxt;
     const listCategory = req.query.listCategory;
     const type = req.query.type; // Thêm filter theo type
+
+    console.log("=== GET CATEGORIES BY SECTION DEBUG ===");
+    console.log("Section ID:", sectionId);
+    console.log("Query parameters:", { searchTxt, listCategory, type });
 
     // if (!sectionId) {
     //     return res.status(400).json({ error: "sectionId is required" });
@@ -625,6 +691,10 @@ router.get("/by-sectionId/:sectionId", async (req, res) => {
       ],
     });
 
+    console.log(
+      `Found ${categories.length} categories for section ${sectionId}`
+    );
+
     const modifiedCategories = categories.map((category) => {
       const categoryData = category.toJSON(); // Chuyển instance Sequelize thành object
       if (categoryData.section_id === 3) {
@@ -633,12 +703,32 @@ router.get("/by-sectionId/:sectionId", async (req, res) => {
       return categoryData;
     });
 
+    // Log sample data
+    if (modifiedCategories.length > 0) {
+      console.log("Sample categories by section:");
+      modifiedCategories.slice(0, 3).forEach((cat, index) => {
+        console.log(`Category ${index + 1}:`, {
+          id: cat.id,
+          name: cat.name,
+          type: cat.type,
+          section_id: cat.section_id,
+          prompt_count: cat.prompt_count,
+        });
+      });
+    }
+
     const result = {
       section_id: sectionId,
       type: type || "all", // Thêm thông tin về type filter
       total: modifiedCategories.length,
       data: modifiedCategories,
     };
+
+    console.log("Result summary:", {
+      section_id: result.section_id,
+      type: result.type,
+      total: result.total,
+    });
 
     // Cache for 10 minutes
     // await cache.setCache(cacheKey, JSON.stringify(result), 600);
