@@ -339,12 +339,29 @@ router.put(
       console.log("Full formData object:", formData);
       console.log("All keys in formData:", Object.keys(formData));
 
-      const category = await Category.findByPk(categoryId);
+      // Force a fresh database query
+      const category = await Category.findByPk(categoryId, {
+        // Force a fresh query from database
+        lock: false,
+        skipLocked: false,
+      });
+
       if (!category) {
         return res.status(404).json({ message: "Category not found" });
       }
 
-      console.log("Current category data:", {
+      // Also check raw database value
+      const rawResult = await sequelize.query(
+        "SELECT id, name, type, section_id, is_comming_soon FROM categories WHERE id = ?",
+        {
+          replacements: [categoryId],
+          type: sequelize.QueryTypes.SELECT,
+        }
+      );
+
+      console.log("Raw database query result:", rawResult);
+
+      console.log("Current category data from model:", {
         id: category.id,
         name: category.name,
         type: category.type,
