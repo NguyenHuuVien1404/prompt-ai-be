@@ -1,6 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const { Op, Sequelize } = require("sequelize");
+const sequelize = require("../config/database");
 const Category = require("../models/Category");
 const Section = require("../models/Section");
 const multer = require("multer");
