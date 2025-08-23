@@ -279,14 +279,19 @@ router.put(
       console.log("Raw req.body:", req.body);
       console.log("req.files:", req.files);
 
-      // Check if we have form data in req.body (from multer().any() in index.js)
-      let formData = req.body;
+      // Extract form data from req.body
+      const formData = req.body;
 
-      // If req.body is empty but we have form data, try to get it from raw body
+      // Parse boolean values properly
+      const parseBoolean = (value) => {
+        if (value === "true") return true;
+        if (value === "false") return false;
+        return value;
+      };
+
+      // Ensure we have the form data, fallback to empty object if not
       if (!formData || Object.keys(formData).length === 0) {
-        console.log("req.body is empty, checking for form data...");
-        // This might happen if upload.fields() overwrites the body
-        // We'll need to handle this case
+        console.log("Warning: req.body is empty, this might cause issues");
       }
 
       const { name, description, section_id, is_comming_soon, category_type } =
@@ -309,6 +314,10 @@ router.put(
         "type:",
         typeof category_type
       );
+
+      // Additional debugging for form data
+      console.log("Full formData object:", formData);
+      console.log("All keys in formData:", Object.keys(formData));
 
       const category = await Category.findByPk(categoryId);
       if (!category) {
@@ -350,15 +359,28 @@ router.put(
         description:
           description !== undefined ? description : category.description,
         image_card,
-        section_id: newSectionId,
+        section_id: parseInt(newSectionId) || oldSectionId,
         is_comming_soon:
           is_comming_soon !== undefined
-            ? is_comming_soon
+            ? parseBoolean(is_comming_soon)
             : category.is_comming_soon,
         type: category_type !== undefined ? category_type : category.type,
       };
 
       console.log("Update data to be applied:", updateData);
+
+      // Check if there are actual changes
+      const hasChanges = Object.keys(updateData).some((key) => {
+        if (key === "image" || key === "image_card") return false; // Skip image fields for comparison
+        return category[key] !== updateData[key];
+      });
+
+      console.log("Has changes:", hasChanges);
+      if (hasChanges) {
+        console.log("Changes detected, updating category...");
+      } else {
+        console.log("No changes detected, category already has these values");
+      }
 
       await category.update(updateData);
 
@@ -370,6 +392,7 @@ router.put(
         name: category.name,
         type: category.type,
         is_comming_soon: category.is_comming_soon,
+        section_id: category.section_id,
       });
 
       // Invalidate relevant caches
