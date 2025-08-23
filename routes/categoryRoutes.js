@@ -104,17 +104,6 @@ router.get("/", async (req, res) => {
     const isCommingSoon = req.query.isCommingSoon;
     const searchTxt = req.query.searchTxt;
 
-    console.log("=== GET CATEGORIES LIST DEBUG ===");
-    console.log("Query parameters:", {
-      page,
-      pageSize,
-      type,
-      sectionId,
-      isCommingSoon,
-      searchTxt,
-    });
-
-    console.log("Always fetching fresh data from database (no cache)");
     const offset = (page - 1) * pageSize;
 
     let whereCondition = {};
@@ -153,33 +142,7 @@ router.get("/", async (req, res) => {
       order: [["created_at", "DESC"]],
     });
 
-    console.log(`Found ${count} categories, returning ${rows.length} rows`);
-
-    // Log first few categories for debugging
-    if (rows.length > 0) {
-      console.log("Sample categories data:");
-      rows.slice(0, 3).forEach((cat, index) => {
-        console.log(`Category ${index + 1}:`, {
-          id: cat.id,
-          name: cat.name,
-          type: cat.type,
-          section_id: cat.section_id,
-          is_comming_soon: cat.is_comming_soon,
-        });
-      });
-
-      // Special check for category 55
-      const category55 = rows.find((cat) => cat.id === 55);
-      if (category55) {
-        console.log("=== SPECIAL CHECK: Category 55 in list ===");
-        console.log("Category 55 from list:", {
-          id: category55.id,
-          name: category55.name,
-          type: category55.type,
-          section_id: category55.section_id,
-        });
-      }
-    }
+    
 
     const result = {
       total: count,
@@ -189,8 +152,7 @@ router.get("/", async (req, res) => {
       data: rows,
     };
 
-    // No caching - always fresh data
-    console.log("Categories list returned (no cache)");
+
 
     res.status(200).json(result);
   } catch (error) {
@@ -206,9 +168,6 @@ router.get("/:id", async (req, res) => {
   try {
     const categoryId = req.params.id;
 
-    console.log(
-      `Always fetching category ${categoryId} from database (no cache)`
-    );
     const category = await Category.findByPk(categoryId, {
       include: [{ model: Section, attributes: ["id", "name"] }],
     });
@@ -216,33 +175,6 @@ router.get("/:id", async (req, res) => {
     if (!category) {
       return res.status(404).json({ message: "Category not found" });
     }
-
-    console.log(`Category ${categoryId} from database:`, {
-      id: category.id,
-      name: category.name,
-      type: category.type,
-      section_id: category.section_id,
-      is_comming_soon: category.is_comming_soon,
-      image: category.image,
-      image_card: category.image_card,
-      description: category.description,
-      created_at: category.created_at,
-      updated_at: category.updated_at,
-    });
-
-    // Special check for category 55
-    if (categoryId == 55) {
-      console.log("=== SPECIAL CHECK: Category 55 detail ===");
-      console.log("Category 55 from detail:", {
-        id: category.id,
-        name: category.name,
-        type: category.type,
-        section_id: category.section_id,
-      });
-    }
-
-    // No caching - always fresh data
-    console.log(`Category ${categoryId} returned (no cache)`);
 
     res.status(200).json(category);
   } catch (error) {
@@ -324,10 +256,7 @@ router.put(
       const categoryId = req.params.id;
 
       // Debug logging
-      console.log("=== UPDATE CATEGORY DEBUG ===");
-      console.log("Category ID:", categoryId);
-      console.log("Raw req.body:", req.body);
-      console.log("req.files:", req.files);
+
 
       // Extract form data from req.body
       const formData = req.body;
@@ -347,56 +276,15 @@ router.put(
       const { name, description, section_id, is_comming_soon, category_type } =
         formData;
 
-      // Debug parsed values
-      console.log("Parsed values:");
-      console.log("- name:", name, "type:", typeof name);
-      console.log("- description:", description, "type:", typeof description);
-      console.log("- section_id:", section_id, "type:", typeof section_id);
-      console.log(
-        "- is_comming_soon:",
-        is_comming_soon,
-        "type:",
-        typeof is_comming_soon
-      );
-      console.log(
-        "- category_type:",
-        category_type,
-        "type:",
-        typeof category_type
-      );
+      
 
-      // Additional debugging for form data
-      console.log("Full formData object:", formData);
-      console.log("All keys in formData:", Object.keys(formData));
-
-      // Force a fresh database query
-      const category = await Category.findByPk(categoryId, {
-        // Force a fresh query from database
-        lock: false,
-        skipLocked: false,
-      });
-
+            const category = await Category.findByPk(categoryId);
+      
       if (!category) {
         return res.status(404).json({ message: "Category not found" });
       }
 
-      // Also check raw database value
-      const rawResult = await sequelize.query(
-        "SELECT id, name, type, section_id, is_comming_soon FROM categories WHERE id = ?",
-        {
-          replacements: [categoryId],
-          type: sequelize.QueryTypes.SELECT,
-        }
-      );
 
-      console.log("Raw database query result:", rawResult);
-
-      console.log("Current category data from model:", {
-        id: category.id,
-        name: category.name,
-        type: category.type,
-        is_comming_soon: category.is_comming_soon,
-      });
 
       // Validate type field if provided
       if (category_type && !["free", "premium"].includes(category_type)) {
@@ -436,25 +324,7 @@ router.put(
 
       console.log("Update data to be applied:", updateData);
 
-      // Check if there are actual changes
-      const hasChanges = Object.keys(updateData).some((key) => {
-        if (key === "image" || key === "image_card") return false; // Skip image fields for comparison
-
-        const oldValue = category[key];
-        const newValue = updateData[key];
-        const isDifferent = oldValue !== newValue;
-
-        console.log(`Comparing ${key}:`, { oldValue, newValue, isDifferent });
-
-        return isDifferent;
-      });
-
-      console.log("Has changes:", hasChanges);
-      if (hasChanges) {
-        console.log("Changes detected, updating category...");
-      } else {
-        console.log("No changes detected, category already has these values");
-      }
+      
 
       await category.update(updateData);
 
