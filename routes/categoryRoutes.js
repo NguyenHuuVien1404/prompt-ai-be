@@ -119,7 +119,8 @@ router.get("/", async (req, res) => {
       sectionId || "all"
     }_${isCommingSoon || "all"}_${searchTxt || "all"}`;
 
-    console.log("Cache key:", cacheKey);
+    console.log("Cache key for list:", cacheKey);
+    console.log("Cache key for detail would be:", `category_detail_55`);
 
     // Try to get from cache first
     const cachedData = await cache.getCache(cacheKey);
@@ -181,6 +182,18 @@ router.get("/", async (req, res) => {
           is_comming_soon: cat.is_comming_soon,
         });
       });
+
+      // Special check for category 55
+      const category55 = rows.find((cat) => cat.id === 55);
+      if (category55) {
+        console.log("=== SPECIAL CHECK: Category 55 in list ===");
+        console.log("Category 55 from list:", {
+          id: category55.id,
+          name: category55.name,
+          type: category55.type,
+          section_id: category55.section_id,
+        });
+      }
     }
 
     const result = {
@@ -245,6 +258,17 @@ router.get("/:id", async (req, res) => {
       created_at: category.created_at,
       updated_at: category.updated_at,
     });
+
+    // Special check for category 55
+    if (categoryId == 55) {
+      console.log("=== SPECIAL CHECK: Category 55 detail ===");
+      console.log("Category 55 from detail:", {
+        id: category.id,
+        name: category.name,
+        type: category.type,
+        section_id: category.section_id,
+      });
+    }
 
     // Store in cache for 30 minutes (category details change less frequently)
     if (!forceRefresh) {
