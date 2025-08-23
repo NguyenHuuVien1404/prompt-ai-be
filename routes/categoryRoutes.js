@@ -174,15 +174,22 @@ router.get("/:id", async (req, res) => {
   try {
     const categoryId = req.params.id;
 
-    // Create cache key
-    const cacheKey = `category_detail_${categoryId}`;
+    // Force refresh from database (bypass cache for debugging)
+    const forceRefresh = req.query.refresh === "true";
 
-    // Try to get from cache first
-    const cachedData = await cache.getCache(cacheKey);
-    if (cachedData) {
-      return res.status(200).json(JSON.parse(cachedData));
+    if (!forceRefresh) {
+      // Create cache key
+      const cacheKey = `category_detail_${categoryId}`;
+
+      // Try to get from cache first
+      const cachedData = await cache.getCache(cacheKey);
+      if (cachedData) {
+        console.log(`Serving category ${categoryId} from cache`);
+        return res.status(200).json(JSON.parse(cachedData));
+      }
     }
 
+    console.log(`Fetching category ${categoryId} from database`);
     const category = await Category.findByPk(categoryId, {
       include: [{ model: Section, attributes: ["id", "name"] }],
     });
@@ -191,8 +198,21 @@ router.get("/:id", async (req, res) => {
       return res.status(404).json({ message: "Category not found" });
     }
 
+    console.log(`Category ${categoryId} from database:`, {
+      id: category.id,
+      name: category.name,
+      type: category.type,
+      section_id: category.section_id,
+    });
+
     // Store in cache for 30 minutes (category details change less frequently)
-    await cache.setCache(cacheKey, JSON.stringify(category), 1800);
+    if (!forceRefresh) {
+      await cache.setCache(
+        `category_detail_${categoryId}`,
+        JSON.stringify(category),
+        1800
+      );
+    }
 
     res.status(200).json(category);
   } catch (error) {
@@ -372,7 +392,14 @@ router.put(
       // Check if there are actual changes
       const hasChanges = Object.keys(updateData).some((key) => {
         if (key === "image" || key === "image_card") return false; // Skip image fields for comparison
-        return category[key] !== updateData[key];
+
+        const oldValue = category[key];
+        const newValue = updateData[key];
+        const isDifferent = oldValue !== newValue;
+
+        console.log(`Comparing ${key}:`, { oldValue, newValue, isDifferent });
+
+        return isDifferent;
       });
 
       console.log("Has changes:", hasChanges);
