@@ -6,6 +6,8 @@ const { Prompt, Category, Topic } = require('../models');
 // Function to process Excel file
 async function processExcelFile(filePath) {
     try {
+        console.log('Starting Excel processing for file:', filePath);
+        
         // Read the Excel file
         const workbook = XLSX.readFile(filePath);
         const sheetName = workbook.SheetNames[0];
@@ -15,6 +17,9 @@ async function processExcelFile(filePath) {
         const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
         const headers = jsonData[0];
         const rows = jsonData.slice(1);
+
+        console.log('Headers:', headers);
+        console.log('Total rows:', rows.length);
 
         // Format content function
         const formatContent = (text, header) => {
@@ -35,10 +40,14 @@ async function processExcelFile(filePath) {
 
         try {
             for (const row of rows) {
+                if (!row || row.length === 0) continue;
+                
                 const promptData = {};
                 headers.forEach((header, index) => {
                     promptData[header] = formatContent(row[index], header);
                 });
+
+                console.log('Processing row:', promptData);
 
                 // Process category
                 let category = await Category.findOne({
@@ -51,6 +60,7 @@ async function processExcelFile(filePath) {
                         { name: promptData?.category },
                         { transaction }
                     );
+                    console.log('Created new category:', category.name);
                 }
 
                 // Process topic
@@ -64,6 +74,7 @@ async function processExcelFile(filePath) {
                         { name: promptData?.topic },
                         { transaction }
                     );
+                    console.log('Created new topic:', topic.name);
                 }
 
                 // Add IDs to prompt data
@@ -73,30 +84,36 @@ async function processExcelFile(filePath) {
                 prompts.push(promptData);
             }
 
+            console.log('Total prompts to insert:', prompts.length);
+
             // Bulk insert
             if (prompts.length > 0) {
-                await Prompt.bulkCreate(
-                    prompts.map(p => ({
-                        short_description: p.short_description || null,
-                        category_id: p.category_id,
-                        topic_id: p.topic_id,
-                        title: p.title || null,
-                        is_type: p.is_type || null,
-                        content: p.short_description || null,
-                        what: p.what || null,
-                        created_at: new Date(),
-                        updated_at: new Date(),
-                        tips: p.tips || null,
-                        text: p.text || null,
-                        OptimationGuide: p.OptimationGuide || null,
-                        how: p.how || null,
-                    })),
-                    { transaction }
-                );
+                const promptRecords = prompts.map(p => ({
+                    short_description: p.short_description || 'No description provided',
+                    category_id: p.category_id,
+                    topic_id: p.topic_id,
+                    title: p.title || 'No title provided',
+                    is_type: p.is_type || 1,
+                    content: p.short_description || 'No content provided', // Sửa lỗi này
+                    what: p.what || null,
+                    created_at: new Date(),
+                    updated_at: new Date(),
+                    tips: p.tips || null,
+                    text: p.text || null,
+                    OptimationGuide: p.OptimationGuide || null,
+                    how: p.how || null,
+                    status: 1,
+                }));
+
+                console.log('Inserting prompt records:', promptRecords.length);
+                
+                const createdPrompts = await Prompt.bulkCreate(promptRecords, { transaction });
+                console.log('Successfully created prompts:', createdPrompts.length);
             }
 
             // Commit transaction
             await transaction.commit();
+            console.log('Transaction committed successfully');
 
             parentPort.postMessage({
                 success: true,
@@ -104,10 +121,12 @@ async function processExcelFile(filePath) {
                 data: prompts
             });
         } catch (error) {
+            console.error('Error during processing:', error);
             await transaction.rollback();
             throw error;
         }
     } catch (error) {
+        console.error('Error in processExcelFile:', error);
         parentPort.postMessage({
             success: false,
             error: error.message

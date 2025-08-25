@@ -20,6 +20,7 @@ const Prompt = sequelize.define("Prompt", {
     OptimationGuide: { type: DataTypes.TEXT, allowNull: true },
     addtip: { type: DataTypes.TEXT, allowNull: true },
     addinformation: { type: DataTypes.TEXT, allowNull: true },
+    status: { type: DataTypes.INTEGER, defaultValue: 1 },
     created_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW },
     updated_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW },
     topic_id: { type: DataTypes.INTEGER, references: { model: Topic, key: "id" } },

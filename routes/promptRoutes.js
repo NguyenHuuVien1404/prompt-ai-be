@@ -6,11 +6,14 @@ const Category = require("../models/Category");
 const Topic = require("../models/Topic");
 const multer = require("multer");
 const path = require("path");
-const sequelize = require('../config/database');
+const sequelize = require("../config/database");
 const Section = require("../models/Section");
 const PromDetails = require("../models/PromDetails");
-const { authMiddleware, adminMiddleware } = require('../middleware/authMiddleware');
-const checkSubTypeAccess = require('../middleware/subTypeMiddleware');
+const {
+  authMiddleware,
+  adminMiddleware,
+} = require("../middleware/authMiddleware");
+const checkSubTypeAccess = require("../middleware/subTypeMiddleware");
 
 // Cấu hình Multer để lưu file vào thư mục "uploads"
 const storage = multer.diskStorage({
@@ -25,22 +28,24 @@ const storage = multer.diskStorage({
 // Chỉ cho phép upload file ảnh (JPG, PNG, GIF, JPEG)
 const fileFilter = (req, file, cb) => {
   const allowedTypes = [
-    "image/jpeg",  // JPG, JPEG
-    "image/png",   // PNG
-    "image/gif",   // GIF
-    "image/bmp",   // BMP
-    "image/webp",  // WebP
-    "image/tiff",  // TIFF
+    "image/jpeg", // JPG, JPEG
+    "image/png", // PNG
+    "image/gif", // GIF
+    "image/bmp", // BMP
+    "image/webp", // WebP
+    "image/tiff", // TIFF
     "image/svg+xml", // SVG
-    "image/heic",  // HEIC (High-Efficiency Image Container)
-    "image/heif"   // HEIF (High-Efficiency Image File Format)
+    "image/heic", // HEIC (High-Efficiency Image Container)
+    "image/heif", // HEIF (High-Efficiency Image File Format)
   ];
 
   if (allowedTypes.includes(file.mimetype)) {
     cb(null, true); // Chấp nhận file hợp lệ
   } else {
     cb(
-      new Error("Invalid file type. Only common image formats (JPG, PNG, GIF, BMP, WebP, TIFF, SVG, HEIC, HEIF) are allowed."),
+      new Error(
+        "Invalid file type. Only common image formats (JPG, PNG, GIF, BMP, WebP, TIFF, SVG, HEIC, HEIF) are allowed."
+      ),
       false
     );
   }
@@ -62,14 +67,14 @@ router.post("/upload", authMiddleware, upload.any(), async (req, res) => {
       return res.status(400).json({ message: "No files uploaded" });
     }
 
-    const { runTask } = require('../utils/worker');
-    const filePaths = req.files.map(file => file.path);
+    const { runTask } = require("../utils/worker");
+    const filePaths = req.files.map((file) => file.path);
 
     try {
-      const result = await runTask('image-processor.js', {
+      const result = await runTask("image-processor.js", {
         filePaths,
         host: req.get("host"),
-        protocol: req.protocol
+        protocol: req.protocol,
       });
 
       if (!result.success) {
@@ -99,6 +104,61 @@ router.post("/upload", authMiddleware, upload.any(), async (req, res) => {
   }
 });
 
+// Import Excel file
+router.post(
+  "/import-excel",
+  authMiddleware,
+  adminMiddleware,
+  upload.single("file"),
+  async (req, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ message: "No file uploaded" });
+      }
+
+      // Kiểm tra file extension
+      const allowedExtensions = [".xlsx", ".xls"];
+      const fileExtension = path.extname(req.file.originalname).toLowerCase();
+
+      if (!allowedExtensions.includes(fileExtension)) {
+        return res.status(400).json({
+          message:
+            "Invalid file type. Only Excel files (.xlsx, .xls) are allowed.",
+        });
+      }
+
+      const { runTask } = require("../utils/worker");
+
+      try {
+        const result = await runTask("excel-processor.js", {
+          filePath: req.file.path,
+        });
+
+        if (!result.success) {
+          throw new Error(result.error);
+        }
+
+        res.status(200).json({
+          message: "Excel file imported successfully",
+          count: result.count,
+          data: result.data,
+        });
+      } catch (error) {
+        console.error("Error processing Excel file:", error);
+        res.status(500).json({
+          message: "Error processing Excel file",
+          error: error.message,
+        });
+      }
+    } catch (error) {
+      res.status(500).json({
+        message: "Error importing Excel file",
+        error: error.message,
+      });
+    }
+  }
+);
+
 // Get all prompts with pagination
 router.get("/", authMiddleware, checkSubTypeAccess, async (req, res) => {
   try {
@@ -119,7 +179,7 @@ router.get("/", authMiddleware, checkSubTypeAccess, async (req, res) => {
     if (req.query.status !== undefined) {
       where.status = req.query.status;
     }
-    
+
     if (!!req.query.sub_type && Number(req.query.sub_type) !== 0) {
       where.sub_type = req.query.sub_type;
     }
@@ -141,14 +201,17 @@ router.get("/", authMiddleware, checkSubTypeAccess, async (req, res) => {
         { OptimationGuide: { [Op.like]: searchTerm } },
       ];
     }
-    console.log({where});
+    console.log({ where });
     const { count, rows } = await Prompt.findAndCountAll({
       where,
       include: [
         {
           model: Category,
           attributes: ["id", "name", "image", "image_card", "section_id"],
-          include: { model: Section, attributes: ["id", "name", "description"] },
+          include: {
+            model: Section,
+            attributes: ["id", "name", "description"],
+          },
         },
         {
           model: Topic,
@@ -189,16 +252,21 @@ router.get("/by-category", checkSubTypeAccess, async (req, res) => {
     const pageSize = parseInt(req.query.pageSize) || 12;
 
     const offset = (page - 1) * pageSize;
-    let whereCondition = { 
-      category_id: category_id
+    let whereCondition = {
+      category_id: category_id,
     };
 
     if (!!req.query.sub_type && Number(req.query.sub_type) !== 0) {
       whereCondition.sub_type = req.query.sub_type;
     }
 
-    console.log({whereCondition});
-    if (topic_id && topic_id != 0 && topic_id != "undefined" && topic_id != null) {
+    console.log({ whereCondition });
+    if (
+      topic_id &&
+      topic_id != 0 &&
+      topic_id != "undefined" &&
+      topic_id != null
+    ) {
       whereCondition.topic_id = topic_id;
     }
     if (searchText) {
@@ -212,7 +280,14 @@ router.get("/by-category", checkSubTypeAccess, async (req, res) => {
     const { count, rows } = await Prompt.findAndCountAll({
       where: whereCondition,
       include: [
-        { model: Category, attributes: ["id", "name", "image", "image_card"], include: { model: Section, attributes: ["id", "name", "description"] } },
+        {
+          model: Category,
+          attributes: ["id", "name", "image", "image_card"],
+          include: {
+            model: Section,
+            attributes: ["id", "name", "description"],
+          },
+        },
         { model: Topic, attributes: ["id", "name"] },
       ],
       limit: pageSize,
@@ -241,8 +316,8 @@ router.get("/topics/by-category", checkSubTypeAccess, async (req, res) => {
       return res.status(400).json({ message: "category_id is required" });
     }
 
-    let whereCondition = { 
-      category_id
+    let whereCondition = {
+      category_id,
     };
 
     if (!!req.query.sub_type && Number(req.query.sub_type) !== 0) {
@@ -297,7 +372,7 @@ router.get("/newest", checkSubTypeAccess, async (req, res) => {
       category_id: category_id,
       created_at: {
         [Op.gte]: thirtyDaysAgo,
-      }
+      },
     };
 
     if (!!req.query.sub_type && Number(req.query.sub_type) !== 0) {
@@ -307,20 +382,29 @@ router.get("/newest", checkSubTypeAccess, async (req, res) => {
     const newest_prompts = await Prompt.findAll({
       where: whereCondition,
       include: [
-        { model: Category, attributes: ["id", "name", "image", "image_card"], include: { model: Section, attributes: ["id", "name", "description"] } },
-        { model: Topic, attributes: ["id", "name"] }
+        {
+          model: Category,
+          attributes: ["id", "name", "image", "image_card"],
+          include: {
+            model: Section,
+            attributes: ["id", "name", "description"],
+          },
+        },
+        { model: Topic, attributes: ["id", "name"] },
       ],
       limit: 30,
-      order: [["created_at", "DESC"]]
+      order: [["created_at", "DESC"]],
     });
 
     const result = {
-      data: newest_prompts
+      data: newest_prompts,
     };
 
     res.status(200).json(result);
   } catch (error) {
-    res.status(500).json({ message: "Error fetching newest prompts", error: error.message });
+    res
+      .status(500)
+      .json({ message: "Error fetching newest prompts", error: error.message });
   }
 });
 
@@ -331,35 +415,43 @@ router.get("/:id", authMiddleware, checkSubTypeAccess, async (req, res) => {
 
     let whereCondition = { id };
 
-
     const prompt = await Prompt.findOne({
       where: whereCondition,
       include: [
-        { model: Category, attributes: ["id", "name"], include: { model: Section, attributes: ["id", "name", "description"] } },
-        { model: Topic, attributes: ["id", "name"] }
-      ]
+        {
+          model: Category,
+          attributes: ["id", "name"],
+          include: {
+            model: Section,
+            attributes: ["id", "name", "description"],
+          },
+        },
+        { model: Topic, attributes: ["id", "name"] },
+      ],
     });
 
     if (!prompt) {
-      return res.status(404).json({ message: "Prompt not found or you don't have access to it" });
+      return res
+        .status(404)
+        .json({ message: "Prompt not found or you don't have access to it" });
     }
 
     const relatedPrompts = await Prompt.findAll({
       where: {
         category_id: prompt.category_id,
         sub_type: prompt.sub_type,
-        id: { [Op.ne]: id }
+        id: { [Op.ne]: id },
       },
       attributes: ["id", "title", "short_description"],
-      include: [
-        { model: Category, attributes: ["id", "name"] }
-      ],
-      limit: 5
+      include: [{ model: Category, attributes: ["id", "name"] }],
+      limit: 5,
     });
 
     res.status(200).json(prompt);
   } catch (error) {
-    res.status(500).json({ message: "Error fetching prompt", error: error.message });
+    res
+      .status(500)
+      .json({ message: "Error fetching prompt", error: error.message });
   }
 });
 
@@ -369,7 +461,9 @@ router.post("/", authMiddleware, adminMiddleware, async (req, res) => {
     const newPrompt = await Prompt.create(req.body);
     res.status(201).json(newPrompt);
   } catch (error) {
-    res.status(500).json({ message: "Error creating prompt", error: error.message });
+    res
+      .status(500)
+      .json({ message: "Error creating prompt", error: error.message });
   }
 });
 
@@ -386,7 +480,9 @@ router.put("/:id", authMiddleware, adminMiddleware, async (req, res) => {
     await prompt.update(req.body);
     res.status(200).json({ message: "Prompt updated successfully", prompt });
   } catch (error) {
-    res.status(500).json({ message: "Error updating prompt", error: error.message });
+    res
+      .status(500)
+      .json({ message: "Error updating prompt", error: error.message });
   }
 });
 
@@ -403,7 +499,9 @@ router.delete("/:id", authMiddleware, adminMiddleware, async (req, res) => {
     await prompt.destroy();
     res.status(200).json({ message: "Prompt deleted successfully" });
   } catch (error) {
-    res.status(500).json({ message: "Error deleting prompt", error: error.message });
+    res
+      .status(500)
+      .json({ message: "Error deleting prompt", error: error.message });
   }
 });
 
