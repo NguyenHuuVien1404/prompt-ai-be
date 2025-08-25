@@ -473,35 +473,149 @@ router.get("/:id", authMiddleware, checkSubTypeAccess, async (req, res) => {
 });
 
 // Create a new prompt
-router.post("/", authMiddleware, adminMiddleware, async (req, res) => {
-  try {
-    const newPrompt = await Prompt.create(req.body);
-    res.status(201).json(newPrompt);
-  } catch (error) {
-    res
-      .status(500)
-      .json({ message: "Error creating prompt", error: error.message });
+router.post(
+  "/",
+  authMiddleware,
+  adminMiddleware,
+  checkSubTypeAccess,
+  async (req, res) => {
+    try {
+      // Validate required fields
+      const requiredFields = [
+        "title",
+        "short_description",
+        "category_id",
+        "topic_id",
+        "content",
+      ];
+      for (const field of requiredFields) {
+        if (!req.body[field]) {
+          return res.status(400).json({
+            message: `Missing required field: ${field}`,
+            required: requiredFields,
+          });
+        }
+      }
+
+      // Check if category exists
+      const category = await Category.findByPk(req.body.category_id);
+      if (!category) {
+        return res.status(400).json({ message: "Invalid category_id" });
+      }
+
+      // Check if topic exists
+      const topic = await Topic.findByPk(req.body.topic_id);
+      if (!topic) {
+        return res.status(400).json({ message: "Invalid topic_id" });
+      }
+
+      // Set default values for optional fields
+      const promptData = {
+        ...req.body,
+        what: req.body.what || "",
+        tips: req.body.tips || "",
+        text: req.body.text || "",
+        how: req.body.how || "",
+        input: req.body.input || "",
+        output: req.body.output || "",
+        OptimationGuide: req.body.OptimationGuide || "",
+        addtip: req.body.addtip || "",
+        addinformation: req.body.addinformation || "",
+        is_type: req.body.is_type || 1,
+        sub_type: req.body.sub_type || 1,
+      };
+
+      const newPrompt = await Prompt.create(promptData);
+
+      // Fetch the created prompt with related data
+      const createdPrompt = await Prompt.findOne({
+        where: { id: newPrompt.id },
+        include: [
+          {
+            model: Category,
+            attributes: ["id", "name", "image", "image_card"],
+            include: {
+              model: Section,
+              attributes: ["id", "name", "description"],
+            },
+          },
+          { model: Topic, attributes: ["id", "name"] },
+        ],
+      });
+
+      res.status(201).json({
+        message: "Prompt created successfully",
+        prompt: createdPrompt,
+      });
+    } catch (error) {
+      console.error("Error creating prompt:", error);
+      res
+        .status(500)
+        .json({ message: "Error creating prompt", error: error.message });
+    }
   }
-});
+);
 
 // Update a prompt
-router.put("/:id", authMiddleware, adminMiddleware, async (req, res) => {
-  try {
-    const { id } = req.params;
-    const prompt = await Prompt.findByPk(id);
+router.put(
+  "/:id",
+  authMiddleware,
+  adminMiddleware,
+  checkSubTypeAccess,
+  async (req, res) => {
+    try {
+      const { id } = req.params;
+      const prompt = await Prompt.findByPk(id);
 
-    if (!prompt) {
-      return res.status(404).json({ message: "Prompt not found" });
+      if (!prompt) {
+        return res.status(404).json({ message: "Prompt not found" });
+      }
+
+      // Validate category and topic if they're being updated
+      if (req.body.category_id) {
+        const category = await Category.findByPk(req.body.category_id);
+        if (!category) {
+          return res.status(400).json({ message: "Invalid category_id" });
+        }
+      }
+
+      if (req.body.topic_id) {
+        const topic = await Topic.findByPk(req.body.topic_id);
+        if (!topic) {
+          return res.status(400).json({ message: "Invalid topic_id" });
+        }
+      }
+
+      await prompt.update(req.body);
+
+      // Fetch the updated prompt with related data
+      const updatedPrompt = await Prompt.findOne({
+        where: { id },
+        include: [
+          {
+            model: Category,
+            attributes: ["id", "name", "image", "image_card"],
+            include: {
+              model: Section,
+              attributes: ["id", "name", "description"],
+            },
+          },
+          { model: Topic, attributes: ["id", "name"] },
+        ],
+      });
+
+      res.status(200).json({
+        message: "Prompt updated successfully",
+        prompt: updatedPrompt,
+      });
+    } catch (error) {
+      console.error("Error updating prompt:", error);
+      res
+        .status(500)
+        .json({ message: "Error updating prompt", error: error.message });
     }
-
-    await prompt.update(req.body);
-    res.status(200).json({ message: "Prompt updated successfully", prompt });
-  } catch (error) {
-    res
-      .status(500)
-      .json({ message: "Error updating prompt", error: error.message });
   }
-});
+);
 
 // Delete a prompt
 router.delete("/:id", authMiddleware, adminMiddleware, async (req, res) => {
