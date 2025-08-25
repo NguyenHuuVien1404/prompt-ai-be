@@ -116,6 +116,12 @@ router.post(
         return res.status(400).json({ message: "No file uploaded" });
       }
 
+      console.log("File uploaded:", {
+        originalname: req.file.originalname,
+        path: req.file.path,
+        size: req.file.size,
+      });
+
       // Kiểm tra file extension
       const allowedExtensions = [".xlsx", ".xls"];
       const fileExtension = path.extname(req.file.originalname).toLowerCase();
@@ -130,16 +136,30 @@ router.post(
       const { runTask } = require("../utils/worker");
 
       try {
+        console.log("Starting Excel processing...");
         const result = await runTask("excel-processor.js", {
           filePath: req.file.path,
         });
+
+        console.log("Excel processing result:", result);
 
         if (!result.success) {
           throw new Error(result.error);
         }
 
+        // Kiểm tra nếu count = 0
+        if (result.count === 0) {
+          return res.status(200).json({
+            message:
+              "Excel file processed but no data was imported. Please check your Excel file format.",
+            count: result.count,
+            data: result.data,
+            warning: "No data imported - check Excel format",
+          });
+        }
+
         res.status(200).json({
-          message: "Excel file imported successfully",
+          message: `Excel file imported successfully. ${result.count} records imported.`,
           count: result.count,
           data: result.data,
         });
@@ -151,6 +171,7 @@ router.post(
         });
       }
     } catch (error) {
+      console.error("Error in import-excel route:", error);
       res.status(500).json({
         message: "Error importing Excel file",
         error: error.message,

@@ -7,11 +7,23 @@ const { Prompt, Category, Topic } = require("../models");
 async function processExcelFile(filePath) {
   try {
     console.log("Starting Excel processing for file:", filePath);
+    
+    // Kiểm tra file có tồn tại không
+    const fs = require('fs');
+    if (!fs.existsSync(filePath)) {
+      throw new Error(`File not found: ${filePath}`);
+    }
 
     // Read the Excel file
     const workbook = XLSX.readFile(filePath);
+    console.log("Workbook loaded, sheets:", workbook.SheetNames);
+    
     const sheetName = workbook.SheetNames[0];
     const worksheet = workbook.Sheets[sheetName];
+    
+    if (!worksheet) {
+      throw new Error(`No worksheet found in Excel file`);
+    }
 
     // Convert to JSON
     const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
@@ -20,6 +32,16 @@ async function processExcelFile(filePath) {
 
     console.log("Headers:", headers);
     console.log("Total rows:", rows.length);
+    console.log("First row sample:", rows[0]);
+
+    // Kiểm tra nếu không có dữ liệu
+    if (!headers || headers.length === 0) {
+      throw new Error("No headers found in Excel file");
+    }
+
+    if (!rows || rows.length === 0) {
+      throw new Error("No data rows found in Excel file");
+    }
 
     // Format content function
     const formatContent = (text, header) => {
@@ -44,13 +66,19 @@ async function processExcelFile(filePath) {
     try {
       for (const row of rows) {
         if (!row || row.length === 0) continue;
-
+        
         const promptData = {};
         headers.forEach((header, index) => {
           promptData[header] = formatContent(row[index], header);
         });
 
         console.log("Processing row:", promptData);
+
+        // Kiểm tra dữ liệu bắt buộc
+        if (!promptData.category || !promptData.topic || !promptData.title) {
+          console.warn("Skipping row - missing required fields:", promptData);
+          continue;
+        }
 
         // Process category
         let category = await Category.findOne({
@@ -108,7 +136,7 @@ async function processExcelFile(filePath) {
         }));
 
         console.log("Inserting prompt records:", promptRecords.length);
-
+        
         const createdPrompts = await Prompt.bulkCreate(promptRecords, {
           transaction,
         });
