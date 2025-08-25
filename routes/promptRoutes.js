@@ -176,10 +176,6 @@ router.get("/", authMiddleware, checkSubTypeAccess, async (req, res) => {
       where.is_type = req.query.is_type;
     }
 
-    if (req.query.status !== undefined) {
-      where.status = req.query.status;
-    }
-
     if (!!req.query.sub_type && Number(req.query.sub_type) !== 0) {
       where.sub_type = req.query.sub_type;
     }
