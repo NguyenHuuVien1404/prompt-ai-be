@@ -35,6 +35,5 @@ const Category = sequelize.define(
     createdAt: "created_at",
   }
 );
-Section.hasMany(Category, { foreignKey: "section_id" });
-Category.belongsTo(Section, { foreignKey: "section_id" });
+// Relationships are defined in models/index.js to avoid circular dependencies
 module.exports = Category;

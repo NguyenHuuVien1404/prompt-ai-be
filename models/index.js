@@ -1,17 +1,18 @@
 const sequelize = require("../config/database");
-const User = require("./User");
 const Role = require("./Role");
-const Subscription = require("./Subscription");
-const UserSub = require("./UserSub");
+const Section = require("./Section");
+const Topic = require("./Topic");
 const Category = require("./Category");
 const Prompt = require("./Prompt");
+const User = require("./User");
+const Subscription = require("./Subscription");
+const UserSub = require("./UserSub");
 const Course = require("./Course");
 const Payment = require("./Payment");
 const UserActivity = require("./UserActivity");
 const PromFavorite = require("./PromFavorite");
 const Referral = require("./Referral");
 const Product = require("./Product");
-const Section = require("./Section");
 const PromDetails = require("./PromDetails");
 const DeviceLog = require("./DeviceLog");
 const History = require("./History");
@@ -56,6 +57,21 @@ Prompt.belongsTo(Category, {
   constraints: true,
   foreignKeyConstraint: true,
   name: "fk_prompt_category_id",
+});
+
+// Define relationship between Topic and Prompt
+Topic.hasMany(Prompt, {
+  foreignKey: "topic_id",
+  onDelete: "SET NULL",
+  constraints: true,
+  foreignKeyConstraint: true,
+  name: "fk_prompt_topic_id",
+});
+Prompt.belongsTo(Topic, {
+  foreignKey: "topic_id",
+  constraints: true,
+  foreignKeyConstraint: true,
+  name: "fk_prompt_topic_id",
 });
 
 User.hasMany(Payment, {
@@ -152,6 +168,21 @@ Product.belongsTo(Section, {
   foreignKeyConstraint: true,
   name: "fk_product_section_id",
 });
+
+// Quan hệ giữa Section và Category (1 Section có nhiều Category)
+Section.hasMany(Category, {
+  foreignKey: "section_id",
+  onDelete: "CASCADE",
+  constraints: true,
+  foreignKeyConstraint: true,
+  name: "fk_category_section_id",
+});
+Category.belongsTo(Section, {
+  foreignKey: "section_id",
+  constraints: true,
+  foreignKeyConstraint: true,
+  name: "fk_category_section_id",
+});
 Prompt.hasMany(PromDetails, {
   foreignKey: "prompt_id",
   onDelete: "CASCADE",
@@ -208,6 +239,7 @@ module.exports = {
   Subscription,
   UserSub,
   Category,
+  Topic,
   Prompt,
   Course,
   Payment,
