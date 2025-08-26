@@ -230,18 +230,6 @@ router.get("/:id", async (req, res) => {
       include: [Subscription],
     });
 
-    console.log("Found UserSubs:", userSubs.length);
-    userSubs.forEach((us) => {
-      console.log("UserSub:", {
-        id: us.id,
-        status: us.status,
-        sub_id: us.sub_id,
-        subscription: us.Subscription
-          ? us.Subscription.name_sub
-          : "No subscription",
-      });
-    });
-
     const sortedUserSubs = userSubs
       .map((us) => ({
         // id: us.id,

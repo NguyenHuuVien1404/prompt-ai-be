@@ -6,21 +6,21 @@ const { Prompt, Category, Topic } = require("../models");
 // Function to process Excel file
 async function processExcelFile(filePath) {
   try {
-    console.log("Starting Excel processing for file:", filePath);
-    
+    // Starting Excel processing for file: ${filePath}
+
     // Kiểm tra file có tồn tại không
-    const fs = require('fs');
+    const fs = require("fs");
     if (!fs.existsSync(filePath)) {
       throw new Error(`File not found: ${filePath}`);
     }
 
     // Read the Excel file
     const workbook = XLSX.readFile(filePath);
-    console.log("Workbook loaded, sheets:", workbook.SheetNames);
-    
+    // Workbook loaded successfully
+
     const sheetName = workbook.SheetNames[0];
     const worksheet = workbook.Sheets[sheetName];
-    
+
     if (!worksheet) {
       throw new Error(`No worksheet found in Excel file`);
     }
@@ -30,9 +30,7 @@ async function processExcelFile(filePath) {
     const headers = jsonData[0];
     const rows = jsonData.slice(1);
 
-    console.log("Headers:", headers);
-    console.log("Total rows:", rows.length);
-    console.log("First row sample:", rows[0]);
+    // Excel file analysis completed
 
     // Kiểm tra nếu không có dữ liệu
     if (!headers || headers.length === 0) {
@@ -61,22 +59,48 @@ async function processExcelFile(filePath) {
 
     // Prepare data
     const prompts = [];
+    const insertedRecords = [];
+    const skippedRecords = [];
     const transaction = await sequelize.transaction();
 
     try {
-      for (const row of rows) {
-        if (!row || row.length === 0) continue;
-        
+      // Processing rows...
+
+      for (let rowIndex = 0; rowIndex < rows.length; rowIndex++) {
+        const row = rows[rowIndex];
+        if (!row || row.length === 0) {
+          console.log(`Row ${rowIndex + 1}: Empty row, skipping`);
+          continue;
+        }
+
+        // Processing row ${rowIndex + 1}
+
         const promptData = {};
         headers.forEach((header, index) => {
           promptData[header] = formatContent(row[index], header);
         });
 
-        console.log("Processing row:", promptData);
+        // Data formatted successfully
 
         // Kiểm tra dữ liệu bắt buộc
         if (!promptData.category || !promptData.topic || !promptData.title) {
-          console.warn("Skipping row - missing required fields:", promptData);
+          const missingFields = [];
+          if (!promptData.category) missingFields.push("category");
+          if (!promptData.topic) missingFields.push("topic");
+          if (!promptData.title) missingFields.push("title");
+
+          console.warn(
+            `Row ${
+              rowIndex + 1
+            }: Skipping - missing required fields: ${missingFields.join(", ")}`
+          );
+          console.warn("Row data:", promptData);
+
+          skippedRecords.push({
+            row: rowIndex + 1,
+            reason: `Missing required fields: ${missingFields.join(", ")}`,
+            data: promptData,
+          });
           continue;
         }
 
@@ -87,11 +111,20 @@ async function processExcelFile(filePath) {
         });
 
         if (!category) {
-          category = await Category.create(
-            { name: promptData?.category },
-            { transaction }
-          );
-          console.log("Created new category:", category.name);
+          const errorMessage = `Row ${rowIndex + 1}: Category "${
+            promptData?.category
+          }" không tồn tại trong hệ thống. Vui lòng tạo category trước khi import.`;
+          console.error(errorMessage);
+
+          skippedRecords.push({
+            row: rowIndex + 1,
+            reason: `Category "${promptData?.category}" không tồn tại`,
+            data: promptData,
+            error: errorMessage,
+          });
+          continue; // Bỏ qua row này
+        } else {
+          // Using existing category: ${category.name} (ID: ${category.id})
         }
 
         // Process topic
@@ -101,11 +134,20 @@ async function processExcelFile(filePath) {
         });
 
         if (!topic) {
-          topic = await Topic.create(
-            { name: promptData?.topic },
-            { transaction }
-          );
-          console.log("Created new topic:", topic.name);
+          const errorMessage = `Row ${rowIndex + 1}: Topic "${
+            promptData?.topic
+          }" không tồn tại trong hệ thống. Vui lòng tạo topic trước khi import.`;
+          console.error(errorMessage);
+
+          skippedRecords.push({
+            row: rowIndex + 1,
+            reason: `Topic "${promptData?.topic}" không tồn tại`,
+            data: promptData,
+            error: errorMessage,
+          });
+          continue; // Bỏ qua row này
+        } else {
+          // Using existing topic: ${topic.name} (ID: ${topic.id})
         }
 
         // Add IDs to prompt data
@@ -113,9 +155,22 @@ async function processExcelFile(filePath) {
         promptData.topic_id = topic.id;
         promptData.is_type = 1;
         prompts.push(promptData);
+
+        // Row ${rowIndex + 1} prepared successfully for insertion
       }
 
-      console.log("Total prompts to insert:", prompts.length);
+      // Summary: ${prompts.length} prompts to insert, ${skippedRecords.length} rows skipped
+
+      if (skippedRecords.length > 0) {
+        console.log("\n=== SKIPPED RECORDS DETAILS ===");
+        skippedRecords.forEach((record) => {
+          console.log(`\nRow ${record.row}: ${record.reason}`);
+          console.log("  Data:", record.data);
+          if (record.error) {
+            console.log("  Error:", record.error);
+          }
+        });
+      }
 
       // Bulk insert
       if (prompts.length > 0) {
@@ -125,7 +180,7 @@ async function processExcelFile(filePath) {
           topic_id: p.topic_id,
           title: p.title || "No title provided",
           is_type: p.is_type || 1,
-          content: p.short_description || "No content provided", // Sửa lỗi này
+          content: p.short_description || "No content provided",
           what: p.what || null,
           created_at: new Date(),
           updated_at: new Date(),
@@ -135,22 +190,56 @@ async function processExcelFile(filePath) {
           how: p.how || null,
         }));
 
-        console.log("Inserting prompt records:", promptRecords.length);
-        
+        // Inserting ${promptRecords.length} records...
+
         const createdPrompts = await Prompt.bulkCreate(promptRecords, {
           transaction,
         });
-        console.log("Successfully created prompts:", createdPrompts.length);
+
+        // Successfully created ${createdPrompts.length} prompts
+
+        // Store inserted records for response
+        insertedRecords.push(
+          ...createdPrompts.map((prompt) => ({
+            id: prompt.id,
+            title: prompt.title,
+            category_id: prompt.category_id,
+            topic_id: prompt.topic_id,
+            short_description: prompt.short_description,
+            created_at: prompt.created_at,
+          }))
+        );
       }
 
       // Commit transaction
       await transaction.commit();
-      console.log("Transaction committed successfully");
+      // Transaction committed successfully
+
+      // Tạo message tùy theo kết quả
+      let message = "";
+      if (prompts.length > 0 && skippedRecords.length === 0) {
+        message = `Import thành công! ${prompts.length} records đã được xử lý.`;
+      } else if (prompts.length > 0 && skippedRecords.length > 0) {
+        message = `Import một phần thành công! ${prompts.length} records đã được xử lý, ${skippedRecords.length} records bị bỏ qua.`;
+      } else if (prompts.length === 0 && skippedRecords.length > 0) {
+        message = `Import thất bại! Tất cả ${skippedRecords.length} records đều bị bỏ qua.`;
+      } else {
+        message = "Không có dữ liệu nào được xử lý.";
+      }
 
       parentPort.postMessage({
-        success: true,
+        success: prompts.length > 0, // Chỉ thành công nếu có ít nhất 1 record được xử lý
         count: prompts.length,
+        message: message,
         data: prompts,
+        insertedRecords: insertedRecords,
+        skippedRecords: skippedRecords,
+        summary: {
+          totalRows: rows.length,
+          processedRows: prompts.length,
+          skippedRows: skippedRecords.length,
+          insertedRows: insertedRecords.length,
+        },
       });
     } catch (error) {
       console.error("Error during processing:", error);

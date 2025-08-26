@@ -58,6 +58,41 @@ const upload = multer({
   limits: { fileSize: 5 * 1024 * 1024 }, // Giới hạn file tối đa 5MB
 });
 
+// Tạo middleware riêng cho Excel files
+const excelStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, "uploads/");
+  },
+  filename: (req, file, cb) => {
+    cb(null, Date.now() + path.extname(file.originalname));
+  },
+});
+
+const excelFileFilter = (req, file, cb) => {
+  const allowedTypes = [
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", // .xlsx
+    "application/vnd.ms-excel", // .xls
+    "application/octet-stream", // Fallback cho một số Excel files
+  ];
+
+  if (allowedTypes.includes(file.mimetype)) {
+    cb(null, true);
+  } else {
+    cb(
+      new Error(
+        "Invalid file type. Only Excel files (.xlsx, .xls) are allowed."
+      ),
+      false
+    );
+  }
+};
+
+const uploadExcel = multer({
+  storage: excelStorage,
+  fileFilter: excelFileFilter,
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
+});
+
 router.use("/upload", express.static("uploads")); // Cho phép truy cập ảnh đã upload
 
 // API Upload ảnh (tên field nào cũng được)
@@ -109,7 +144,7 @@ router.post(
   "/import-excel",
   authMiddleware,
   adminMiddleware,
-  upload.single("file"),
+  uploadExcel.single("file"),
   async (req, res) => {
     try {
       if (!req.file) {
@@ -136,32 +171,49 @@ router.post(
       const { runTask } = require("../utils/worker");
 
       try {
-        console.log("Starting Excel processing...");
+        // Excel import started
         const result = await runTask("excel-processor.js", {
           filePath: req.file.path,
         });
 
-        console.log("Excel processing result:", result);
+        // Excel processing completed
 
         if (!result.success) {
-          throw new Error(result.error);
-        }
-
-        // Kiểm tra nếu count = 0
-        if (result.count === 0) {
-          return res.status(200).json({
+          // Nếu không có record nào được xử lý thành công
+          return res.status(400).json({
+            success: false,
             message:
-              "Excel file processed but no data was imported. Please check your Excel file format.",
-            count: result.count,
-            data: result.data,
-            warning: "No data imported - check Excel format",
+              result.message ||
+              "Import thất bại - không có dữ liệu nào được xử lý",
+            count: result.count || 0,
+            data: result.data || [],
+            insertedRecords: result.insertedRecords || [],
+            skippedRecords: result.skippedRecords || [],
+            summary: result.summary || {
+              totalRows: 0,
+              processedRows: 0,
+              skippedRows: 0,
+              insertedRows: 0,
+            },
           });
         }
 
+        // Nếu có ít nhất 1 record được xử lý thành công
         res.status(200).json({
-          message: `Excel file imported successfully. ${result.count} records imported.`,
+          success: true,
+          message:
+            result.message ||
+            `Excel file imported successfully. ${result.count} records imported.`,
           count: result.count,
           data: result.data,
+          insertedRecords: result.insertedRecords || [],
+          skippedRecords: result.skippedRecords || [],
+          summary: result.summary || {
+            totalRows: 0,
+            processedRows: result.count,
+            skippedRows: 0,
+            insertedRows: result.count,
+          },
         });
       } catch (error) {
         console.error("Error processing Excel file:", error);
