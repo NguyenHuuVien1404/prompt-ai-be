@@ -271,6 +271,42 @@ router.get("/", authMiddleware, checkSubTypeAccess, async (req, res) => {
       ];
     }
     console.log({ where });
+
+    // Handle sorting
+    let order = [["created_at", "DESC"]]; // Default sorting
+    if (req.query.sortField && req.query.sortOrder) {
+      const sortField = req.query.sortField;
+      const sortOrder = req.query.sortOrder.toUpperCase();
+
+      // Validate sort order
+      if (["ASC", "DESC"].includes(sortOrder)) {
+        // Validate sort field to prevent SQL injection
+        const allowedSortFields = [
+          "id",
+          "title",
+          "short_description",
+          "content",
+          "what",
+          "tips",
+          "text",
+          "how",
+          "input",
+          "output",
+          "OptimationGuide",
+          "addtip",
+          "addinformation",
+          "is_type",
+          "sub_type",
+          "created_at",
+          "updated_at",
+        ];
+
+        if (allowedSortFields.includes(sortField)) {
+          order = [[sortField, sortOrder]];
+        }
+      }
+    }
+
     const { count, rows } = await Prompt.findAndCountAll({
       where,
       include: [
@@ -289,7 +325,7 @@ router.get("/", authMiddleware, checkSubTypeAccess, async (req, res) => {
       ],
       limit: pageSize,
       offset: offset,
-      order: [["created_at", "DESC"]],
+      order: order,
     });
 
     const result = {
