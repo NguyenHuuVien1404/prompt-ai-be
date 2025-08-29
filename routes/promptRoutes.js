@@ -151,10 +151,12 @@ router.post(
         return res.status(400).json({ message: "No file uploaded" });
       }
 
-      console.log("File uploaded:", {
+      console.log("[DEBUG] File uploaded:", {
         originalname: req.file.originalname,
         path: req.file.path,
         size: req.file.size,
+        mimetype: req.file.mimetype,
+        extension: path.extname(req.file.originalname).toLowerCase(),
       });
 
       // Kiểm tra file extension
@@ -172,15 +174,29 @@ router.post(
 
       try {
         // Excel import started
+        console.log(
+          `[DEBUG] Starting Excel import for file: ${req.file.originalname}`
+        );
+        console.log(`[DEBUG] File path: ${req.file.path}`);
+
         const result = await runTask("excel-processor.js", {
           filePath: req.file.path,
         });
 
         // Excel processing completed
+        console.log(`[DEBUG] Excel processing completed`);
+        console.log(`[DEBUG] Processing result:`, {
+          success: result.success,
+          count: result.count,
+          totalRows: result.summary?.totalRows,
+          processedRows: result.summary?.processedRows,
+          insertedRows: result.summary?.insertedRows,
+          skippedRows: result.summary?.skippedRows,
+        });
 
         if (!result.success) {
           // Nếu không có record nào được xử lý thành công
-          return res.status(400).json({
+          const errorResponse = {
             success: false,
             message:
               result.message ||
@@ -195,11 +211,21 @@ router.post(
               skippedRows: 0,
               insertedRows: 0,
             },
+          };
+
+          console.log(`[DEBUG] Import failed - Error response:`, {
+            totalRecords: errorResponse.summary.totalRows,
+            processedRecords: errorResponse.summary.processedRows,
+            skippedRecords: errorResponse.summary.skippedRows,
+            insertedRecords: errorResponse.summary.insertedRows,
+            errorMessage: errorResponse.message,
           });
+
+          return res.status(400).json(errorResponse);
         }
 
         // Nếu có ít nhất 1 record được xử lý thành công
-        res.status(200).json({
+        const responseData = {
           success: true,
           message:
             result.message ||
@@ -214,7 +240,17 @@ router.post(
             skippedRows: 0,
             insertedRows: result.count,
           },
+        };
+
+        console.log(`[DEBUG] Import successful - Final response:`, {
+          totalRecords: responseData.summary.totalRows,
+          importedRecords: responseData.count,
+          processedRecords: responseData.summary.processedRows,
+          skippedRecords: responseData.summary.skippedRows,
+          insertedRecords: responseData.summary.insertedRows,
         });
+
+        res.status(200).json(responseData);
       } catch (error) {
         console.error("Error processing Excel file:", error);
         res.status(500).json({

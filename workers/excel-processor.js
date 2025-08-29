@@ -41,6 +41,16 @@ async function processExcelFile(filePath) {
       throw new Error("No data rows found in Excel file");
     }
 
+    // Get existing categories and topics for reference
+    const existingCategories = await Category.findAll({
+      attributes: ["name"],
+      raw: true,
+    });
+    const existingTopics = await Topic.findAll({
+      attributes: ["name"],
+      raw: true,
+    });
+
     // Format content function
     const formatContent = (text, header) => {
       if (!text) return "";
@@ -82,7 +92,7 @@ async function processExcelFile(filePath) {
 
         // Data formatted successfully
 
-        // Kiểm tra dữ liệu bắt buộc
+                // Kiểm tra dữ liệu bắt buộc
         if (!promptData.category || !promptData.topic || !promptData.title) {
           const missingFields = [];
           if (!promptData.category) missingFields.push("category");
@@ -123,8 +133,6 @@ async function processExcelFile(filePath) {
             error: errorMessage,
           });
           continue; // Bỏ qua row này
-        } else {
-          // Using existing category: ${category.name} (ID: ${category.id})
         }
 
         // Process topic
@@ -134,25 +142,36 @@ async function processExcelFile(filePath) {
         });
 
         if (!topic) {
-          const errorMessage = `Row ${rowIndex + 1}: Topic "${
-            promptData?.topic
-          }" không tồn tại trong hệ thống. Vui lòng tạo topic trước khi import.`;
-          console.error(errorMessage);
+          // Auto-create topic if it doesn't exist
+          try {
+            topic = await Topic.create(
+              {
+                name: promptData?.topic,
+                created_at: new Date(),
+                updated_at: new Date(),
+              },
+              { transaction }
+            );
+          } catch (error) {
+            const errorMessage = `Row ${rowIndex + 1}: Không thể tạo topic "${
+              promptData?.topic
+            }" - ${error.message}`;
+            console.error(errorMessage);
 
-          skippedRecords.push({
-            row: rowIndex + 1,
-            reason: `Topic "${promptData?.topic}" không tồn tại`,
-            data: promptData,
-            error: errorMessage,
-          });
-          continue; // Bỏ qua row này
-        } else {
-          // Using existing topic: ${topic.name} (ID: ${topic.id})
+            skippedRecords.push({
+              row: rowIndex + 1,
+              reason: `Không thể tạo topic "${promptData?.topic}"`,
+              data: promptData,
+              error: errorMessage,
+            });
+            continue; // Bỏ qua row này
+          }
         }
 
         // Add IDs to prompt data
         promptData.category_id = category.id;
         promptData.topic_id = topic.id;
+        promptData.topic_name = topic.name; // Store topic name for summary
         promptData.is_type = 1;
         prompts.push(promptData);
 
@@ -160,16 +179,107 @@ async function processExcelFile(filePath) {
       }
 
       // Summary: ${prompts.length} prompts to insert, ${skippedRecords.length} rows skipped
+      console.log(`\n=== IMPORT SUMMARY ===`);
+      console.log(`Total rows in Excel: ${rows.length}`);
+      console.log(`Rows prepared for insertion: ${prompts.length}`);
+      console.log(`Rows skipped: ${skippedRecords.length}`);
+      console.log(`Rows successfully inserted: ${insertedRecords.length}`);
+
+      // Collect missing categories and topics for summary
+      const missingCategories = new Set();
+      const missingTopics = new Set();
+      const missingFields = new Set();
+      const autoCreatedTopics = new Set();
+
+      skippedRecords.forEach((record) => {
+        if (record.reason.includes("Category")) {
+          const categoryName = record.data.category;
+          if (categoryName) missingCategories.add(categoryName);
+        } else if (
+          record.reason.includes("Topic") &&
+          !record.reason.includes("Không thể tạo")
+        ) {
+          // Only count topics that couldn't be auto-created
+          const topicName = record.data.topic;
+          if (topicName) missingTopics.add(topicName);
+        } else if (record.reason.includes("Missing required fields")) {
+          const missing = record.reason.match(/Missing required fields: (.+)/);
+          if (missing) {
+            missing[1].split(", ").forEach((field) => missingFields.add(field));
+          }
+        }
+      });
+
+      // Count auto-created topics from successful processing
+      prompts.forEach((prompt) => {
+        if (prompt.topic_id && prompt.topic_name) {
+          autoCreatedTopics.add(prompt.topic_name);
+        }
+      });
+
+      // Log missing categories and topics summary
+      if (missingCategories.size > 0) {
+        console.log(`\n=== MISSING CATEGORIES (${missingCategories.size}) ===`);
+        console.log("Categories that need to be created:");
+        Array.from(missingCategories)
+          .sort()
+          .forEach((cat) => {
+            console.log(`  - "${cat}"`);
+          });
+      }
+
+      if (autoCreatedTopics.size > 0) {
+        console.log(
+          `\n=== AUTO-CREATED TOPICS (${autoCreatedTopics.size}) ===`
+        );
+        console.log("Topics that were automatically created:");
+        Array.from(autoCreatedTopics)
+          .sort()
+          .forEach((topic) => {
+            console.log(`  - "${topic}"`);
+          });
+      }
+
+      if (missingTopics.size > 0) {
+        console.log(`\n=== MISSING TOPICS (${missingTopics.size}) ===`);
+        console.log(
+          "Topics that couldn't be auto-created (need manual creation):"
+        );
+        Array.from(missingTopics)
+          .sort()
+          .forEach((topic) => {
+            console.log(`  - "${topic}"`);
+          });
+      }
+
+      if (missingFields.size > 0) {
+        console.log(`\n=== MISSING REQUIRED FIELDS ===`);
+        console.log("Fields that are missing in Excel:");
+        Array.from(missingFields)
+          .sort()
+          .forEach((field) => {
+            console.log(`  - "${field}"`);
+          });
+      }
 
       if (skippedRecords.length > 0) {
         console.log("\n=== SKIPPED RECORDS DETAILS ===");
-        skippedRecords.forEach((record) => {
+        console.log(
+          `First 10 skipped records (showing max 10 for readability):`
+        );
+        skippedRecords.slice(0, 10).forEach((record) => {
           console.log(`\nRow ${record.row}: ${record.reason}`);
           console.log("  Data:", record.data);
           if (record.error) {
             console.log("  Error:", record.error);
           }
         });
+
+        if (skippedRecords.length > 10) {
+          console.log(
+            `\n... and ${skippedRecords.length - 10} more skipped records`
+          );
+        }
       }
 
       // Bulk insert
@@ -217,10 +327,20 @@ async function processExcelFile(filePath) {
 
       // Tạo message tùy theo kết quả
       let message = "";
+      const autoCreatedCount = autoCreatedTopics.size;
+
       if (prompts.length > 0 && skippedRecords.length === 0) {
-        message = `Import thành công! ${prompts.length} records đã được xử lý.`;
+        if (autoCreatedCount > 0) {
+          message = `Import thành công! ${prompts.length} records đã được xử lý. ${autoCreatedCount} topics mới đã được tạo tự động.`;
+        } else {
+          message = `Import thành công! ${prompts.length} records đã được xử lý.`;
+        }
       } else if (prompts.length > 0 && skippedRecords.length > 0) {
-        message = `Import một phần thành công! ${prompts.length} records đã được xử lý, ${skippedRecords.length} records bị bỏ qua.`;
+        if (autoCreatedCount > 0) {
+          message = `Import một phần thành công! ${prompts.length} records đã được xử lý (${autoCreatedCount} topics mới được tạo), ${skippedRecords.length} records bị bỏ qua.`;
+        } else {
+          message = `Import một phần thành công! ${prompts.length} records đã được xử lý, ${skippedRecords.length} records bị bỏ qua.`;
+        }
       } else if (prompts.length === 0 && skippedRecords.length > 0) {
         message = `Import thất bại! Tất cả ${skippedRecords.length} records đều bị bỏ qua.`;
       } else {
