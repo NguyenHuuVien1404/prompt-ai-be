@@ -27,7 +27,9 @@ async function processExcelFile(filePath) {
 
     // Convert to JSON
     const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
-    const headers = jsonData[0];
+    const headers = jsonData[0].map((header) =>
+      header ? header.toString().trim() : ""
+    );
     const rows = jsonData.slice(1);
 
     // Excel file analysis completed
@@ -54,17 +56,21 @@ async function processExcelFile(filePath) {
     // Format content function
     const formatContent = (text, header) => {
       if (!text) return "";
+
+      // Convert to string and trim
+      const cleanText = text.toString().trim();
+
       if (header === "category" || header === "topic" || header === "title") {
-        return text.trim();
+        return cleanText;
       }
-      if (text.includes("●")) {
-        const items = text
+      if (cleanText.includes("●")) {
+        const items = cleanText
           .split("●")
           .filter((item) => item.trim())
           .map((item) => `<p>${item.trim()}</p>`);
         return items.join("");
       }
-      return `<p>${text.trim()}</p>`;
+      return `<p>${cleanText}</p>`;
     };
 
     // Prepare data
@@ -87,12 +93,12 @@ async function processExcelFile(filePath) {
 
         const promptData = {};
         headers.forEach((header, index) => {
-          promptData[header] = formatContent(row[index], header);
+          const cellValue = row[index];
+          promptData[header] = formatContent(cellValue, header);
         });
 
-        // Data formatted successfully
+        // Kiểm tra dữ liệu bắt buộc
 
-                // Kiểm tra dữ liệu bắt buộc
         if (!promptData.category || !promptData.topic || !promptData.title) {
           const missingFields = [];
           if (!promptData.category) missingFields.push("category");
@@ -104,7 +110,6 @@ async function processExcelFile(filePath) {
               rowIndex + 1
             }: Skipping - missing required fields: ${missingFields.join(", ")}`
           );
-          console.warn("Row data:", promptData);
 
           skippedRecords.push({
             row: rowIndex + 1,
@@ -121,18 +126,35 @@ async function processExcelFile(filePath) {
         });
 
         if (!category) {
-          const errorMessage = `Row ${rowIndex + 1}: Category "${
-            promptData?.category
-          }" không tồn tại trong hệ thống. Vui lòng tạo category trước khi import.`;
-          console.error(errorMessage);
+          // Auto-create category if it doesn't exist
+          try {
+            category = await Category.create(
+              {
+                name: promptData?.category,
+                image: "", // Set default empty string
+                image_card: "", // Set default empty string
+                section_id: 1, // Set default section_id
+                created_at: new Date(),
+                updated_at: new Date(),
+              },
+              { transaction }
+            );
+          } catch (error) {
+            const errorMessage = `Row ${
+              rowIndex + 1
+            }: Không thể tạo category "${promptData?.category}" - ${
+              error.message
+            }`;
+            console.error(errorMessage);
 
-          skippedRecords.push({
-            row: rowIndex + 1,
-            reason: `Category "${promptData?.category}" không tồn tại`,
-            data: promptData,
-            error: errorMessage,
-          });
-          continue; // Bỏ qua row này
+            skippedRecords.push({
+              row: rowIndex + 1,
+              reason: `Không thể tạo category "${promptData?.category}"`,
+              data: promptData,
+              error: errorMessage,
+            });
+            continue; // Bỏ qua row này
+          }
         }
 
         // Process topic
@@ -172,6 +194,7 @@ async function processExcelFile(filePath) {
         promptData.category_id = category.id;
         promptData.topic_id = topic.id;
         promptData.topic_name = topic.name; // Store topic name for summary
+        promptData.category_name = category.name; // Store category name for summary
         promptData.is_type = 1;
         prompts.push(promptData);
 
@@ -183,9 +206,14 @@ async function processExcelFile(filePath) {
       const missingTopics = new Set();
       const missingFields = new Set();
       const autoCreatedTopics = new Set();
+      const autoCreatedCategories = new Set();
 
       skippedRecords.forEach((record) => {
-        if (record.reason.includes("Category")) {
+        if (
+          record.reason.includes("Category") &&
+          !record.reason.includes("Không thể tạo")
+        ) {
+          // Only count categories that couldn't be auto-created
           const categoryName = record.data.category;
           if (categoryName) missingCategories.add(categoryName);
         } else if (
@@ -203,18 +231,23 @@ async function processExcelFile(filePath) {
         }
       });
 
-      // Count auto-created topics from successful processing
+      // Count auto-created categories and topics from successful processing
       prompts.forEach((prompt) => {
+        if (prompt.category_id && prompt.category_name) {
+          autoCreatedCategories.add(prompt.category_name);
+        }
         if (prompt.topic_id && prompt.topic_name) {
           autoCreatedTopics.add(prompt.topic_name);
         }
       });
 
       // Log missing categories and topics summary
-      if (missingCategories.size > 0) {
-        console.log(`\n=== MISSING CATEGORIES (${missingCategories.size}) ===`);
-        console.log("Categories that need to be created:");
-        Array.from(missingCategories)
+      if (autoCreatedCategories.size > 0) {
+        console.log(
+          `\n=== AUTO-CREATED CATEGORIES (${autoCreatedCategories.size}) ===`
+        );
+        console.log("Categories that were automatically created:");
+        Array.from(autoCreatedCategories)
           .sort()
           .forEach((cat) => {
             console.log(`  - "${cat}"`);
@@ -233,6 +266,18 @@ async function processExcelFile(filePath) {
           });
       }
 
+      if (missingCategories.size > 0) {
+        console.log(`\n=== MISSING CATEGORIES (${missingCategories.size}) ===`);
+        console.log(
+          "Categories that couldn't be auto-created (need manual creation):"
+        );
+        Array.from(missingCategories)
+          .sort()
+          .forEach((cat) => {
+            console.log(`  - "${cat}"`);
+          });
+      }
+
       if (missingTopics.size > 0) {
         console.log(`\n=== MISSING TOPICS (${missingTopics.size}) ===`);
         console.log(
@@ -243,7 +288,6 @@ async function processExcelFile(filePath) {
           .forEach((topic) => {
             console.log(`  - "${topic}"`);
           });
-        }
       }
 
       if (missingFields.size > 0) {
@@ -279,12 +323,12 @@ async function processExcelFile(filePath) {
       // Bulk insert
       if (prompts.length > 0) {
         const promptRecords = prompts.map((p) => ({
-          short_description: p.short_description || "No description provided",
+          short_description: p.short_description || "",
           category_id: p.category_id,
           topic_id: p.topic_id,
-          title: p.title || "No title provided",
+          title: p.title || "",
           is_type: p.is_type || 1,
-          content: p.short_description || "No content provided",
+          content: p.short_description || "",
           what: p.what || null,
           created_at: new Date(),
           updated_at: new Date(),
@@ -292,6 +336,11 @@ async function processExcelFile(filePath) {
           text: p.text || null,
           OptimationGuide: p.OptimationGuide || null,
           how: p.how || null,
+          input: p.input || null,
+          output: p.output || null,
+          addtip: p.addtip || null,
+          addinformation: p.addinformation || null,
+          sub_type: p.sub_type || 1,
         }));
 
         const createdPrompts = await Prompt.bulkCreate(promptRecords, {
@@ -311,22 +360,41 @@ async function processExcelFile(filePath) {
         );
       }
 
-              // Commit transaction
-        await transaction.commit();
+      // Commit transaction
+      await transaction.commit();
 
       // Tạo message tùy theo kết quả
       let message = "";
-      const autoCreatedCount = autoCreatedTopics.size;
+      const autoCreatedTopicsCount = autoCreatedTopics.size;
+      const autoCreatedCategoriesCount = autoCreatedCategories.size;
 
       if (prompts.length > 0 && skippedRecords.length === 0) {
-        if (autoCreatedCount > 0) {
-          message = `Import thành công! ${prompts.length} records đã được xử lý. ${autoCreatedCount} topics mới đã được tạo tự động.`;
+        if (autoCreatedTopicsCount > 0 || autoCreatedCategoriesCount > 0) {
+          let autoCreatedText = [];
+          if (autoCreatedCategoriesCount > 0)
+            autoCreatedText.push(`${autoCreatedCategoriesCount} categories`);
+          if (autoCreatedTopicsCount > 0)
+            autoCreatedText.push(`${autoCreatedTopicsCount} topics`);
+          message = `Import thành công! ${
+            prompts.length
+          } records đã được xử lý. ${autoCreatedText.join(
+            " và "
+          )} mới đã được tạo tự động.`;
         } else {
           message = `Import thành công! ${prompts.length} records đã được xử lý.`;
         }
       } else if (prompts.length > 0 && skippedRecords.length > 0) {
-        if (autoCreatedCount > 0) {
-          message = `Import một phần thành công! ${prompts.length} records đã được xử lý (${autoCreatedCount} topics mới được tạo), ${skippedRecords.length} records bị bỏ qua.`;
+        if (autoCreatedTopicsCount > 0 || autoCreatedCategoriesCount > 0) {
+          let autoCreatedText = [];
+          if (autoCreatedCategoriesCount > 0)
+            autoCreatedText.push(`${autoCreatedCategoriesCount} categories`);
+          if (autoCreatedTopicsCount > 0)
+            autoCreatedText.push(`${autoCreatedTopicsCount} topics`);
+          message = `Import một phần thành công! ${
+            prompts.length
+          } records đã được xử lý (${autoCreatedText.join(
+            " và "
+          )} mới được tạo), ${skippedRecords.length} records bị bỏ qua.`;
         } else {
           message = `Import một phần thành công! ${prompts.length} records đã được xử lý, ${skippedRecords.length} records bị bỏ qua.`;
         }
