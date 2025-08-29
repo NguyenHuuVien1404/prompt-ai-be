@@ -175,15 +175,8 @@ async function processExcelFile(filePath) {
         promptData.is_type = 1;
         prompts.push(promptData);
 
-        // Row ${rowIndex + 1} prepared successfully for insertion
+        // Row prepared successfully for insertion
       }
-
-      // Summary: ${prompts.length} prompts to insert, ${skippedRecords.length} rows skipped
-      console.log(`\n=== IMPORT SUMMARY ===`);
-      console.log(`Total rows in Excel: ${rows.length}`);
-      console.log(`Rows prepared for insertion: ${prompts.length}`);
-      console.log(`Rows skipped: ${skippedRecords.length}`);
-      console.log(`Rows successfully inserted: ${insertedRecords.length}`);
 
       // Collect missing categories and topics for summary
       const missingCategories = new Set();
@@ -250,6 +243,7 @@ async function processExcelFile(filePath) {
           .forEach((topic) => {
             console.log(`  - "${topic}"`);
           });
+        }
       }
 
       if (missingFields.size > 0) {
@@ -300,13 +294,9 @@ async function processExcelFile(filePath) {
           how: p.how || null,
         }));
 
-        // Inserting ${promptRecords.length} records...
-
         const createdPrompts = await Prompt.bulkCreate(promptRecords, {
           transaction,
         });
-
-        // Successfully created ${createdPrompts.length} prompts
 
         // Store inserted records for response
         insertedRecords.push(
@@ -321,9 +311,8 @@ async function processExcelFile(filePath) {
         );
       }
 
-      // Commit transaction
-      await transaction.commit();
-      // Transaction committed successfully
+              // Commit transaction
+        await transaction.commit();
 
       // Tạo message tùy theo kết quả
       let message = "";
