@@ -16,19 +16,6 @@ const {
 } = require("../middleware/authMiddleware");
 const checkSubTypeAccess = require("../middleware/subTypeMiddleware");
 
-// CORS middleware cho static files
-const corsMiddleware = (req, res, next) => {
-  res.header("Access-Control-Allow-Origin", "*");
-  res.header("Access-Control-Allow-Methods", "GET, OPTIONS");
-  res.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
-
-  if (req.method === "OPTIONS") {
-    return res.sendStatus(200);
-  }
-
-  next();
-};
-
 // Cấu hình Multer để lưu file vào thư mục "uploads"
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
@@ -111,28 +98,11 @@ const uploadExcel = multer({
   limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
 });
 
-// Handle preflight OPTIONS request
-router.options("/upload/*", corsMiddleware, (req, res) => {
-  res.sendStatus(200);
-});
-
-router.options("/static/*", corsMiddleware, (req, res) => {
-  res.sendStatus(200);
-});
-
-// Cho phép truy cập ảnh đã upload với CORS headers
-router.use(
-  "/upload",
-  corsMiddleware,
-  express.static("/var/www/promvn/uploads")
-);
+// Cho phép truy cập ảnh đã upload
+router.use("/upload", express.static("/var/www/promvn/uploads"));
 
 // Backup route để serve static files nếu nginx không hoạt động
-router.use(
-  "/static",
-  corsMiddleware,
-  express.static("/var/www/promvn/uploads")
-);
+router.use("/static", express.static("/var/www/promvn/uploads"));
 
 // API Upload ảnh (tên field nào cũng được)
 router.post("/upload", authMiddleware, upload.any(), async (req, res) => {
