@@ -16,6 +16,19 @@ const {
 } = require("../middleware/authMiddleware");
 const checkSubTypeAccess = require("../middleware/subTypeMiddleware");
 
+// CORS middleware cho static files
+const corsMiddleware = (req, res, next) => {
+  res.header("Access-Control-Allow-Origin", "*");
+  res.header("Access-Control-Allow-Methods", "GET, OPTIONS");
+  res.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
+
+  if (req.method === "OPTIONS") {
+    return res.sendStatus(200);
+  }
+
+  next();
+};
+
 // Cấu hình Multer để lưu file vào thư mục "uploads"
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
@@ -98,13 +111,31 @@ const uploadExcel = multer({
   limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
 });
 
-// Cho phép truy cập ảnh đã upload
-router.use("/upload", express.static("/var/www/promvn/uploads"));
+// Handle preflight OPTIONS request
+router.options("/upload/*", corsMiddleware, (req, res) => {
+  res.sendStatus(200);
+});
+
+router.options("/static/*", corsMiddleware, (req, res) => {
+  res.sendStatus(200);
+});
+
+// Cho phép truy cập ảnh đã upload với CORS headers
+router.use(
+  "/upload",
+  corsMiddleware,
+  express.static("/var/www/promvn/uploads")
+);
+
 // Backup route để serve static files nếu nginx không hoạt động
-router.use("/static", express.static("/var/www/promvn/uploads"));
+router.use(
+  "/static",
+  corsMiddleware,
+  express.static("/var/www/promvn/uploads")
+);
 
 // Test route để kiểm tra static file serving
-router.get("/test-image/:filename", (req, res) => {
+router.get("/test-image/:filename", corsMiddleware, (req, res) => {
   const { filename } = req.params;
   const imagePath = path.join("/var/www/promvn/uploads", filename);
 
@@ -113,6 +144,15 @@ router.get("/test-image/:filename", (req, res) => {
   } else {
     res.status(404).json({ message: "Image not found", filename });
   }
+});
+
+// Test CORS route
+router.get("/test-cors", corsMiddleware, (req, res) => {
+  res.json({
+    message: "CORS is working",
+    timestamp: new Date().toISOString(),
+    headers: req.headers,
+  });
 });
 
 // API Upload ảnh (tên field nào cũng được)
