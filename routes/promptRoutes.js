@@ -120,11 +120,22 @@ router.options("/static/*", corsMiddleware, (req, res) => {
   res.sendStatus(200);
 });
 
-// Cho phép truy cập ảnh đã upload với CORS headers
 router.use(
   "/upload",
-  corsMiddleware,
-  express.static("/var/www/promvn/uploads")
+  (req, res, next) => {
+    res.header("Access-Control-Allow-Origin", "*");
+    res.header("Access-Control-Allow-Methods", "GET, OPTIONS");
+    res.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
+    res.header("Cross-Origin-Resource-Policy", "cross-origin");
+
+    // Nếu request là OPTIONS thì trả luôn (cho preflight request)
+    if (req.method === "OPTIONS") {
+      return res.sendStatus(200);
+    }
+
+    next();
+  },
+  express.static(path.join(__dirname, "../uploads")) // đường dẫn tới folder upload
 );
 
 // Backup route để serve static files nếu nginx không hoạt động
@@ -133,27 +144,6 @@ router.use(
   corsMiddleware,
   express.static("/var/www/promvn/uploads")
 );
-
-// Test route để kiểm tra static file serving
-router.get("/test-image/:filename", corsMiddleware, (req, res) => {
-  const { filename } = req.params;
-  const imagePath = path.join("/var/www/promvn/uploads", filename);
-
-  if (fs.existsSync(imagePath)) {
-    res.sendFile(imagePath);
-  } else {
-    res.status(404).json({ message: "Image not found", filename });
-  }
-});
-
-// Test CORS route
-router.get("/test-cors", corsMiddleware, (req, res) => {
-  res.json({
-    message: "CORS is working",
-    timestamp: new Date().toISOString(),
-    headers: req.headers,
-  });
-});
 
 // API Upload ảnh (tên field nào cũng được)
 router.post("/upload", authMiddleware, upload.any(), async (req, res) => {
