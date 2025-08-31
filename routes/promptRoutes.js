@@ -138,9 +138,10 @@ router.post("/upload", authMiddleware, upload.any(), async (req, res) => {
 
       res.status(200).json({
         message: "Files uploaded and processed successfully",
-        imageUrls: result.imageUrls,
+        // TODO
+        // imageUrls: result.imageUrls,
         // Thêm URLs gốc để backup
-        originalUrls: req.files.map(
+        imageUrls: req.files.map(
           (file) =>
             `${req.protocol}://${req.get("host")}/api/prompts/upload/${
               file.filename
