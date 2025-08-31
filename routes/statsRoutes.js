@@ -52,7 +52,6 @@ router.get(
         total_users: roleStats.reduce((sum, stat) => sum + stat.user_count, 0),
       });
     } catch (error) {
-      console.error("Error getting user role stats:", error);
       res.status(500).json({
         success: false,
         error: error.message,
@@ -105,7 +104,6 @@ router.get(
         },
       });
     } catch (error) {
-      console.error("Error getting overview stats:", error);
       res.status(500).json({
         success: false,
         error: error.message,

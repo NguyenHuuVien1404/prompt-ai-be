@@ -491,7 +491,7 @@ router.post(
         },
       });
     } catch (error) {
-      console.error("Error assigning role to multiple users:", error);
+
       res.status(500).json({
         success: false,
         error: error.message,
@@ -557,7 +557,7 @@ router.delete(
         },
       });
     } catch (error) {
-      console.error("Error removing role from user:", error);
+
       res.status(500).json({
         success: false,
         error: error.message,
@@ -601,7 +601,7 @@ router.get(
         },
       });
     } catch (error) {
-      console.error("Error getting role stats:", error);
+
       res.status(500).json({
         success: false,
         error: error.message,

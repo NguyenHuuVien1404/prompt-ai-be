@@ -189,7 +189,6 @@ router.post("/upload", authMiddleware, upload.any(), async (req, res) => {
         ),
       });
     } catch (error) {
-      console.error("Error processing images:", error);
       const baseUrl = `${req.protocol}://${req.get("host")}`;
       const imageUrls = req.files.map(
         (file) => `${baseUrl}/api/prompts/upload/${file.filename}`
@@ -218,8 +217,6 @@ router.post(
       if (!req.file) {
         return res.status(400).json({ message: "No file uploaded" });
       }
-
-
 
       // Kiểm tra file extension
       const allowedExtensions = [".xlsx", ".xls"];
@@ -262,8 +259,6 @@ router.post(
             },
           };
 
-
-
           return res.status(400).json(errorResponse);
         }
 
@@ -285,18 +280,14 @@ router.post(
           },
         };
 
-
-
         res.status(200).json(responseData);
       } catch (error) {
-        console.error("Error processing Excel file:", error);
         res.status(500).json({
           message: "Error processing Excel file",
           error: error.message,
         });
       }
     } catch (error) {
-      console.error("Error in import-excel route:", error);
       res.status(500).json({
         message: "Error importing Excel file",
         error: error.message,
@@ -525,7 +516,6 @@ router.get("/topics/by-category", checkSubTypeAccess, async (req, res) => {
 
     res.status(200).json(result);
   } catch (error) {
-    console.error("Error fetching topics:", error);
     res
       .status(500)
       .json({ message: "Error fetching topics", error: error.message });
@@ -706,7 +696,6 @@ router.post(
         prompt: createdPrompt,
       });
     } catch (error) {
-      console.error("Error creating prompt:", error);
       res
         .status(500)
         .json({ message: "Error creating prompt", error: error.message });
@@ -767,7 +756,6 @@ router.put(
         prompt: updatedPrompt,
       });
     } catch (error) {
-      console.error("Error updating prompt:", error);
       res
         .status(500)
         .json({ message: "Error updating prompt", error: error.message });

@@ -126,7 +126,6 @@ router.get("/list/by-section", async (req, res) => {
       data: data,
     });
   } catch (error) {
-    console.error("Error:", error); // Log lỗi nếu có
     res.status(500).json({
       message: "Error fetching favorite prompts",
       error: error.message,
