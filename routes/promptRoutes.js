@@ -219,13 +219,7 @@ router.post(
         return res.status(400).json({ message: "No file uploaded" });
       }
 
-      console.log("[DEBUG] File uploaded:", {
-        originalname: req.file.originalname,
-        path: req.file.path,
-        size: req.file.size,
-        mimetype: req.file.mimetype,
-        extension: path.extname(req.file.originalname).toLowerCase(),
-      });
+
 
       // Kiểm tra file extension
       const allowedExtensions = [".xlsx", ".xls"];
@@ -242,25 +236,12 @@ router.post(
 
       try {
         // Excel import started
-        console.log(
-          `[DEBUG] Starting Excel import for file: ${req.file.originalname}`
-        );
-        console.log(`[DEBUG] File path: ${req.file.path}`);
 
         const result = await runTask("excel-processor.js", {
           filePath: req.file.path,
         });
 
         // Excel processing completed
-        console.log(`[DEBUG] Excel processing completed`);
-        console.log(`[DEBUG] Processing result:`, {
-          success: result.success,
-          count: result.count,
-          totalRows: result.summary?.totalRows,
-          processedRows: result.summary?.processedRows,
-          insertedRows: result.summary?.insertedRows,
-          skippedRows: result.summary?.skippedRows,
-        });
 
         if (!result.success) {
           // Nếu không có record nào được xử lý thành công
@@ -281,13 +262,7 @@ router.post(
             },
           };
 
-          console.log(`[DEBUG] Import failed - Error response:`, {
-            totalRecords: errorResponse.summary.totalRows,
-            processedRecords: errorResponse.summary.processedRows,
-            skippedRecords: errorResponse.summary.skippedRows,
-            insertedRecords: errorResponse.summary.insertedRows,
-            errorMessage: errorResponse.message,
-          });
+
 
           return res.status(400).json(errorResponse);
         }
@@ -310,13 +285,7 @@ router.post(
           },
         };
 
-        console.log(`[DEBUG] Import successful - Final response:`, {
-          totalRecords: responseData.summary.totalRows,
-          importedRecords: responseData.count,
-          processedRecords: responseData.summary.processedRows,
-          skippedRecords: responseData.summary.skippedRows,
-          insertedRecords: responseData.summary.insertedRows,
-        });
+
 
         res.status(200).json(responseData);
       } catch (error) {
@@ -344,7 +313,6 @@ router.get("/", authMiddleware, checkSubTypeAccess, async (req, res) => {
     const offset = (page - 1) * pageSize;
 
     const where = {};
-    console.log(req.query);
     if (req.query.category_id) {
       where.category_id = req.query.category_id;
     }
@@ -374,7 +342,6 @@ router.get("/", authMiddleware, checkSubTypeAccess, async (req, res) => {
         { OptimationGuide: { [Op.like]: searchTerm } },
       ];
     }
-    console.log({ where });
 
     // Handle sorting
     let order = [["created_at", "DESC"]]; // Default sorting
@@ -469,7 +436,6 @@ router.get("/by-category", checkSubTypeAccess, async (req, res) => {
       whereCondition.sub_type = req.query.sub_type;
     }
 
-    console.log({ whereCondition });
     if (
       topic_id &&
       topic_id != 0 &&

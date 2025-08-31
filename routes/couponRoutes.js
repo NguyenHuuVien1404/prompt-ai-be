@@ -53,7 +53,7 @@ router.get('/', authMiddleware, adminMiddleware, async (req, res) => {
         }
 
         // Nếu cần thống kê, lấy thông tin chi tiết
-        console.log('🔍 Bắt đầu lấy thống kê coupon usage');
+    
 
         // 1. Lấy toàn bộ coupons với điều kiện tìm kiếm
         const coupons = await Coupon.findAll({
@@ -118,7 +118,7 @@ router.get('/', authMiddleware, adminMiddleware, async (req, res) => {
             }
         });
     } catch (error) {
-        console.error('❌ Lỗi khi lấy danh sách coupons:', error);
+  
         res.status(500).json({
             success: false,
             message: 'Lỗi khi lấy danh sách coupons',
@@ -144,7 +144,7 @@ router.get('/:id', authMiddleware, adminMiddleware, async (req, res) => {
             data: coupon
         });
     } catch (error) {
-        console.error('Lỗi khi lấy chi tiết coupon:', error);
+  
         res.status(500).json({
             success: false,
             message: 'Lỗi khi lấy chi tiết coupon',
@@ -204,7 +204,7 @@ router.post('/', authMiddleware, adminMiddleware, async (req, res) => {
         });
     } catch (error) {
         await t.rollback();
-        console.error('Lỗi khi tạo coupon:', error);
+  
         res.status(500).json({
             success: false,
             message: 'Lỗi khi tạo coupon',
@@ -256,7 +256,7 @@ router.put('/:id', authMiddleware, adminMiddleware, async (req, res) => {
         });
     } catch (error) {
         await t.rollback();
-        console.error('Lỗi khi cập nhật coupon:', error);
+  
         res.status(500).json({
             success: false,
             message: 'Lỗi khi cập nhật coupon',
@@ -298,7 +298,7 @@ router.delete('/:id', authMiddleware, adminMiddleware, async (req, res) => {
         });
     } catch (error) {
         await t.rollback();
-        console.error('Lỗi khi xóa coupon:', error);
+  
         res.status(500).json({
             success: false,
             message: 'Lỗi khi xóa coupon',
@@ -402,7 +402,7 @@ router.post('/validate', async (req, res) => {
             }
         });
     } catch (error) {
-        console.error('❌ Lỗi khi kiểm tra coupon:', error);
+  
         res.status(500).json({
             success: false,
             message: 'Lỗi khi kiểm tra coupon',
@@ -475,7 +475,7 @@ router.get('/:id/users', authMiddleware, adminMiddleware, async (req, res) => {
             }
         });
     } catch (error) {
-        console.error('Lỗi khi lấy danh sách user sử dụng coupon:', error);
+  
         res.status(500).json({
             success: false,
             message: 'Lỗi khi lấy danh sách user sử dụng coupon',

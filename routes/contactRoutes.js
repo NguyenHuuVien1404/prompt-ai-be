@@ -220,7 +220,7 @@ router.post("/survey-test", async (req, res) => {
 
         // Lấy danh sách tất cả email từ bảng users
         const users = await User.findAll({ attributes: ["email"] });
-        console.log(users);
+    
         if (!users || users.length === 0) {
             return res.status(404).json({ message: "No users found" });
         }

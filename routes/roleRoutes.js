@@ -24,7 +24,6 @@ router.get("/", authMiddleware, adminOrMarketerMiddleware, async (req, res) => {
       total: roles.length,
     });
   } catch (error) {
-    console.error("Error fetching roles:", error);
     res.status(500).json({
       success: false,
       error: error.message,
@@ -53,7 +52,6 @@ router.get(
         data: role,
       });
     } catch (error) {
-      console.error("Error fetching role:", error);
       res.status(500).json({
         success: false,
         error: error.message,
@@ -89,7 +87,6 @@ router.post("/", authMiddleware, adminMiddleware, async (req, res) => {
       data: newRole,
     });
   } catch (error) {
-    console.error("Error creating role:", error);
     res.status(500).json({
       success: false,
       error: error.message,
@@ -136,7 +133,6 @@ router.put("/:id", authMiddleware, adminMiddleware, async (req, res) => {
       data: role,
     });
   } catch (error) {
-    console.error("Error updating role:", error);
     res.status(500).json({
       success: false,
       error: error.message,
@@ -175,7 +171,6 @@ router.delete("/:id", authMiddleware, adminMiddleware, async (req, res) => {
       message: "Xóa role thành công",
     });
   } catch (error) {
-    console.error("Error deleting role:", error);
     res.status(500).json({
       success: false,
       error: error.message,
@@ -208,7 +203,6 @@ router.patch(
         data: role,
       });
     } catch (error) {
-      console.error("Error restoring role:", error);
       res.status(500).json({
         success: false,
         error: error.message,
@@ -235,7 +229,6 @@ router.get(
         total: deletedRoles.length,
       });
     } catch (error) {
-      console.error("Error fetching deleted roles:", error);
       res.status(500).json({
         success: false,
         error: error.message,
@@ -320,7 +313,6 @@ router.get(
                 ? JSON.parse(user.Role.permissions)
                 : user.Role.permissions;
           } catch (error) {
-            console.error("Error parsing permissions:", error);
             permissions = [];
           }
         } else {
@@ -351,7 +343,6 @@ router.get(
         },
       });
     } catch (error) {
-      console.error("Error fetching users by role:", error);
       res.status(500).json({
         success: false,
         error: error.message,
@@ -422,7 +413,6 @@ router.post(
         },
       });
     } catch (error) {
-      console.error("Error assigning role to user:", error);
       res.status(500).json({
         success: false,
         error: error.message,

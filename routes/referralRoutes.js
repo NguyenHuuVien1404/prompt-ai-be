@@ -33,7 +33,7 @@ router.post('/', async (req, res) => {
 
         return res.status(201).json({ message: 'Referral created successfully', referral });
     } catch (error) {
-        console.error('Error creating referral:', error);
+
         return res.status(500).json({ message: 'Server error', error: error.message });
     }
 });
@@ -56,7 +56,7 @@ router.get('/', async (req, res) => {
 
         return res.status(200).json({ referrals, source: 'database' });
     } catch (error) {
-        console.error('Error fetching referrals:', error);
+
         return res.status(500).json({ message: 'Server error', error: error.message });
     }
 });
@@ -84,7 +84,7 @@ router.get('/:id', async (req, res) => {
 
         return res.status(200).json({ referral, source: 'database' });
     } catch (error) {
-        console.error('Error fetching referral:', error);
+
         return res.status(500).json({ message: 'Server error', error: error.message });
     }
 });
@@ -125,7 +125,7 @@ router.put('/:id', async (req, res) => {
 
         return res.status(200).json({ message: 'Referral updated successfully', referral });
     } catch (error) {
-        console.error('Error updating referral:', error);
+
         return res.status(500).json({ message: 'Server error', error: error.message });
     }
 });
@@ -150,7 +150,7 @@ router.delete('/:id', async (req, res) => {
 
         return res.status(200).json({ message: 'Referral deleted successfully' });
     } catch (error) {
-        console.error('Error deleting referral:', error);
+
         return res.status(500).json({ message: 'Server error', error: error.message });
     }
 });
@@ -179,7 +179,7 @@ router.patch('/:id/increment-count', async (req, res) => {
 
         return res.status(200).json({ message: 'Referral count incremented successfully', referral });
     } catch (error) {
-        console.error('Error incrementing referral count:', error);
+
         return res.status(500).json({ message: 'Server error', error: error.message });
     }
 });
@@ -221,7 +221,7 @@ router.get('/get-discount/:code', async (req, res) => {
 
         return res.status(200).json(response);
     } catch (error) {
-        console.error('Error fetching discount:', error);
+
         return res.status(500).json({ message: 'Server error', error: error.message });
     }
 });

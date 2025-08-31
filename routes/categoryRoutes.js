@@ -131,8 +131,6 @@ router.get("/", async (req, res) => {
       ];
     }
 
-    console.log("Where condition:", JSON.stringify(whereCondition, null, 2));
-
     const { count, rows } = await Category.findAndCountAll({
       where: whereCondition,
       include: [{ model: Section, attributes: ["id", "name"] }],
@@ -263,7 +261,7 @@ router.put(
 
       // Ensure we have the form data, fallback to empty object if not
       if (!formData || Object.keys(formData).length === 0) {
-        console.log("Warning: req.body is empty, this might cause issues");
+        // Warning: req.body is empty, this might cause issues
       }
 
       const { name, description, section_id, is_comming_soon, category_type } =
@@ -328,13 +326,10 @@ router.put(
 // Delete category
 router.delete("/:id", async (req, res) => {
   try {
-    console.log("Start DELETE /:id");
     const categoryId = req.params.id;
     const category = await Category.findByPk(categoryId);
-    console.log("Category found:", category);
 
     if (!category) {
-      console.log("Category not found");
       return res.status(404).json({
         success: false,
         message: "Category not found",
@@ -345,7 +340,6 @@ router.delete("/:id", async (req, res) => {
     const categoryName = category.name;
 
     await category.destroy();
-    console.log("Category destroyed");
 
     // Invalidate relevant caches (tạm thời comment lại để kiểm tra lỗi treo)
     // await Promise.all([
@@ -353,7 +347,6 @@ router.delete("/:id", async (req, res) => {
     //     cache.invalidateCache(`categories_list_*`),
     //     cache.invalidateCache(`categories_by_section_${sectionId}*`),
     // ]);
-    // console.log("Cache invalidated");
 
     res.status(200).json({
       success: true,
@@ -364,9 +357,8 @@ router.delete("/:id", async (req, res) => {
         section_id: sectionId,
       },
     });
-    console.log("Response sent");
   } catch (error) {
-    console.error("Error deleting category:", error);
+
     res.status(500).json({
       success: false,
       message: "Error deleting category",
@@ -492,10 +484,6 @@ router.get("/by-sectionId/:sectionId", async (req, res) => {
       ],
     });
 
-    console.log(
-      `Found ${categories.length} categories for section ${sectionId}`
-    );
-
     const modifiedCategories = categories.map((category) => {
       const categoryData = category.toJSON(); // Chuyển instance Sequelize thành object
       if (categoryData.section_id === 3) {
@@ -512,7 +500,6 @@ router.get("/by-sectionId/:sectionId", async (req, res) => {
     };
 
     // No caching - always fresh data
-    console.log("Categories by section returned (no cache)");
 
     res.status(200).json(result);
   } catch (error) {

@@ -195,7 +195,7 @@ router.post(
         totalPages: Math.ceil(count / pageSize),
       });
     } catch (error) {
-      console.error("Error fetching users:", error);
+
       res.status(500).json({ error: error.message });
     }
   }
@@ -256,7 +256,6 @@ router.get("/:id", async (req, res) => {
             ? JSON.parse(user.Role.permissions)
             : user.Role.permissions;
       } catch (error) {
-        console.error("Error parsing permissions:", error);
         permissions = [];
       }
     } else {
@@ -436,7 +435,7 @@ router.post("/resend-otp", async (req, res) => {
       message: "Mã OTP đã được gửi lại đến email. Vui lòng xác thực tài khoản.",
     });
   } catch (error) {
-    console.error("Lỗi khi gửi lại OTP:", error);
+    
     res.status(500).json({ error: "Đã xảy ra lỗi khi gửi lại mã OTP" });
   }
 });
@@ -648,7 +647,6 @@ router.post("/login-verify", async (req, res) => {
             ? JSON.parse(user.Role.permissions)
             : user.Role.permissions;
       } catch (error) {
-        console.error("Error parsing permissions:", error);
         permissions = [];
       }
     } else {
@@ -770,7 +768,6 @@ router.post("/login-password", async (req, res) => {
               ? JSON.parse(user.Role.permissions)
               : user.Role.permissions;
         } catch (error) {
-          console.error("Error parsing permissions:", error);
           permissions = [];
         }
       } else {
@@ -905,7 +902,7 @@ router.put(
               }
             }
           } catch (deleteErr) {
-            console.error("Error deleting old image:", deleteErr);
+      
             // Continue with the update even if delete fails
           }
         }
@@ -928,7 +925,7 @@ router.put(
         },
       });
     } catch (error) {
-      console.error(error);
+
       res
         .status(500)
         .json({ message: "Error updating profile", error: error.message });
@@ -965,7 +962,7 @@ router.put("/change-password/:id", async (req, res) => {
       message: "Cập nhật mật khẩu thành công!",
     });
   } catch (error) {
-    console.error(error);
+    
     res
       .status(500)
       .json({ message: "Lỗi khi cập nhật mật khẩu", error: error.message });
@@ -1310,7 +1307,7 @@ router.post("/auth/google", async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("Google login error:", error);
+    
     return res.status(401).json({ error: "Google login failed" });
   }
 });
@@ -1493,7 +1490,7 @@ router.post(
       // Gửi file
       res.send(excelBuffer);
     } catch (error) {
-      console.error("Error exporting users to Excel:", error);
+
       res.status(500).json({ error: error.message });
     }
   }
