@@ -120,22 +120,11 @@ router.options("/static/*", corsMiddleware, (req, res) => {
   res.sendStatus(200);
 });
 
+// Cho phép truy cập ảnh đã upload với CORS headers
 router.use(
   "/upload",
-  (req, res, next) => {
-    res.header("Access-Control-Allow-Origin", "*");
-    res.header("Access-Control-Allow-Methods", "GET, OPTIONS");
-    res.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
-    res.header("Cross-Origin-Resource-Policy", "cross-origin");
-
-    // Nếu request là OPTIONS thì trả luôn (cho preflight request)
-    if (req.method === "OPTIONS") {
-      return res.sendStatus(200);
-    }
-
-    next();
-  },
-  express.static(path.join(__dirname, "../uploads")) // đường dẫn tới folder upload
+  corsMiddleware,
+  express.static("/var/www/promvn/uploads")
 );
 
 // Backup route để serve static files nếu nginx không hoạt động
