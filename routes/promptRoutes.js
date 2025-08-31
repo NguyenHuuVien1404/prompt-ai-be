@@ -6,6 +6,7 @@ const Category = require("../models/Category");
 const Topic = require("../models/Topic");
 const multer = require("multer");
 const path = require("path");
+const fs = require("fs");
 const sequelize = require("../config/database");
 const Section = require("../models/Section");
 const PromDetails = require("../models/PromDetails");
@@ -18,10 +19,13 @@ const checkSubTypeAccess = require("../middleware/subTypeMiddleware");
 // Cấu hình Multer để lưu file vào thư mục "uploads"
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    cb(null, "uploads/"); // Lưu file vào thư mục "uploads"
+    // cb(null, "uploads/"); // Lưu file vào thư mục "uploads"
+    cb(null, "/var/www/promvn/uploads/");
   },
   filename: (req, file, cb) => {
-    cb(null, Date.now() + path.extname(file.originalname)); // Tạo tên file duy nhất
+    // Tạo tên file duy nhất với timestamp và random
+    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
+    cb(null, uniqueSuffix + path.extname(file.originalname));
   },
 });
 
@@ -61,10 +65,11 @@ const upload = multer({
 // Tạo middleware riêng cho Excel files
 const excelStorage = multer.diskStorage({
   destination: (req, file, cb) => {
-    cb(null, "uploads/");
+    cb(null, "/var/www/promvn/uploads/");
   },
   filename: (req, file, cb) => {
-    cb(null, Date.now() + path.extname(file.originalname));
+    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
+    cb(null, uniqueSuffix + path.extname(file.originalname));
   },
 });
 
@@ -93,7 +98,22 @@ const uploadExcel = multer({
   limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
 });
 
-router.use("/upload", express.static("uploads")); // Cho phép truy cập ảnh đã upload
+// Cho phép truy cập ảnh đã upload
+router.use("/upload", express.static("/var/www/promvn/uploads"));
+// Backup route để serve static files nếu nginx không hoạt động
+router.use("/static", express.static("/var/www/promvn/uploads"));
+
+// Test route để kiểm tra static file serving
+router.get("/test-image/:filename", (req, res) => {
+  const { filename } = req.params;
+  const imagePath = path.join("/var/www/promvn/uploads", filename);
+
+  if (fs.existsSync(imagePath)) {
+    res.sendFile(imagePath);
+  } else {
+    res.status(404).json({ message: "Image not found", filename });
+  }
+});
 
 // API Upload ảnh (tên field nào cũng được)
 router.post("/upload", authMiddleware, upload.any(), async (req, res) => {
@@ -119,12 +139,19 @@ router.post("/upload", authMiddleware, upload.any(), async (req, res) => {
       res.status(200).json({
         message: "Files uploaded and processed successfully",
         imageUrls: result.imageUrls,
+        // Thêm URLs gốc để backup
+        originalUrls: req.files.map(
+          (file) =>
+            `${req.protocol}://${req.get("host")}/api/prompts/upload/${
+              file.filename
+            }`
+        ),
       });
     } catch (error) {
       console.error("Error processing images:", error);
       const baseUrl = `${req.protocol}://${req.get("host")}`;
       const imageUrls = req.files.map(
-        (file) => `${baseUrl}/uploads/${file.filename}`
+        (file) => `${baseUrl}/api/prompts/upload/${file.filename}`
       );
 
       res.status(200).json({
