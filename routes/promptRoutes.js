@@ -98,11 +98,40 @@ const uploadExcel = multer({
   limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
 });
 
-// Cho phép truy cập ảnh đã upload
-router.use("/upload", express.static("/var/www/promvn/uploads"));
+// Cho phép truy cập ảnh đã upload với CORS headers
+router.use(
+  "/upload",
+  (req, res, next) => {
+    res.header("Access-Control-Allow-Origin", "*");
+    res.header("Access-Control-Allow-Methods", "GET, OPTIONS");
+    res.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
+    next();
+  },
+  express.static("/var/www/promvn/uploads")
+);
 
 // Backup route để serve static files nếu nginx không hoạt động
-router.use("/static", express.static("/var/www/promvn/uploads"));
+router.use(
+  "/static",
+  (req, res, next) => {
+    res.header("Access-Control-Allow-Origin", "*");
+    res.header("Access-Control-Allow-Methods", "GET, OPTIONS");
+    res.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
+    next();
+  },
+  express.static("/var/www/promvn/uploads")
+);
+
+// Test route để kiểm tra CORS
+router.get("/test-cors", (req, res) => {
+  res.header("Access-Control-Allow-Origin", "*");
+  res.header("Access-Control-Allow-Methods", "GET, OPTIONS");
+  res.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  res.json({
+    message: "CORS test successful",
+    timestamp: new Date().toISOString(),
+  });
+});
 
 // API Upload ảnh (tên field nào cũng được)
 router.post("/upload", authMiddleware, upload.any(), async (req, res) => {

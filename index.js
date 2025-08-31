@@ -54,8 +54,13 @@ app.use(compression({ filter: shouldCompress }));
 
 // Static file serving is handled by nginx at /uploads/ path
 
-// Sử dụng helmet để bảo vệ HTTP headers
-app.use(helmet());
+// Sử dụng helmet để bảo vệ HTTP headers nhưng tắt một số features gây xung đột CORS
+app.use(
+  helmet({
+    crossOriginResourcePolicy: { policy: "cross-origin" },
+    crossOriginEmbedderPolicy: false,
+  })
+);
 
 // Sử dụng middleware chống DDoS
 app.use(ddosProtection);
@@ -64,8 +69,17 @@ app.use(
   cors({
     // origin: ["https://www.prom.vn", "https://prom.vn"],
     origin: "*",
-    methods: ["GET", "POST", "PUT", "DELETE"],
-    allowedHeaders: ["Content-Type", "Authorization"],
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allowedHeaders: [
+      "Content-Type",
+      "Authorization",
+      "Origin",
+      "X-Requested-With",
+      "Accept",
+    ],
+    credentials: true,
+    preflightContinue: false,
+    optionsSuccessStatus: 200,
   })
 );
 
