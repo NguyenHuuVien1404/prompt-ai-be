@@ -118,7 +118,6 @@ router.post("/create_payment_url", async function (req, res, next) {
     vnpUrl += "?" + querystring.stringify(vnp_Params, { encode: false });
     res.json({ paymentUrl: vnpUrl });
   } catch (error) {
-    
     res.status(500).json({ error: "Failed to create payment URL" });
   }
 });
@@ -146,7 +145,6 @@ router.get("/vnpay_return", async function (req, res, next) {
 
     res.json(result);
   } catch (error) {
-    
     res.status(500).json({ code: "99", message: "Server error" });
   }
 });
@@ -289,9 +287,7 @@ router.get("/vnpay_ipn", async function (req, res, next) {
         notes: `VNPay Transaction: ${orderId}`,
       });
       await order.save();
-    } catch (error) {
-
-    }
+    } catch (error) {}
 
     // 9. Cập nhật User và UserSub nếu giao dịch thành công
     if (rspCode === "00") {
@@ -306,14 +302,12 @@ router.get("/vnpay_ipn", async function (req, res, next) {
       // Lấy thông tin subscription từ DB để có duration gốc
       const subscription = await Subscription.findByPk(subscriptionId);
       if (!subscription) {
-
         throw new Error("Subscription not found");
       }
 
       // Lấy thông tin user
       const user = await User.findByPk(userId);
       if (!user) {
-
         throw new Error("User not found");
       }
 
@@ -404,7 +398,6 @@ router.get("/vnpay_ipn", async function (req, res, next) {
       });
     }
   } catch (error) {
-    
     return res.status(200).json({
       RspCode: "99",
       Message: "Server error",
@@ -487,7 +480,6 @@ router.post("/querydr", async function (req, res, next) {
 
     res.json(result);
   } catch (error) {
-    
     res.status(500).json({ error: "Failed to query transaction" });
   }
 });
@@ -578,7 +570,6 @@ router.post("/refund", async function (req, res, next) {
 
     res.json(result);
   } catch (error) {
-
     res.status(500).json({ error: "Failed to process refund" });
   }
 });
@@ -735,7 +726,6 @@ router.get("/filter", async (req, res) => {
       },
     });
   } catch (error) {
-    
     res.status(500).json({
       success: false,
       message: "Lỗi khi filter payment",
@@ -783,10 +773,7 @@ async function trackPermate(order, vnpTxnRef) {
         },
       }
     );
-    
-  } catch (error) {
-
-  }
+  } catch (error) {}
 }
 
 module.exports = router;

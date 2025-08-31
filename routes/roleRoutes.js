@@ -491,7 +491,6 @@ router.post(
         },
       });
     } catch (error) {
-
       res.status(500).json({
         success: false,
         error: error.message,
@@ -557,7 +556,6 @@ router.delete(
         },
       });
     } catch (error) {
-
       res.status(500).json({
         success: false,
         error: error.message,
@@ -601,7 +599,6 @@ router.get(
         },
       });
     } catch (error) {
-
       res.status(500).json({
         success: false,
         error: error.message,
