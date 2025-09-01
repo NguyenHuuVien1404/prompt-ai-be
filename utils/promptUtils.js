@@ -276,7 +276,7 @@ Cấu trúc JSON bắt buộc
 "task": "hành động chính (viết, tóm tắt, tạo, v.v.)",
 "topic": "chủ đề chính hoặc nội dung",
 "audience": "đối tượng mục tiêu",
-"output_format": "dạng đầu ra (text, list, video script, v.v.)",
+"output_format": "text",
 "language": "ngôn ngữ gốc của prompt"
 }
 
@@ -341,7 +341,7 @@ Required JSON Structure
   "task": "main action (write, summarize, generate, etc.)",
   "topic": "main subject or content",
   "audience": "target audience",
-  "output_format": "text with matching concepts",
+  "output_format": "text",
   "language": "original prompt language"
 }
 
@@ -376,11 +376,6 @@ Output: {
 
 End response at the last line of the JSON object. Do not add other content.`,
 };
-
-// const systemPrompts = {
-//     vi: `Bạn là một trợ lý AI chuyên nghiệp, có nhiệm vụ phản hồi bằng Markdown được định dạng chính xác để hiển thị giống với định dạng trong Microsoft Word.`,
-//     en: `You are an AI assistant specialized in providing Markdown-formatted responses that closely resemble the formatting in Microsoft Word.`
-// };
 
 const systemFomart = {
   vi: `YÊU CẦU VỀ ĐỊNH DẠNG:
