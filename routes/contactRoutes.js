@@ -2,6 +2,8 @@ const express = require("express");
 const Contact = require("../models/Contact");
 const router = express.Router();
 const nodemailer = require("nodemailer");
+const XLSX = require("xlsx");
+const moment = require("moment");
 const {
   authMiddleware,
   adminMiddleware,
@@ -99,6 +101,134 @@ router.get("/list", authMiddleware, adminMiddleware, async (req, res) => {
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
+  }
+});
+
+// GET /api/contact/export - Export Excel cho contact
+router.get("/export", authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const { status, type } = req.query;
+
+    // Xây dựng điều kiện where (tương tự như API list)
+    const where = {};
+
+    // Lọc theo status nếu có
+    if (status !== "" && status !== undefined) {
+      where.status = status;
+    }
+
+    // Lọc theo type nếu có
+    if (type !== null && type !== undefined) {
+      where.type = type;
+    }
+
+    // Lấy tất cả dữ liệu (không phân trang)
+    const contacts = await Contact.findAll({
+      where,
+      order: [["created_at", "DESC"]],
+    });
+
+    // Chuẩn bị dữ liệu cho Excel
+    const excelData = [
+      [
+        "ID",
+        "Tên",
+        "Email",
+        "Số điện thoại",
+        "Loại",
+        "Trạng thái",
+        "Tin nhắn",
+        "Phản hồi",
+        "Ngày tạo",
+        "Ngày cập nhật",
+        "Thời gian còn lại",
+      ],
+    ];
+
+    const currentTime = new Date();
+
+    contacts.forEach((contact) => {
+      const createdAt = new Date(contact.created_at);
+      const deadline = new Date(createdAt.getTime() + 24 * 60 * 60 * 1000);
+      const timeRemaining = deadline - currentTime;
+
+      // Format thời gian còn lại
+      let timeRemainingFormatted = "";
+      if (timeRemaining <= 0) {
+        timeRemainingFormatted = "Hết hạn";
+      } else {
+        const hours = Math.floor(timeRemaining / (1000 * 60 * 60));
+        const minutes = Math.floor(
+          (timeRemaining % (1000 * 60 * 60)) / (1000 * 60)
+        );
+        timeRemainingFormatted = `${hours}h ${minutes}m`;
+      }
+
+      // Map status và type sang text
+      const statusText = contact.status === 1 ? "Chưa trả lời" : "Đã trả lời";
+      const typeText =
+        contact.type === 1 ? "Hỗ trợ" : contact.type === 2 ? "Đăng ký" : "Khác";
+
+      excelData.push([
+        contact.id,
+        contact.name || "",
+        contact.email || "",
+        contact.phone_number || "",
+        typeText,
+        statusText,
+        contact.message || "",
+        contact.reply || "",
+        contact.created_at
+          ? moment(contact.created_at).format("DD/MM/YYYY HH:mm:ss")
+          : "",
+        contact.updated_at
+          ? moment(contact.updated_at).format("DD/MM/YYYY HH:mm:ss")
+          : "",
+        timeRemainingFormatted,
+      ]);
+    });
+
+    // Tạo workbook và worksheet
+    const workbook = XLSX.utils.book_new();
+    const worksheet = XLSX.utils.aoa_to_sheet(excelData);
+
+    // Đặt độ rộng cột
+    const colWidths = [
+      { wch: 8 }, // ID
+      { wch: 20 }, // Tên
+      { wch: 25 }, // Email
+      { wch: 15 }, // Số điện thoại
+      { wch: 12 }, // Loại
+      { wch: 15 }, // Trạng thái
+      { wch: 40 }, // Tin nhắn
+      { wch: 40 }, // Phản hồi
+      { wch: 20 }, // Ngày tạo
+      { wch: 20 }, // Ngày cập nhật
+      { wch: 15 }, // Thời gian còn lại
+    ];
+    worksheet["!cols"] = colWidths;
+
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Contacts");
+
+    // Tạo buffer và gửi file
+    const buffer = XLSX.write(workbook, { type: "buffer", bookType: "xlsx" });
+
+    // Tạo tên file với timestamp
+    const timestamp = moment().format("YYYYMMDD_HHmmss");
+    const filename = `contacts_export_${timestamp}.xlsx`;
+
+    res.setHeader(
+      "Content-Type",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    );
+    res.setHeader("Content-Disposition", `attachment; filename=${filename}`);
+    res.send(buffer);
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Lỗi khi export Excel",
+      error: error.message,
+    });
   }
 });
 

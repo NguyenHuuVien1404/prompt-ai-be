@@ -247,8 +247,6 @@ router.put(
     try {
       const categoryId = req.params.id;
 
-      // Debug logging
-
       // Extract form data from req.body
       const formData = req.body;
 

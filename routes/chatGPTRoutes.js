@@ -160,7 +160,20 @@ router.post(
 
       transaction = await sequelize.transaction();
 
-      const cost = model === "gpt-4o" || model === "gpt-4-turbo" ? 5 : 1;
+      let cost;
+      switch (model) {
+        case "gpt-4o":
+        case "gpt-4-turbo":
+          cost = 5;
+          break;
+        case "gpt-5":
+        case "gpt-5-mini":
+          cost = 4;
+          break;
+        default:
+          cost = 1;
+          break;
+      }
       const userId = req.user.id;
 
       const user = await User.findByPk(userId, {

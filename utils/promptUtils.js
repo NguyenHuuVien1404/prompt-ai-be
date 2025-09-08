@@ -1,10 +1,5 @@
 // ✅ Helper functions để generate prompt theo loại
 function generateWritingPrompt(prompt, type) {
-  console.log("🔍 DEBUG - generateWritingPrompt called with:", {
-    prompt,
-    type,
-  });
-
   let result;
   switch (type) {
     case "creative":
@@ -20,20 +15,10 @@ function generateWritingPrompt(prompt, type) {
       result = `Viết một bài viết tiêu chuẩn với chủ đề: ${prompt}`;
   }
 
-  console.log(
-    "🔍 DEBUG - generateWritingPrompt result:",
-    result.substring(0, 100) + "..."
-  );
   return result;
 }
 
 function generateUpgradePrompt(prompt, type, language = "en") {
-  console.log("🔍 DEBUG - generateUpgradePrompt called with:", {
-    prompt,
-    type,
-    language,
-  });
-
   let result;
   switch (type) {
     case "creative":
@@ -61,10 +46,6 @@ function generateUpgradePrompt(prompt, type, language = "en") {
       result = `Hãy cải thiện prompt sau theo chuẩn thông thường:\n\n${prompt}`;
   }
 
-  console.log(
-    "🔍 DEBUG - generateUpgradePrompt result:",
-    result.substring(0, 100) + "..."
-  );
   return result;
 }
 
@@ -483,9 +464,6 @@ function prepareMessages(userPrompt, language, nangCap, type) {
 
   // ✅ Xử lý logic theo yêu cầu
   if (nangCap) {
-    console.log("🔍 DEBUG - Entering UPGRADE mode");
-    // ✅ Nâng cấp prompt - hỗ trợ 3 loại: STANDARD, CREATIVE, MARKETING
-
     // ✅ Xử lý type - mặc định 'standard' nếu không truyền
     let contentType;
     if (!type) {
@@ -499,19 +477,15 @@ function prepareMessages(userPrompt, language, nangCap, type) {
     switch (contentType) {
       case "creative":
         selectedTemplate = creative;
-        console.log("🔍 DEBUG - Selected CREATIVE template");
         break;
       case "media":
         selectedTemplate = media;
-        console.log("🔍 DEBUG - Selected MEDIA template");
         break;
       case "json":
         selectedTemplate = json;
-        console.log("🔍 DEBUG - Selected JSON template");
         break;
       default:
         selectedTemplate = standard;
-        console.log("🔍 DEBUG - Selected STANDARD template");
     }
 
     messages.push({
@@ -536,8 +510,6 @@ function prepareMessages(userPrompt, language, nangCap, type) {
     );
   } else {
     // ✅ Xử lý type cho writing mode - luôn dùng 'standard'
-    console.log("🔍 DEBUG - Writing mode luôn sử dụng type: standard");
-
     // ✅ Viết bài viết - chỉ sử dụng STANDARD
     // Sử dụng template standard cho viết bài
     messages.push({
@@ -547,10 +519,6 @@ function prepareMessages(userPrompt, language, nangCap, type) {
 
     // ✅ Wrap user prompt với writing prompt (luôn dùng STANDARD)
     const wrappedPrompt = generateWritingPrompt(userPrompt, "standard");
-    console.log(
-      "🔍 DEBUG - Generated writing prompt:",
-      wrappedPrompt.substring(0, 100) + "..."
-    );
 
     messages.push(
       { role: "system", content: systemFomart[language] || systemFomart.en },
@@ -562,7 +530,6 @@ function prepareMessages(userPrompt, language, nangCap, type) {
     );
   }
 
-  console.log("🔍 DEBUG - Final messages count:", messages.length);
   return messages;
 }
 

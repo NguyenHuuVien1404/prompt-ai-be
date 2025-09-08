@@ -9,6 +9,7 @@ const moment = require("moment");
 const crypto = require("crypto");
 const querystring = require("qs");
 const axios = require("axios");
+const XLSX = require("xlsx");
 const UserSub = require("../models/UserSub");
 const Payment = require("../models/Payment");
 const Subscription = require("../models/Subscription"); // Thêm model Subscription để lấy thông tin duration, token
@@ -729,6 +730,193 @@ router.get("/filter", async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Lỗi khi filter payment",
+      error: error.message,
+    });
+  }
+});
+
+// GET /api/payment/export
+router.get("/export", async (req, res) => {
+  try {
+    const { status, start_date, end_date, name, email, code, subscription } =
+      req.query;
+
+    // Xây dựng điều kiện where (tương tự như API filter)
+    const where = {};
+    if (status) where.payment_status = status;
+    if (subscription) where.subscription_id = parseInt(subscription);
+    if (start_date || end_date) {
+      where.payment_date = {};
+      if (start_date) where.payment_date[Op.gte] = new Date(start_date);
+      if (end_date) where.payment_date[Op.lte] = new Date(end_date);
+    }
+
+    // Nếu có truyền code, tìm coupon_id
+    if (code) {
+      const coupon = await Coupon.findOne({ where: { code } });
+      if (coupon) {
+        where.coupon_id = coupon.id;
+      } else {
+        // Không tìm thấy coupon, trả về file Excel rỗng
+        const emptyWorkbook = XLSX.utils.book_new();
+        const emptyData = [["Không có dữ liệu phù hợp với bộ lọc"]];
+        const emptySheet = XLSX.utils.aoa_to_sheet(emptyData);
+        XLSX.utils.book_append_sheet(emptyWorkbook, emptySheet, "Payments");
+
+        const buffer = XLSX.write(emptyWorkbook, {
+          type: "buffer",
+          bookType: "xlsx",
+        });
+        res.setHeader(
+          "Content-Type",
+          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        );
+        res.setHeader(
+          "Content-Disposition",
+          "attachment; filename=payments_empty.xlsx"
+        );
+        return res.send(buffer);
+      }
+    }
+
+    // Join với User để filter theo tên hoặc email
+    const include = [];
+    if (name || email) {
+      const userWhere = {};
+      if (name) userWhere.full_name = { [Op.like]: `%${name}%` };
+      if (email) userWhere.email = { [Op.like]: `%${email}%` };
+      include.push({
+        model: User,
+        attributes: ["id", "full_name", "email"],
+        where: userWhere,
+      });
+    } else {
+      include.push({
+        model: User,
+        attributes: ["id", "full_name", "email"],
+      });
+    }
+
+    // Lấy tất cả dữ liệu (không phân trang)
+    const payments = await Payment.findAll({
+      where,
+      include,
+      order: [["payment_date", "DESC"]],
+    });
+
+    // Lấy tất cả coupon_id duy nhất từ kết quả
+    const couponIds = [
+      ...new Set(payments.map((p) => p.coupon_id).filter(Boolean)),
+    ];
+    const coupons = await Coupon.findAll({
+      where: { id: couponIds },
+    });
+    const couponMap = {};
+    coupons.forEach((c) => {
+      couponMap[String(c.id)] = c;
+    });
+
+    // Lấy tất cả subscription_id duy nhất từ kết quả
+    const subscriptionIds = [
+      ...new Set(payments.map((p) => p.subscription_id).filter(Boolean)),
+    ];
+    const subscriptions = await Subscription.findAll({
+      where: { id: subscriptionIds },
+    });
+    const subscriptionMap = {};
+    subscriptions.forEach((s) => {
+      subscriptionMap[String(s.id)] = s;
+    });
+
+    // Chuẩn bị dữ liệu cho Excel
+    const excelData = [
+      [
+        "ID",
+        "Tên người dùng",
+        "Email",
+        "Gói đăng ký",
+        "Giá gói",
+        "Số tiền thanh toán",
+        "Phương thức thanh toán",
+        "Mã giao dịch",
+        "Trạng thái",
+        "Ngày thanh toán",
+        "Mã coupon",
+        "Giảm giá coupon",
+        "Loại coupon",
+        "Ghi chú",
+      ],
+    ];
+
+    payments.forEach((payment) => {
+      const p = payment.toJSON();
+      const coupon = p.coupon_id ? couponMap[String(p.coupon_id)] : null;
+      const subscription = p.subscription_id
+        ? subscriptionMap[String(p.subscription_id)]
+        : null;
+
+      excelData.push([
+        p.id,
+        p.User ? p.User.full_name : "",
+        p.User ? p.User.email : "",
+        subscription ? subscription.name_sub : "",
+        subscription ? subscription.price : "",
+        p.amount,
+        p.payment_method,
+        p.transaction_id || "",
+        p.payment_status,
+        p.payment_date
+          ? moment(p.payment_date).format("DD/MM/YYYY HH:mm:ss")
+          : "",
+        coupon ? coupon.code : "",
+        coupon ? coupon.discount : "",
+        coupon ? coupon.type : "",
+        p.notes || "",
+      ]);
+    });
+
+    // Tạo workbook và worksheet
+    const workbook = XLSX.utils.book_new();
+    const worksheet = XLSX.utils.aoa_to_sheet(excelData);
+
+    // Đặt độ rộng cột
+    const colWidths = [
+      { wch: 8 }, // ID
+      { wch: 20 }, // Tên người dùng
+      { wch: 25 }, // Email
+      { wch: 20 }, // Gói đăng ký
+      { wch: 12 }, // Giá gói
+      { wch: 15 }, // Số tiền thanh toán
+      { wch: 18 }, // Phương thức thanh toán
+      { wch: 20 }, // Mã giao dịch
+      { wch: 12 }, // Trạng thái
+      { wch: 20 }, // Ngày thanh toán
+      { wch: 15 }, // Mã coupon
+      { wch: 12 }, // Giảm giá coupon
+      { wch: 12 }, // Loại coupon
+      { wch: 30 }, // Ghi chú
+    ];
+    worksheet["!cols"] = colWidths;
+
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Payments");
+
+    // Tạo buffer và gửi file
+    const buffer = XLSX.write(workbook, { type: "buffer", bookType: "xlsx" });
+
+    // Tạo tên file với timestamp
+    const timestamp = moment().format("YYYYMMDD_HHmmss");
+    const filename = `payments_export_${timestamp}.xlsx`;
+
+    res.setHeader(
+      "Content-Type",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    );
+    res.setHeader("Content-Disposition", `attachment; filename=${filename}`);
+    res.send(buffer);
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Lỗi khi export Excel",
       error: error.message,
     });
   }
