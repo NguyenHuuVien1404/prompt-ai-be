@@ -216,7 +216,12 @@ router.get(
         );
         res.setHeader("Content-Length", result.data.length);
 
-        res.send(result.data);
+        // Ensure we send the buffer correctly
+        if (Buffer.isBuffer(result.data)) {
+          res.send(result.data);
+        } else {
+          res.send(Buffer.from(result.data));
+        }
       } catch (error) {
         res.status(500).json({
           success: false,
@@ -289,7 +294,174 @@ router.get(
         );
         res.setHeader("Content-Length", result.data.length);
 
-        res.send(result.data);
+        // Ensure we send the buffer correctly
+        if (Buffer.isBuffer(result.data)) {
+          res.send(result.data);
+        } else {
+          res.send(Buffer.from(result.data));
+        }
+      } catch (error) {
+        res.status(500).json({
+          success: false,
+          message: "Error exporting prompts to Excel",
+          error: error.message,
+        });
+      }
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        message: "Error exporting prompts to Excel",
+        error: error.message,
+      });
+    }
+  }
+);
+
+// Test export Excel (simple version)
+router.get(
+  "/export-excel-test",
+  authMiddleware,
+  adminMiddleware,
+  async (req, res) => {
+    try {
+      const XLSX = require("xlsx");
+
+      // Create simple test data
+      const testData = [
+        [
+          "ID",
+          "Title",
+          "Description",
+          "Category",
+          "Industry",
+          "Industry Description",
+        ],
+        [
+          1,
+          "Test Prompt 1",
+          "This is a test prompt",
+          "Test Category",
+          "Test Industry",
+          "Test Industry Description",
+        ],
+        [
+          2,
+          "Test Prompt 2",
+          "Another test prompt",
+          "Test Category 2",
+          "Test Industry 2",
+          "Test Industry Description 2",
+        ],
+      ];
+
+      // Create workbook
+      const workbook = XLSX.utils.book_new();
+      const worksheet = XLSX.utils.aoa_to_sheet(testData);
+
+      // Set column widths
+      worksheet["!cols"] = [
+        { wch: 8 }, // ID
+        { wch: 30 }, // Title
+        { wch: 50 }, // Description
+        { wch: 20 }, // Category
+        { wch: 25 }, // Industry
+        { wch: 50 }, // Industry Description
+      ];
+
+      XLSX.utils.book_append_sheet(workbook, worksheet, "Test Prompts");
+
+      // Generate Excel buffer
+      const excelBuffer = XLSX.write(workbook, {
+        type: "buffer",
+        bookType: "xlsx",
+      });
+
+      // Generate filename
+      const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+      const filename = `test-prompts-${timestamp}.xlsx`;
+
+      // Set headers
+      res.setHeader(
+        "Content-Type",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+      );
+      res.setHeader("Content-Disposition", `attachment; filename=${filename}`);
+      res.setHeader("Content-Length", excelBuffer.length);
+
+      // Send buffer
+      res.send(excelBuffer);
+    } catch (error) {
+      console.error("Error in test export:", error);
+      res.status(500).json({
+        success: false,
+        message: "Error creating test Excel file",
+        error: error.message,
+      });
+    }
+  }
+);
+
+// Export prompts to Excel with industry description (enhanced version)
+router.get(
+  "/export-excel-enhanced",
+  authMiddleware,
+  adminMiddleware,
+  async (req, res) => {
+    try {
+      const { runTask } = require("../utils/worker");
+
+      // Get filters from query parameters
+      const filters = {
+        categoryId: req.query.category_id,
+        industryId: req.query.industry_id,
+        topicId: req.query.topic_id,
+        subType: req.query.sub_type,
+        isType: req.query.is_type,
+        search: req.query.search,
+        limit: req.query.limit,
+      };
+
+      // Remove undefined values
+      Object.keys(filters).forEach((key) => {
+        if (filters[key] === undefined) {
+          delete filters[key];
+        }
+      });
+
+      try {
+        const result = await runTask("excel-export.js", {
+          action: "export",
+          filters: filters,
+        });
+
+        if (!result.success) {
+          return res.status(400).json({
+            success: false,
+            message: result.error || "Failed to export prompts to Excel",
+          });
+        }
+
+        // Generate filename with timestamp
+        const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+        const filename = `prompts-enhanced-export-${timestamp}.xlsx`;
+
+        // Set headers for file download
+        res.setHeader(
+          "Content-Type",
+          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        );
+        res.setHeader(
+          "Content-Disposition",
+          `attachment; filename=${filename}`
+        );
+        res.setHeader("Content-Length", result.data.length);
+
+        // Ensure we send the buffer correctly
+        if (Buffer.isBuffer(result.data)) {
+          res.send(result.data);
+        } else {
+          res.send(Buffer.from(result.data));
+        }
       } catch (error) {
         res.status(500).json({
           success: false,

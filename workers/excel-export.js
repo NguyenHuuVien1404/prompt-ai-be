@@ -22,7 +22,7 @@ async function exportPromptsToExcel(filters = {}) {
             {
               model: Industry,
               as: "industries",
-              attributes: ["id", "name"],
+              attributes: ["id", "name", "description"],
               through: { attributes: [] },
             },
           ],
@@ -30,6 +30,7 @@ async function exportPromptsToExcel(filters = {}) {
         {
           model: Topic,
           attributes: ["id", "name"],
+          required: false, // LEFT JOIN để không bị mất prompt khi không có topic
         },
       ],
       order: [["created_at", "DESC"]],
@@ -80,67 +81,81 @@ async function exportPromptsToExcel(filters = {}) {
     // Prepare data for Excel
     const excelData = [];
 
-    // Add header row
+    // Add header row - chỉ các field chính, chữ thường
     const headers = [
-      "ID",
-      "Title",
-      "Short Description",
-      "Content",
-      "Category",
-      "Topic",
-      "Industry",
-      "What",
-      "Tips",
-      "Text",
-      "How",
-      "Input",
-      "Output",
-      "Optimization Guide",
-      "Add Tip",
-      "Add Information",
-      "Is Type",
-      "Sub Type",
-      "Sum View",
-      "Created At",
-      "Updated At",
+      "id",
+      "title",
+      "short_description",
+      "content",
+      "category",
+      "topic",
+      "industry",
+      "what",
+      "tips",
+      "text",
+      "how",
+      "input",
+      "output",
+      "optimization_guide",
+      "add_tip",
+      "add_information",
+      "is_type",
+      "sub_type",
     ];
 
     excelData.push(headers);
 
+    // Helper function to strip HTML tags for clean export
+    const stripHtmlTags = (content) => {
+      if (!content) return "";
+      return String(content)
+        .replace(/<[^>]*>/g, "")
+        .trim();
+    };
+
     // Add data rows
     prompts.forEach((prompt) => {
-      const row = [
-        prompt.id,
-        prompt.title || "",
-        prompt.short_description || "",
-        prompt.content || "",
-        prompt.Category ? prompt.Category.name : "",
-        prompt.Topic ? prompt.Topic.name : "",
+      const industryNames =
         prompt.Category &&
         prompt.Category.industries &&
         prompt.Category.industries.length > 0
           ? prompt.Category.industries
               .map((industry) => industry.name)
               .join(", ")
-          : "",
-        prompt.what || "",
-        prompt.tips || "",
-        prompt.text || "",
-        prompt.how || "",
-        prompt.input || "",
-        prompt.output || "",
-        prompt.OptimationGuide || "",
-        prompt.addtip || "",
-        prompt.addinformation || "",
+          : "";
+
+      const row = [
+        prompt.id,
+        stripHtmlTags(prompt.title) || "",
+        stripHtmlTags(prompt.short_description) || "",
+        stripHtmlTags(prompt.content) || "",
+        prompt.Category ? prompt.Category.name : "",
+        prompt.Topic ? prompt.Topic.name : "",
+        industryNames,
+        stripHtmlTags(prompt.what) || "",
+        stripHtmlTags(prompt.tips) || "",
+        stripHtmlTags(prompt.text) || "",
+        stripHtmlTags(prompt.how) || "",
+        stripHtmlTags(prompt.input) || "",
+        stripHtmlTags(prompt.output) || "",
+        stripHtmlTags(prompt.OptimationGuide) || "",
+        stripHtmlTags(prompt.addtip) || "",
+        stripHtmlTags(prompt.addinformation) || "",
         prompt.is_type || 1,
         prompt.sub_type || 1,
-        prompt.sum_view || 0,
-        prompt.created_at ? new Date(prompt.created_at).toISOString() : "",
-        prompt.updated_at ? new Date(prompt.updated_at).toISOString() : "",
       ];
 
       excelData.push(row);
     });
+
+    // Check if we have any data
+    if (excelData.length <= 1) {
+      parentPort.postMessage({
+        success: false,
+        error: "No data to export",
+      });
+      return;
+    }
 
     // Create workbook
     const workbook = XLSX.utils.book_new();
@@ -148,27 +163,24 @@ async function exportPromptsToExcel(filters = {}) {
 
     // Set column widths
     const columnWidths = [
-      { wch: 8 }, // ID
-      { wch: 30 }, // Title
-      { wch: 50 }, // Short Description
-      { wch: 100 }, // Content
-      { wch: 20 }, // Category
-      { wch: 20 }, // Topic
-      { wch: 25 }, // Industry
-      { wch: 100 }, // What
-      { wch: 100 }, // Tips
-      { wch: 100 }, // Text
-      { wch: 100 }, // How
-      { wch: 100 }, // Input
-      { wch: 100 }, // Output
-      { wch: 100 }, // Optimization Guide
-      { wch: 100 }, // Add Tip
-      { wch: 100 }, // Add Information
-      { wch: 10 }, // Is Type
-      { wch: 10 }, // Sub Type
-      { wch: 10 }, // Sum View
-      { wch: 20 }, // Created At
-      { wch: 20 }, // Updated At
+      { wch: 8 }, // id
+      { wch: 30 }, // title
+      { wch: 50 }, // short_description
+      { wch: 100 }, // content
+      { wch: 20 }, // category
+      { wch: 20 }, // topic
+      { wch: 25 }, // industry
+      { wch: 100 }, // what
+      { wch: 100 }, // tips
+      { wch: 100 }, // text
+      { wch: 100 }, // how
+      { wch: 100 }, // input
+      { wch: 100 }, // output
+      { wch: 100 }, // optimization_guide
+      { wch: 100 }, // add_tip
+      { wch: 100 }, // add_information
+      { wch: 10 }, // is_type
+      { wch: 10 }, // sub_type
     ];
 
     worksheet["!cols"] = columnWidths;
@@ -181,6 +193,15 @@ async function exportPromptsToExcel(filters = {}) {
       type: "buffer",
       bookType: "xlsx",
     });
+
+    // Validate buffer
+    if (!Buffer.isBuffer(excelBuffer) || excelBuffer.length === 0) {
+      parentPort.postMessage({
+        success: false,
+        error: "Failed to generate Excel buffer",
+      });
+      return;
+    }
 
     parentPort.postMessage({
       success: true,
@@ -212,7 +233,7 @@ async function createExcelTemplate() {
     });
 
     const industries = await Industry.findAll({
-      attributes: ["id", "name"],
+      attributes: ["id", "name", "description"],
       limit: 5,
     });
 
@@ -221,6 +242,7 @@ async function createExcelTemplate() {
 
     // Add header row
     const headers = [
+      "id",
       "title",
       "short_description",
       "content",
@@ -233,9 +255,9 @@ async function createExcelTemplate() {
       "how",
       "input",
       "output",
-      "OptimationGuide",
-      "addtip",
-      "addinformation",
+      "optimization_guide",
+      "add_tip",
+      "add_information",
       "is_type",
       "sub_type",
     ];
@@ -245,6 +267,7 @@ async function createExcelTemplate() {
     // Add sample data rows
     const sampleRows = [
       [
+        "", // ID - leave empty for new records
         "Sample Prompt Title",
         "This is a short description of the prompt",
         "This is the main content of the prompt",
@@ -264,6 +287,7 @@ async function createExcelTemplate() {
         1,
       ],
       [
+        1, // ID - existing record for update
         "Another Sample Title",
         "Another short description",
         "Another content example",
@@ -289,8 +313,10 @@ async function createExcelTemplate() {
     // Add instructions row
     const instructionsRow = [
       "INSTRUCTIONS:",
+      "ID: Leave empty for new records, fill with existing ID for updates",
       "Fill in the required fields (title, category, topic)",
       "Industry is optional but recommended",
+      "Industry description is optional",
       "Use existing category/topic/industry names or they will be created automatically",
       "",
       "",
@@ -315,6 +341,7 @@ async function createExcelTemplate() {
 
     // Set column widths
     const columnWidths = [
+      { wch: 8 }, // id
       { wch: 30 }, // title
       { wch: 50 }, // short_description
       { wch: 100 }, // content
@@ -327,9 +354,9 @@ async function createExcelTemplate() {
       { wch: 100 }, // how
       { wch: 100 }, // input
       { wch: 100 }, // output
-      { wch: 100 }, // OptimationGuide
-      { wch: 100 }, // addtip
-      { wch: 100 }, // addinformation
+      { wch: 100 }, // optimization_guide
+      { wch: 100 }, // add_tip
+      { wch: 100 }, // add_information
       { wch: 10 }, // is_type
       { wch: 10 }, // sub_type
     ];

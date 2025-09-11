@@ -63,12 +63,26 @@ async function processExcelFile(filePath) {
       raw: true,
     });
 
+    // Helper function to strip HTML tags
+    const stripHtmlTags = (content) => {
+      if (!content) return null;
+      return String(content)
+        .replace(/<[^>]*>/g, "")
+        .trim();
+    };
+
     // Format content function
     const formatContent = (text, header) => {
       if (!text) return "";
 
-      // Convert to string and trim
-      const cleanText = text.toString().trim();
+      // Strip HTML tags first
+      let cleanText = stripHtmlTags(text);
+
+      // Handle different field types
+      if (header === "is_type" || header === "sub_type") {
+        const intValue = parseInt(cleanText);
+        return isNaN(intValue) ? 1 : intValue;
+      }
 
       if (
         header === "category" ||
@@ -78,6 +92,7 @@ async function processExcelFile(filePath) {
       ) {
         return cleanText;
       }
+
       if (cleanText.includes("●")) {
         const items = cleanText
           .split("●")
@@ -85,7 +100,7 @@ async function processExcelFile(filePath) {
           .map((item) => `<p>${item.trim()}</p>`);
         return items.join("");
       }
-      return `<p>${cleanText}</p>`;
+      return cleanText; // Không thêm <p> tags nữa để tránh confusion
     };
 
     // Prepare data
@@ -111,12 +126,28 @@ async function processExcelFile(filePath) {
           promptData[header] = formatContent(cellValue, header);
         });
 
-        // Kiểm tra dữ liệu bắt buộc
-        if (!promptData.category || !promptData.topic || !promptData.title) {
+        // Kiểm tra dữ liệu bắt buộc - sử dụng các tên header có thể có
+        const categoryValue =
+          promptData.category ||
+          promptData["Category Description"] ||
+          promptData["category_description"] ||
+          promptData.Category;
+        const topicValue =
+          promptData.topic ||
+          promptData["Topic"] ||
+          promptData["topic_name"] ||
+          promptData.Topic;
+        const titleValue =
+          promptData.title ||
+          promptData["Title"] ||
+          promptData["title_name"] ||
+          promptData.Title;
+
+        if (!categoryValue || !topicValue || !titleValue) {
           const missingFields = [];
-          if (!promptData.category) missingFields.push("category");
-          if (!promptData.topic) missingFields.push("topic");
-          if (!promptData.title) missingFields.push("title");
+          if (!categoryValue) missingFields.push("category");
+          if (!topicValue) missingFields.push("topic");
+          if (!titleValue) missingFields.push("title");
 
           console.warn(
             `Row ${
@@ -132,9 +163,13 @@ async function processExcelFile(filePath) {
           continue;
         }
 
+        // Kiểm tra xem có ID không để quyết định update hay insert
+        const promptId = promptData.id ? parseInt(promptData.id) : null;
+        const isUpdate = promptId && !isNaN(promptId);
+
         // Process category
         let category = await Category.findOne({
-          where: { name: promptData?.category },
+          where: { name: categoryValue },
           transaction,
         });
 
@@ -143,7 +178,7 @@ async function processExcelFile(filePath) {
           try {
             category = await Category.create(
               {
-                name: promptData?.category,
+                name: categoryValue,
                 image: "", // Set default empty string
                 image_card: "", // Set default empty string
                 section_id: 1, // Set default section_id
@@ -155,14 +190,12 @@ async function processExcelFile(filePath) {
           } catch (error) {
             const errorMessage = `Row ${
               rowIndex + 1
-            }: Không thể tạo category "${promptData?.category}" - ${
-              error.message
-            }`;
+            }: Không thể tạo category "${categoryValue}" - ${error.message}`;
             console.error(errorMessage);
 
             skippedRecords.push({
               row: rowIndex + 1,
-              reason: `Không thể tạo category "${promptData?.category}"`,
+              reason: `Không thể tạo category "${categoryValue}"`,
               data: promptData,
               error: errorMessage,
             });
@@ -172,7 +205,7 @@ async function processExcelFile(filePath) {
 
         // Process topic
         let topic = await Topic.findOne({
-          where: { name: promptData?.topic },
+          where: { name: topicValue },
           transaction,
         });
 
@@ -181,21 +214,21 @@ async function processExcelFile(filePath) {
           try {
             topic = await Topic.create(
               {
-                name: promptData?.topic,
+                name: topicValue,
                 created_at: new Date(),
                 updated_at: new Date(),
               },
               { transaction }
             );
           } catch (error) {
-            const errorMessage = `Row ${rowIndex + 1}: Không thể tạo topic "${
-              promptData?.topic
-            }" - ${error.message}`;
+            const errorMessage = `Row ${
+              rowIndex + 1
+            }: Không thể tạo topic "${topicValue}" - ${error.message}`;
             console.error(errorMessage);
 
             skippedRecords.push({
               row: rowIndex + 1,
-              reason: `Không thể tạo topic "${promptData?.topic}"`,
+              reason: `Không thể tạo topic "${topicValue}"`,
               data: promptData,
               error: errorMessage,
             });
@@ -203,11 +236,12 @@ async function processExcelFile(filePath) {
           }
         }
 
-        // Process industry (optional field)
+        // Process industry (optional field) - normalize industry value
+        const industryValue = promptData.industry || promptData.Industry || "";
         let industry = null;
-        if (promptData.industry && promptData.industry.trim()) {
+        if (industryValue && industryValue.trim()) {
           industry = await Industry.findOne({
-            where: { name: promptData.industry.trim() },
+            where: { name: industryValue.trim() },
             transaction,
           });
 
@@ -216,7 +250,7 @@ async function processExcelFile(filePath) {
             try {
               industry = await Industry.create(
                 {
-                  name: promptData.industry.trim(),
+                  name: industryValue.trim(),
                   description: null,
                   created_at: new Date(),
                   updated_at: new Date(),
@@ -227,7 +261,7 @@ async function processExcelFile(filePath) {
               console.warn(
                 `Row ${
                   rowIndex + 1
-                }: Could not create industry "${promptData.industry.trim()}" - ${
+                }: Could not create industry "${industryValue.trim()}" - ${
                   error.message
                 }`
               );
@@ -272,10 +306,18 @@ async function processExcelFile(filePath) {
         promptData.topic_name = topic.name; // Store topic name for summary
         promptData.category_name = category.name; // Store category name for summary
         promptData.industry_name = industry ? industry.name : null; // Store industry name for summary
-        promptData.is_type = 1;
+        promptData.is_type = promptData.is_type || 1;
+        promptData.sub_type = promptData.sub_type || 1;
+        promptData.title = titleValue; // Use normalized title value
+
+        // Add operation type for tracking
+        promptData.operation = isUpdate ? "update" : "insert";
+        promptData.original_id = promptId;
+        promptData.rowIndex = rowIndex;
+
         prompts.push(promptData);
 
-        // Row prepared successfully for insertion
+        // Row prepared successfully for processing
       }
 
       // Collect missing categories, topics, and industries for summary
@@ -322,48 +364,95 @@ async function processExcelFile(filePath) {
         }
       });
 
-      // Bulk insert
+      // Process each prompt (insert or update)
       if (prompts.length > 0) {
-        const promptRecords = prompts.map((p) => ({
-          short_description: p.short_description || "",
-          category_id: p.category_id,
-          topic_id: p.topic_id,
-          title: p.title || "",
-          is_type: p.is_type || 1,
-          content: p.short_description || "",
-          what: p.what || null,
-          created_at: new Date(),
-          updated_at: new Date(),
-          tips: p.tips || null,
-          text: p.text || null,
-          OptimationGuide: p.OptimationGuide || null,
-          how: p.how || null,
-          input: p.input || null,
-          output: p.output || null,
-          addtip: p.addtip || null,
-          addinformation: p.addinformation || null,
-          sub_type: p.sub_type || 1,
-        }));
+        for (const promptData of prompts) {
+          try {
+            const promptRecord = {
+              short_description: promptData.short_description || "",
+              category_id: promptData.category_id,
+              topic_id: promptData.topic_id,
+              title: promptData.title || "",
+              is_type: promptData.is_type || 1,
+              content: promptData.content || promptData.short_description || "",
+              what: promptData.what || null,
+              tips: promptData.tips || null,
+              text: promptData.text || null,
+              OptimationGuide: promptData.optimization_guide || null,
+              how: promptData.how || null,
+              input: promptData.input || null,
+              output: promptData.output || null,
+              addtip: promptData.add_tip || null,
+              addinformation: promptData.add_information || null,
+              sub_type: promptData.sub_type || 1,
+              updated_at: new Date(),
+            };
 
-        const createdPrompts = await Prompt.bulkCreate(promptRecords, {
-          transaction,
-        });
+            let resultPrompt;
 
-        // Store inserted records for response
-        insertedRecords.push(
-          ...createdPrompts.map((prompt) => ({
-            id: prompt.id,
-            title: prompt.title,
-            category_id: prompt.category_id,
-            topic_id: prompt.topic_id,
-            short_description: prompt.short_description,
-            created_at: prompt.created_at,
-          }))
-        );
+            if (promptData.operation === "update") {
+              // Update existing prompt
+              const existingPrompt = await Prompt.findByPk(
+                promptData.original_id,
+                {
+                  transaction,
+                }
+              );
+
+              if (!existingPrompt) {
+                console.warn(
+                  `Row: Prompt with ID ${promptData.original_id} not found, skipping update`
+                );
+                skippedRecords.push({
+                  row: promptData.rowIndex + 1,
+                  reason: `Prompt with ID ${promptData.original_id} not found`,
+                  data: promptData,
+                });
+                continue;
+              }
+
+              await existingPrompt.update(promptRecord, { transaction });
+              resultPrompt = existingPrompt;
+            } else {
+              // Insert new prompt
+              promptRecord.created_at = new Date();
+              resultPrompt = await Prompt.create(promptRecord, { transaction });
+            }
+
+            // Store processed records for response
+            insertedRecords.push({
+              id: resultPrompt.id,
+              title: resultPrompt.title,
+              category_id: resultPrompt.category_id,
+              topic_id: resultPrompt.topic_id,
+              short_description: resultPrompt.short_description,
+              created_at: resultPrompt.created_at,
+              updated_at: resultPrompt.updated_at,
+              operation: promptData.operation,
+              original_id: promptData.original_id,
+            });
+          } catch (error) {
+            console.error(`Error processing prompt: ${error.message}`);
+            skippedRecords.push({
+              row: promptData.rowIndex + 1,
+              reason: `Error processing: ${error.message}`,
+              data: promptData,
+              error: error.message,
+            });
+          }
+        }
       }
 
       // Commit transaction
       await transaction.commit();
+
+      // Count insert and update operations
+      const insertCount = insertedRecords.filter(
+        (record) => record.operation === "insert"
+      ).length;
+      const updateCount = insertedRecords.filter(
+        (record) => record.operation === "update"
+      ).length;
 
       // Tạo message tùy theo kết quả
       let message = "";
@@ -372,6 +461,10 @@ async function processExcelFile(filePath) {
       const autoCreatedIndustriesCount = autoCreatedIndustries.size;
 
       if (prompts.length > 0 && skippedRecords.length === 0) {
+        let operationText = [];
+        if (insertCount > 0) operationText.push(`${insertCount} inserted`);
+        if (updateCount > 0) operationText.push(`${updateCount} updated`);
+
         if (
           autoCreatedTopicsCount > 0 ||
           autoCreatedCategoriesCount > 0 ||
@@ -386,13 +479,19 @@ async function processExcelFile(filePath) {
             autoCreatedText.push(`${autoCreatedIndustriesCount} industries`);
           message = `Import thành công! ${
             prompts.length
-          } records đã được xử lý. ${autoCreatedText.join(
+          } records đã được xử lý (${operationText.join(
             ", "
-          )} mới đã được tạo tự động.`;
+          )}). ${autoCreatedText.join(", ")} mới đã được tạo tự động.`;
         } else {
-          message = `Import thành công! ${prompts.length} records đã được xử lý.`;
+          message = `Import thành công! ${
+            prompts.length
+          } records đã được xử lý (${operationText.join(", ")}).`;
         }
       } else if (prompts.length > 0 && skippedRecords.length > 0) {
+        let operationText = [];
+        if (insertCount > 0) operationText.push(`${insertCount} inserted`);
+        if (updateCount > 0) operationText.push(`${updateCount} updated`);
+
         if (
           autoCreatedTopicsCount > 0 ||
           autoCreatedCategoriesCount > 0 ||
@@ -407,11 +506,17 @@ async function processExcelFile(filePath) {
             autoCreatedText.push(`${autoCreatedIndustriesCount} industries`);
           message = `Import một phần thành công! ${
             prompts.length
-          } records đã được xử lý (${autoCreatedText.join(
+          } records đã được xử lý (${operationText.join(
             ", "
-          )} mới được tạo), ${skippedRecords.length} records bị bỏ qua.`;
+          )}, ${autoCreatedText.join(", ")} mới được tạo), ${
+            skippedRecords.length
+          } records bị bỏ qua.`;
         } else {
-          message = `Import một phần thành công! ${prompts.length} records đã được xử lý, ${skippedRecords.length} records bị bỏ qua.`;
+          message = `Import một phần thành công! ${
+            prompts.length
+          } records đã được xử lý (${operationText.join(", ")}), ${
+            skippedRecords.length
+          } records bị bỏ qua.`;
         }
       } else if (prompts.length === 0 && skippedRecords.length > 0) {
         message = `Import thất bại! Tất cả ${skippedRecords.length} records đều bị bỏ qua.`;
@@ -430,7 +535,9 @@ async function processExcelFile(filePath) {
           totalRows: rows.length,
           processedRows: prompts.length,
           skippedRows: skippedRecords.length,
-          insertedRows: insertedRecords.length,
+          insertedRows: insertCount,
+          updatedRows: updateCount,
+          totalProcessedRows: insertedRecords.length,
         },
       });
     } catch (error) {
