@@ -16,6 +16,8 @@ const Product = require("./Product");
 const PromDetails = require("./PromDetails");
 const DeviceLog = require("./DeviceLog");
 const History = require("./History");
+const Industry = require("./Industry");
+const CategoryIndustry = require("./CategoryIndustry");
 // Định nghĩa các quan hệ với tên khóa ngoại cụ thể
 User.hasMany(UserSub, {
   foreignKey: "user_id",
@@ -223,6 +225,21 @@ Role.hasMany(User, {
   name: "fk_user_role_id",
 });
 
+// Định nghĩa quan hệ many-to-many giữa Category và Industry
+Category.belongsToMany(Industry, {
+  through: CategoryIndustry,
+  foreignKey: "category_id",
+  otherKey: "industry_id",
+  as: "industries",
+});
+
+Industry.belongsToMany(Category, {
+  through: CategoryIndustry,
+  foreignKey: "industry_id",
+  otherKey: "category_id",
+  as: "categories",
+});
+
 // Đồng bộ Models với Database
 sequelize
   .sync({ force: false, alter: false })
@@ -248,4 +265,6 @@ module.exports = {
   DeviceLog,
   Referral,
   History,
+  Industry,
+  CategoryIndustry,
 };
