@@ -184,6 +184,129 @@ router.post("/upload", authMiddleware, upload.any(), async (req, res) => {
   }
 });
 
+// Export Excel template
+router.get(
+  "/export-template",
+  authMiddleware,
+  adminMiddleware,
+  async (req, res) => {
+    try {
+      const { runTask } = require("../utils/worker");
+
+      try {
+        const result = await runTask("excel-export.js", {
+          action: "template",
+        });
+
+        if (!result.success) {
+          return res.status(400).json({
+            success: false,
+            message: result.error || "Failed to create Excel template",
+          });
+        }
+
+        // Set headers for file download
+        res.setHeader(
+          "Content-Type",
+          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        );
+        res.setHeader(
+          "Content-Disposition",
+          "attachment; filename=prompts-template.xlsx"
+        );
+        res.setHeader("Content-Length", result.data.length);
+
+        res.send(result.data);
+      } catch (error) {
+        res.status(500).json({
+          success: false,
+          message: "Error creating Excel template",
+          error: error.message,
+        });
+      }
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        message: "Error creating Excel template",
+        error: error.message,
+      });
+    }
+  }
+);
+
+// Export prompts to Excel
+router.get(
+  "/export-excel",
+  authMiddleware,
+  adminMiddleware,
+  async (req, res) => {
+    try {
+      const { runTask } = require("../utils/worker");
+
+      // Get filters from query parameters
+      const filters = {
+        categoryId: req.query.category_id,
+        industryId: req.query.industry_id,
+        topicId: req.query.topic_id,
+        subType: req.query.sub_type,
+        isType: req.query.is_type,
+        search: req.query.search,
+        limit: req.query.limit,
+      };
+
+      // Remove undefined values
+      Object.keys(filters).forEach((key) => {
+        if (filters[key] === undefined) {
+          delete filters[key];
+        }
+      });
+
+      try {
+        const result = await runTask("excel-export.js", {
+          action: "export",
+          filters: filters,
+        });
+
+        if (!result.success) {
+          return res.status(400).json({
+            success: false,
+            message: result.error || "Failed to export prompts to Excel",
+          });
+        }
+
+        // Generate filename with timestamp
+        const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+        const filename = `prompts-export-${timestamp}.xlsx`;
+
+        // Set headers for file download
+        res.setHeader(
+          "Content-Type",
+          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        );
+        res.setHeader(
+          "Content-Disposition",
+          `attachment; filename=${filename}`
+        );
+        res.setHeader("Content-Length", result.data.length);
+
+        res.send(result.data);
+      } catch (error) {
+        res.status(500).json({
+          success: false,
+          message: "Error exporting prompts to Excel",
+          error: error.message,
+        });
+      }
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        message: "Error exporting prompts to Excel",
+        error: error.message,
+      });
+    }
+  }
+);
+
 // Import Excel file
 router.post(
   "/import-excel",

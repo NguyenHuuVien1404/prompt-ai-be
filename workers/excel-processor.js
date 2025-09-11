@@ -1,7 +1,13 @@
 const { parentPort, workerData } = require("worker_threads");
 const XLSX = require("xlsx");
 const sequelize = require("../config/database");
-const { Prompt, Category, Topic } = require("../models");
+const {
+  Prompt,
+  Category,
+  Topic,
+  Industry,
+  CategoryIndustry,
+} = require("../models");
 
 // Function to process Excel file
 async function processExcelFile(filePath) {
@@ -43,12 +49,16 @@ async function processExcelFile(filePath) {
       throw new Error("No data rows found in Excel file");
     }
 
-    // Get existing categories and topics for reference
+    // Get existing categories, topics, and industries for reference
     const existingCategories = await Category.findAll({
       attributes: ["name"],
       raw: true,
     });
     const existingTopics = await Topic.findAll({
+      attributes: ["name"],
+      raw: true,
+    });
+    const existingIndustries = await Industry.findAll({
       attributes: ["name"],
       raw: true,
     });
@@ -60,7 +70,12 @@ async function processExcelFile(filePath) {
       // Convert to string and trim
       const cleanText = text.toString().trim();
 
-      if (header === "category" || header === "topic" || header === "title") {
+      if (
+        header === "category" ||
+        header === "topic" ||
+        header === "title" ||
+        header === "industry"
+      ) {
         return cleanText;
       }
       if (cleanText.includes("●")) {
@@ -85,7 +100,6 @@ async function processExcelFile(filePath) {
       for (let rowIndex = 0; rowIndex < rows.length; rowIndex++) {
         const row = rows[rowIndex];
         if (!row || row.length === 0) {
-          console.log(`Row ${rowIndex + 1}: Empty row, skipping`);
           continue;
         }
 
@@ -98,7 +112,6 @@ async function processExcelFile(filePath) {
         });
 
         // Kiểm tra dữ liệu bắt buộc
-
         if (!promptData.category || !promptData.topic || !promptData.title) {
           const missingFields = [];
           if (!promptData.category) missingFields.push("category");
@@ -190,23 +203,88 @@ async function processExcelFile(filePath) {
           }
         }
 
+        // Process industry (optional field)
+        let industry = null;
+        if (promptData.industry && promptData.industry.trim()) {
+          industry = await Industry.findOne({
+            where: { name: promptData.industry.trim() },
+            transaction,
+          });
+
+          if (!industry) {
+            // Auto-create industry if it doesn't exist
+            try {
+              industry = await Industry.create(
+                {
+                  name: promptData.industry.trim(),
+                  description: null,
+                  created_at: new Date(),
+                  updated_at: new Date(),
+                },
+                { transaction }
+              );
+            } catch (error) {
+              console.warn(
+                `Row ${
+                  rowIndex + 1
+                }: Could not create industry "${promptData.industry.trim()}" - ${
+                  error.message
+                }`
+              );
+              // Continue without industry if creation fails
+            }
+          }
+
+          // Create category-industry relationship if industry exists
+          if (industry) {
+            try {
+              const existingRelation = await CategoryIndustry.findOne({
+                where: {
+                  category_id: category.id,
+                  industry_id: industry.id,
+                },
+                transaction,
+              });
+
+              if (!existingRelation) {
+                await CategoryIndustry.create(
+                  {
+                    category_id: category.id,
+                    industry_id: industry.id,
+                    created_at: new Date(),
+                  },
+                  { transaction }
+                );
+              }
+            } catch (error) {
+              console.warn(
+                `Row ${
+                  rowIndex + 1
+                }: Could not create category-industry link - ${error.message}`
+              );
+            }
+          }
+        }
+
         // Add IDs to prompt data
         promptData.category_id = category.id;
         promptData.topic_id = topic.id;
         promptData.topic_name = topic.name; // Store topic name for summary
         promptData.category_name = category.name; // Store category name for summary
+        promptData.industry_name = industry ? industry.name : null; // Store industry name for summary
         promptData.is_type = 1;
         prompts.push(promptData);
 
         // Row prepared successfully for insertion
       }
 
-      // Collect missing categories and topics for summary
+      // Collect missing categories, topics, and industries for summary
       const missingCategories = new Set();
       const missingTopics = new Set();
       const missingFields = new Set();
       const autoCreatedTopics = new Set();
       const autoCreatedCategories = new Set();
+      const autoCreatedIndustries = new Set();
 
       skippedRecords.forEach((record) => {
         if (
@@ -231,7 +309,7 @@ async function processExcelFile(filePath) {
         }
       });
 
-      // Count auto-created categories and topics from successful processing
+      // Count auto-created categories, topics, and industries from successful processing
       prompts.forEach((prompt) => {
         if (prompt.category_id && prompt.category_name) {
           autoCreatedCategories.add(prompt.category_name);
@@ -239,86 +317,10 @@ async function processExcelFile(filePath) {
         if (prompt.topic_id && prompt.topic_name) {
           autoCreatedTopics.add(prompt.topic_name);
         }
-      });
-
-      // Log missing categories and topics summary
-      if (autoCreatedCategories.size > 0) {
-        console.log(
-          `\n=== AUTO-CREATED CATEGORIES (${autoCreatedCategories.size}) ===`
-        );
-        console.log("Categories that were automatically created:");
-        Array.from(autoCreatedCategories)
-          .sort()
-          .forEach((cat) => {
-            console.log(`  - "${cat}"`);
-          });
-      }
-
-      if (autoCreatedTopics.size > 0) {
-        console.log(
-          `\n=== AUTO-CREATED TOPICS (${autoCreatedTopics.size}) ===`
-        );
-        console.log("Topics that were automatically created:");
-        Array.from(autoCreatedTopics)
-          .sort()
-          .forEach((topic) => {
-            console.log(`  - "${topic}"`);
-          });
-      }
-
-      if (missingCategories.size > 0) {
-        console.log(`\n=== MISSING CATEGORIES (${missingCategories.size}) ===`);
-        console.log(
-          "Categories that couldn't be auto-created (need manual creation):"
-        );
-        Array.from(missingCategories)
-          .sort()
-          .forEach((cat) => {
-            console.log(`  - "${cat}"`);
-          });
-      }
-
-      if (missingTopics.size > 0) {
-        console.log(`\n=== MISSING TOPICS (${missingTopics.size}) ===`);
-        console.log(
-          "Topics that couldn't be auto-created (need manual creation):"
-        );
-        Array.from(missingTopics)
-          .sort()
-          .forEach((topic) => {
-            console.log(`  - "${topic}"`);
-          });
-      }
-
-      if (missingFields.size > 0) {
-        console.log(`\n=== MISSING REQUIRED FIELDS ===`);
-        console.log("Fields that are missing in Excel:");
-        Array.from(missingFields)
-          .sort()
-          .forEach((field) => {
-            console.log(`  - "${field}"`);
-          });
-      }
-
-      if (skippedRecords.length > 0) {
-        console.log("\n=== SKIPPED RECORDS DETAILS ===");
-        console.log(
-          `First 10 skipped records (showing max 10 for readability):`
-        );
-        skippedRecords.slice(0, 10).forEach((record) => {
-          console.log(`\nRow ${record.row}: ${record.reason}`);
-          console.log("  Data:", record.data);
-          if (record.error) {
-            console.log("  Error:", record.error);
-          }
-        });
-
-        if (skippedRecords.length > 10) {
-          console.log(
-            `\n... and ${skippedRecords.length - 10} more skipped records`
-          );
+        if (prompt.industry_name) {
+          autoCreatedIndustries.add(prompt.industry_name);
         }
-      }
+      });
 
       // Bulk insert
       if (prompts.length > 0) {
@@ -367,33 +369,46 @@ async function processExcelFile(filePath) {
       let message = "";
       const autoCreatedTopicsCount = autoCreatedTopics.size;
       const autoCreatedCategoriesCount = autoCreatedCategories.size;
+      const autoCreatedIndustriesCount = autoCreatedIndustries.size;
 
       if (prompts.length > 0 && skippedRecords.length === 0) {
-        if (autoCreatedTopicsCount > 0 || autoCreatedCategoriesCount > 0) {
+        if (
+          autoCreatedTopicsCount > 0 ||
+          autoCreatedCategoriesCount > 0 ||
+          autoCreatedIndustriesCount > 0
+        ) {
           let autoCreatedText = [];
           if (autoCreatedCategoriesCount > 0)
             autoCreatedText.push(`${autoCreatedCategoriesCount} categories`);
           if (autoCreatedTopicsCount > 0)
             autoCreatedText.push(`${autoCreatedTopicsCount} topics`);
+          if (autoCreatedIndustriesCount > 0)
+            autoCreatedText.push(`${autoCreatedIndustriesCount} industries`);
           message = `Import thành công! ${
             prompts.length
           } records đã được xử lý. ${autoCreatedText.join(
-            " và "
+            ", "
           )} mới đã được tạo tự động.`;
         } else {
           message = `Import thành công! ${prompts.length} records đã được xử lý.`;
         }
       } else if (prompts.length > 0 && skippedRecords.length > 0) {
-        if (autoCreatedTopicsCount > 0 || autoCreatedCategoriesCount > 0) {
+        if (
+          autoCreatedTopicsCount > 0 ||
+          autoCreatedCategoriesCount > 0 ||
+          autoCreatedIndustriesCount > 0
+        ) {
           let autoCreatedText = [];
           if (autoCreatedCategoriesCount > 0)
             autoCreatedText.push(`${autoCreatedCategoriesCount} categories`);
           if (autoCreatedTopicsCount > 0)
             autoCreatedText.push(`${autoCreatedTopicsCount} topics`);
+          if (autoCreatedIndustriesCount > 0)
+            autoCreatedText.push(`${autoCreatedIndustriesCount} industries`);
           message = `Import một phần thành công! ${
             prompts.length
           } records đã được xử lý (${autoCreatedText.join(
-            " và "
+            ", "
           )} mới được tạo), ${skippedRecords.length} records bị bỏ qua.`;
         } else {
           message = `Import một phần thành công! ${prompts.length} records đã được xử lý, ${skippedRecords.length} records bị bỏ qua.`;

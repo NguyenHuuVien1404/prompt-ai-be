@@ -1,8 +1,10 @@
 const express = require("express");
 const router = express.Router();
 const { Industry, Category, CategoryIndustry } = require("../models");
-const authMiddleware = require("../middleware/authMiddleware");
-const roleMiddleware = require("../middleware/roleMiddleware");
+const {
+  authMiddleware,
+  adminMiddleware,
+} = require("../middleware/authMiddleware");
 
 // Lấy tất cả industries
 router.get("/", async (req, res) => {
@@ -85,118 +87,103 @@ router.get("/:industryId/categories", async (req, res) => {
 });
 
 // Tạo industry mới (chỉ admin)
-router.post(
-  "/",
-  authMiddleware,
-  roleMiddleware(["admin"]),
-  async (req, res) => {
-    try {
-      const { name, description } = req.body;
+router.post("/", authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const { name, description } = req.body;
 
-      if (!name) {
-        return res.status(400).json({
-          success: false,
-          message: "Name is required",
-        });
-      }
-
-      const industry = await Industry.create({
-        name,
-        description,
-      });
-
-      res.status(201).json({
-        success: true,
-        data: industry,
-        message: "Industry created successfully",
-      });
-    } catch (error) {
-      console.error("Error creating industry:", error);
-      res.status(500).json({
+    if (!name) {
+      return res.status(400).json({
         success: false,
-        message: "Internal server error",
+        message: "Name is required",
       });
     }
+
+    const industry = await Industry.create({
+      name,
+      description,
+    });
+
+    res.status(201).json({
+      success: true,
+      data: industry,
+      message: "Industry created successfully",
+    });
+  } catch (error) {
+    console.error("Error creating industry:", error);
+    res.status(500).json({
+      success: false,
+      message: "Internal server error",
+    });
   }
-);
+});
 
 // Cập nhật industry (chỉ admin)
-router.put(
-  "/:id",
-  authMiddleware,
-  roleMiddleware(["admin"]),
-  async (req, res) => {
-    try {
-      const { id } = req.params;
-      const { name, description } = req.body;
+router.put("/:id", authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, description } = req.body;
 
-      const industry = await Industry.findByPk(id);
-      if (!industry) {
-        return res.status(404).json({
-          success: false,
-          message: "Industry not found",
-        });
-      }
-
-      await industry.update({
-        name: name || industry.name,
-        description:
-          description !== undefined ? description : industry.description,
-      });
-
-      res.json({
-        success: true,
-        data: industry,
-        message: "Industry updated successfully",
-      });
-    } catch (error) {
-      console.error("Error updating industry:", error);
-      res.status(500).json({
+    const industry = await Industry.findByPk(id);
+    if (!industry) {
+      return res.status(404).json({
         success: false,
-        message: "Internal server error",
+        message: "Industry not found",
       });
     }
+
+    await industry.update({
+      name: name || industry.name,
+      description:
+        description !== undefined ? description : industry.description,
+    });
+
+    res.json({
+      success: true,
+      data: industry,
+      message: "Industry updated successfully",
+    });
+  } catch (error) {
+    console.error("Error updating industry:", error);
+    res.status(500).json({
+      success: false,
+      message: "Internal server error",
+    });
   }
-);
+});
 
 // Xóa industry (chỉ admin)
-router.delete(
-  "/:id",
-  authMiddleware,
-  roleMiddleware(["admin"]),
-  async (req, res) => {
-    try {
-      const { id } = req.params;
+router.delete("/:id", authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const { id } = req.params;
 
-      const industry = await Industry.findByPk(id);
-      if (!industry) {
-        return res.status(404).json({
-          success: false,
-          message: "Industry not found",
-        });
-      }
-
-      await industry.destroy();
-
-      res.json({
-        success: true,
-        message: "Industry deleted successfully",
-      });
-    } catch (error) {
-      console.error("Error deleting industry:", error);
-      res.status(500).json({
+    const industry = await Industry.findByPk(id);
+    if (!industry) {
+      return res.status(404).json({
         success: false,
-        message: "Internal server error",
+        message: "Industry not found",
       });
     }
+
+    await industry.destroy();
+
+    res.json({
+      success: true,
+      message: "Industry deleted successfully",
+    });
+  } catch (error) {
+    console.error("Error deleting industry:", error);
+    res.status(500).json({
+      success: false,
+      message: "Internal server error",
+    });
   }
-);
+});
 
 // Liên kết category với industry (chỉ admin)
 router.post(
   "/:industryId/categories/:categoryId",
   authMiddleware,
-  roleMiddleware(["admin"]),
+  adminMiddleware,
   async (req, res) => {
     try {
       const { industryId, categoryId } = req.params;
@@ -259,7 +246,7 @@ router.post(
 router.delete(
   "/:industryId/categories/:categoryId",
   authMiddleware,
-  roleMiddleware(["admin"]),
+  adminMiddleware,
   async (req, res) => {
     try {
       const { industryId, categoryId } = req.params;
