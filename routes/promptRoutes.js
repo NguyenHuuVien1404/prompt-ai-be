@@ -15,6 +15,8 @@ const {
   adminMiddleware,
 } = require("../middleware/authMiddleware");
 const checkSubTypeAccess = require("../middleware/subTypeMiddleware");
+const Industry = require("../models/Industry");
+const CategoryIndustry = require("../models/CategoryIndustry");
 
 // Cấu hình Multer để lưu file vào thư mục "uploads"
 const storage = multer.diskStorage({

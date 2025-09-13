@@ -3,12 +3,11 @@ const router = express.Router();
 const { Op, Sequelize } = require("sequelize");
 const Category = require("../models/Category");
 const Section = require("../models/Section");
+const Industry = require("../models/Industry");
+const CategoryIndustry = require("../models/CategoryIndustry");
 const multer = require("multer");
 const path = require("path");
 const Prompt = require("../models/Prompt");
-const Topic = require("../models/Topic");
-const Industry = require("../models/Industry");
-const CategoryIndustry = require("../models/CategoryIndustry");
 const {
   authMiddleware,
   adminMiddleware,
@@ -105,8 +104,6 @@ router.get("/", async (req, res) => {
     const sectionId = req.query.sectionId;
     const isCommingSoon = req.query.isCommingSoon;
     const searchTxt = req.query.searchTxt;
-    const topicId = req.query.topicId; // Thêm topicId filtering
-    const industryId = req.query.industryId; // Thêm industryId filtering
 
     const offset = (page - 1) * pageSize;
 
@@ -136,67 +133,9 @@ router.get("/", async (req, res) => {
       ];
     }
 
-    // Handle topicId filtering
-    let topicFilter = {};
-    if (topicId) {
-      const topicIds = Array.isArray(topicId)
-        ? topicId
-        : topicId
-            .split(",")
-            .map((id) => parseInt(id.trim()))
-            .filter((id) => !isNaN(id));
-
-      if (topicIds.length > 0) {
-        topicFilter = {
-          id: { [Op.in]: topicIds },
-        };
-      }
-    }
-
-    // Handle industryId filtering
-    let industryFilter = {};
-    if (industryId) {
-      const industryIds = Array.isArray(industryId)
-        ? industryId
-        : industryId
-            .split(",")
-            .map((id) => parseInt(id.trim()))
-            .filter((id) => !isNaN(id));
-
-      if (industryIds.length > 0) {
-        industryFilter = {
-          id: { [Op.in]: industryIds },
-        };
-      }
-    }
-
-    // Build include options
-    const includeOptions = [
-      { model: Section, attributes: ["id", "name"] },
-      {
-        model: Industry,
-        as: "industries",
-        attributes: ["id", "name", "description"],
-        through: { attributes: [] },
-        ...(Object.keys(industryFilter).length > 0
-          ? { where: industryFilter, required: true }
-          : {}),
-      },
-    ];
-
-    // Add topic filtering if needed
-    if (Object.keys(topicFilter).length > 0) {
-      includeOptions.push({
-        model: Prompt,
-        attributes: [],
-        where: topicFilter,
-        required: true,
-      });
-    }
-
     const { count, rows } = await Category.findAndCountAll({
       where: whereCondition,
-      include: includeOptions,
+      include: [{ model: Section, attributes: ["id", "name"] }],
       limit: pageSize,
       offset: offset,
       order: [["created_at", "DESC"]],
@@ -206,20 +145,12 @@ router.get("/", async (req, res) => {
       total: count,
       page,
       pageSize,
-      filters: {
-        type,
-        sectionId,
-        isCommingSoon,
-        searchTxt,
-        topicId,
-        industryId,
-      },
+      filters: { type, sectionId, isCommingSoon, searchTxt },
       data: rows,
     };
 
     res.status(200).json(result);
   } catch (error) {
-    console.error("Error in GET /api/categories:", error);
     res
       .status(500)
       .json({ message: "Error fetching categories", error: error.message });
@@ -232,15 +163,7 @@ router.get("/:id", async (req, res) => {
     const categoryId = req.params.id;
 
     const category = await Category.findByPk(categoryId, {
-      include: [
-        { model: Section, attributes: ["id", "name"] },
-        {
-          model: Industry,
-          as: "industries",
-          attributes: ["id", "name", "description"],
-          through: { attributes: [] },
-        },
-      ],
+      include: [{ model: Section, attributes: ["id", "name"] }],
     });
 
     if (!category) {
@@ -249,7 +172,6 @@ router.get("/:id", async (req, res) => {
 
     res.status(200).json(category);
   } catch (error) {
-    console.error("Error in GET /api/categories/:id:", error);
     res
       .status(500)
       .json({ message: "Error fetching category", error: error.message });
@@ -342,14 +264,8 @@ router.put(
         // Warning: req.body is empty, this might cause issues
       }
 
-      const {
-        name,
-        description,
-        section_id,
-        is_comming_soon,
-        category_type,
-        industry_ids,
-      } = formData;
+      const { name, description, section_id, is_comming_soon, category_type } =
+        formData;
 
       const category = await Category.findByPk(categoryId);
 
@@ -395,59 +311,11 @@ router.put(
 
       await category.update(updateData);
 
-      // Handle industry_ids update if provided
-      if (industry_ids !== undefined) {
-        // Parse industry_ids (comma-separated string or array)
-        let industryIdsArray = [];
-        if (typeof industry_ids === "string" && industry_ids.trim() !== "") {
-          industryIdsArray = industry_ids
-            .split(",")
-            .map((id) => parseInt(id.trim()))
-            .filter((id) => !isNaN(id));
-        } else if (Array.isArray(industry_ids)) {
-          industryIdsArray = industry_ids
-            .map((id) => parseInt(id))
-            .filter((id) => !isNaN(id));
-        }
+      // Refresh category data after update
+      await category.reload();
 
-        // Update category-industry relationships
-        if (industryIdsArray.length > 0) {
-          // Remove existing relationships
-          await CategoryIndustry.destroy({
-            where: { category_id: categoryId },
-          });
-
-          // Create new relationships
-          const industryRelations = industryIdsArray.map((industryId) => ({
-            category_id: categoryId,
-            industry_id: industryId,
-          }));
-
-          await CategoryIndustry.bulkCreate(industryRelations);
-        } else {
-          // If empty industry_ids, remove all relationships
-          await CategoryIndustry.destroy({
-            where: { category_id: categoryId },
-          });
-        }
-      }
-
-      // Get updated category with industries
-      const updatedCategory = await Category.findByPk(categoryId, {
-        include: [
-          { model: Section, attributes: ["id", "name"] },
-          {
-            model: Industry,
-            as: "industries",
-            attributes: ["id", "name", "description"],
-            through: { attributes: [] },
-          },
-        ],
-      });
-
-      res.status(200).json(updatedCategory);
+      res.status(200).json(category);
     } catch (error) {
-      console.error("Error in PUT /api/categories/:id:", error);
       res
         .status(500)
         .json({ message: "Error updating category", error: error.message });
@@ -539,7 +407,6 @@ router.get("/by-type/:type", async (req, res) => {
   }
 });
 
-// Get categories by sectionId with type filtering and industry filtering
 // Get categories by sectionId with type filtering and industry filtering
 router.get("/by-sectionId/:sectionId", async (req, res) => {
   try {
@@ -698,13 +565,19 @@ router.get("/by-sectionId/:sectionId", async (req, res) => {
 
       return res.status(200).json(result);
     } else {
-      // Không có industry filter, query bình thường (không include industries trong GROUP BY)
+      // Không có industry filter, query bình thường
       categories = await Category.findAll({
         where: whereCondition,
         include: [
           {
             model: Prompt,
             attributes: [],
+          },
+          {
+            model: Industry,
+            as: "industries",
+            attributes: ["id", "name", "description"],
+            through: { attributes: [] },
           },
         ],
         attributes: {
@@ -722,34 +595,10 @@ router.get("/by-sectionId/:sectionId", async (req, res) => {
         ],
       });
 
-      // Load industries riêng cho kết quả
-      const categoryIds = categories.map((cat) => cat.id);
-      const categoriesWithIndustries = await Category.findAll({
-        where: { id: { [Op.in]: categoryIds } },
-        include: [
-          {
-            model: Industry,
-            as: "industries",
-            attributes: ["id", "name", "description"],
-            through: { attributes: [] },
-          },
-        ],
-      });
-
-      // Merge prompt_count vào categories
-      const categoriesMap = {};
-      categories.forEach((cat) => {
-        categoriesMap[cat.id] = cat.toJSON();
-      });
-
-      const modifiedCategories = categoriesWithIndustries.map((category) => {
+      const modifiedCategories = categories.map((category) => {
         const categoryData = category.toJSON();
-        const promptData = categoriesMap[category.id];
-        if (promptData) {
-          categoryData.prompt_count = promptData.prompt_count;
-        }
         if (categoryData.section_id === 3) {
-          categoryData.prompt_count = (categoryData.prompt_count || 0) * 10;
+          categoryData.prompt_count = categoryData.prompt_count * 10;
         }
         return categoryData;
       });
@@ -765,7 +614,6 @@ router.get("/by-sectionId/:sectionId", async (req, res) => {
       res.status(200).json(result);
     }
   } catch (error) {
-    console.error("Error in /by-sectionId/:sectionId:", error);
     res.status(500).json({
       message: "Error fetching categories by section",
       error: error.message,
