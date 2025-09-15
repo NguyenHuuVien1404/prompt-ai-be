@@ -63,8 +63,8 @@ app.use(
   })
 );
 
-// Sử dụng middleware chống DDoS
-app.use(ddosProtection);
+// Sử dụng middleware chống DDoS - TẠM THỜI TẮT
+// app.use(ddosProtection);
 
 app.use(
   cors({
