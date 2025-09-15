@@ -81,7 +81,7 @@ async function exportPromptsToExcel(filters = {}) {
     // Prepare data for Excel
     const excelData = [];
 
-    // Add header row - chỉ các field chính, chữ thường
+    // Add header row - chỉ các field được yêu cầu
     const headers = [
       "id",
       "title",
@@ -90,15 +90,8 @@ async function exportPromptsToExcel(filters = {}) {
       "category",
       "topic",
       "industry",
-      "what",
-      "tips",
       "text",
-      "how",
-      "input",
-      "output",
       "optimization_guide",
-      "add_tip",
-      "add_information",
       "is_type",
       "sub_type",
     ];
@@ -132,15 +125,8 @@ async function exportPromptsToExcel(filters = {}) {
         prompt.Category ? prompt.Category.name : "",
         prompt.Topic ? prompt.Topic.name : "",
         industryNames,
-        stripHtmlTags(prompt.what) || "",
-        stripHtmlTags(prompt.tips) || "",
         stripHtmlTags(prompt.text) || "",
-        stripHtmlTags(prompt.how) || "",
-        stripHtmlTags(prompt.input) || "",
-        stripHtmlTags(prompt.output) || "",
         stripHtmlTags(prompt.OptimationGuide) || "",
-        stripHtmlTags(prompt.addtip) || "",
-        stripHtmlTags(prompt.addinformation) || "",
         prompt.is_type || 1,
         prompt.sub_type || 1,
       ];
@@ -170,15 +156,8 @@ async function exportPromptsToExcel(filters = {}) {
       { wch: 20 }, // category
       { wch: 20 }, // topic
       { wch: 25 }, // industry
-      { wch: 100 }, // what
-      { wch: 100 }, // tips
       { wch: 100 }, // text
-      { wch: 100 }, // how
-      { wch: 100 }, // input
-      { wch: 100 }, // output
       { wch: 100 }, // optimization_guide
-      { wch: 100 }, // add_tip
-      { wch: 100 }, // add_information
       { wch: 10 }, // is_type
       { wch: 10 }, // sub_type
     ];
@@ -249,15 +228,8 @@ async function createExcelTemplate() {
       "category",
       "topic",
       "industry",
-      "what",
-      "tips",
       "text",
-      "how",
-      "input",
-      "output",
       "optimization_guide",
-      "add_tip",
-      "add_information",
       "is_type",
       "sub_type",
     ];
@@ -274,15 +246,8 @@ async function createExcelTemplate() {
         categories[0] ? categories[0].name : "Sample Category",
         topics[0] ? topics[0].name : "Sample Topic",
         industries[0] ? industries[0].name : "Sample Industry",
-        "What this prompt does",
-        "Tips for using this prompt",
         "Additional text information",
-        "How to use this prompt",
-        "Input example",
-        "Expected output",
         "Optimization guide",
-        "Additional tips",
-        "Additional information",
         1,
         1,
       ],
@@ -294,15 +259,8 @@ async function createExcelTemplate() {
         categories[1] ? categories[1].name : "Another Category",
         topics[1] ? topics[1].name : "Another Topic",
         industries[1] ? industries[1].name : "Another Industry",
-        "What this does",
-        "More tips",
         "More text",
-        "How to use",
-        "Input example 2",
-        "Output example 2",
         "Guide 2",
-        "Tips 2",
-        "Info 2",
         1,
         2,
       ],
@@ -316,16 +274,7 @@ async function createExcelTemplate() {
       "ID: Leave empty for new records, fill with existing ID for updates",
       "Fill in the required fields (title, category, topic)",
       "Industry is optional but recommended",
-      "Industry description is optional",
       "Use existing category/topic/industry names or they will be created automatically",
-      "",
-      "",
-      "",
-      "",
-      "",
-      "",
-      "",
-      "",
       "",
       "",
       "",
@@ -348,15 +297,8 @@ async function createExcelTemplate() {
       { wch: 20 }, // category
       { wch: 20 }, // topic
       { wch: 25 }, // industry
-      { wch: 100 }, // what
-      { wch: 100 }, // tips
       { wch: 100 }, // text
-      { wch: 100 }, // how
-      { wch: 100 }, // input
-      { wch: 100 }, // output
       { wch: 100 }, // optimization_guide
-      { wch: 100 }, // add_tip
-      { wch: 100 }, // add_information
       { wch: 10 }, // is_type
       { wch: 10 }, // sub_type
     ];
