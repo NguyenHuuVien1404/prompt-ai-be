@@ -236,66 +236,91 @@ async function processExcelFile(filePath) {
           }
         }
 
-        // Process industry (optional field) - normalize industry value
+        // Process industries (optional field) - support multiple industries separated by comma
+        // Industries are linked to Category, not directly to Prompt
         const industryValue = promptData.industry || promptData.Industry || "";
-        let industry = null;
+        const processedIndustries = [];
+
         if (industryValue && industryValue.trim()) {
-          industry = await Industry.findOne({
-            where: { name: industryValue.trim() },
-            transaction,
-          });
+          // Split by comma and process each industry
+          const industryNames = industryValue
+            .split(",")
+            .map((name) => name.trim())
+            .filter((name) => name.length > 0);
 
-          if (!industry) {
-            // Auto-create industry if it doesn't exist
-            try {
-              industry = await Industry.create(
-                {
-                  name: industryValue.trim(),
-                  description: null,
-                  created_at: new Date(),
-                  updated_at: new Date(),
-                },
-                { transaction }
-              );
-            } catch (error) {
-              console.warn(
-                `Row ${
-                  rowIndex + 1
-                }: Could not create industry "${industryValue.trim()}" - ${
-                  error.message
-                }`
-              );
-              // Continue without industry if creation fails
-            }
-          }
+          for (const industryName of industryNames) {
+            let industry = await Industry.findOne({
+              where: { name: industryName },
+              transaction,
+            });
 
-          // Create category-industry relationship if industry exists
-          if (industry) {
-            try {
-              const existingRelation = await CategoryIndustry.findOne({
-                where: {
-                  category_id: category.id,
-                  industry_id: industry.id,
-                },
-                transaction,
-              });
-
-              if (!existingRelation) {
-                await CategoryIndustry.create(
+            if (!industry) {
+              // Auto-create industry if it doesn't exist
+              try {
+                industry = await Industry.create(
                   {
-                    category_id: category.id,
-                    industry_id: industry.id,
+                    name: industryName,
+                    description: null,
                     created_at: new Date(),
+                    updated_at: new Date(),
                   },
                   { transaction }
                 );
+                console.log(
+                  `Row ${rowIndex + 1}: Created new industry "${industryName}"`
+                );
+              } catch (error) {
+                console.warn(
+                  `Row ${
+                    rowIndex + 1
+                  }: Could not create industry "${industryName}" - ${
+                    error.message
+                  }`
+                );
+                continue; // Skip this industry but continue with others
               }
-            } catch (error) {
-              console.warn(
-                `Row ${
-                  rowIndex + 1
-                }: Could not create category-industry link - ${error.message}`
-              );
+            }
+
+            // Create category-industry relationship if industry exists
+            // This links the industry to the category, not directly to the prompt
+            if (industry) {
+              try {
+                const existingRelation = await CategoryIndustry.findOne({
+                  where: {
+                    category_id: category.id,
+                    industry_id: industry.id,
+                  },
+                  transaction,
+                });
+
+                if (!existingRelation) {
+                  await CategoryIndustry.create(
+                    {
+                      category_id: category.id,
+                      industry_id: industry.id,
+                      created_at: new Date(),
+                    },
+                    { transaction }
+                  );
+                  console.log(
+                    `Row ${
+                      rowIndex + 1
+                    }: Linked industry "${industryName}" to category "${
+                      category.name
+                    }"`
+                  );
+                }
+
+                processedIndustries.push(industry);
+              } catch (error) {
+                console.warn(
+                  `Row ${
+                    rowIndex + 1
+                  }: Could not create category-industry link for "${industryName}" - ${
+                    error.message
+                  }`
+                );
+              }
             }
           }
         }
@@ -305,7 +330,9 @@ async function processExcelFile(filePath) {
         promptData.topic_id = topic.id;
         promptData.topic_name = topic.name; // Store topic name for summary
         promptData.category_name = category.name; // Store category name for summary
-        promptData.industry_name = industry ? industry.name : null; // Store industry name for summary
+        promptData.industry_names = processedIndustries
+          .map((ind) => ind.name)
+          .join(", "); // Store industry names for summary
         promptData.is_type = promptData.is_type || 1;
         promptData.sub_type = promptData.sub_type || 1;
         promptData.title = titleValue; // Use normalized title value
@@ -359,8 +386,12 @@ async function processExcelFile(filePath) {
         if (prompt.topic_id && prompt.topic_name) {
           autoCreatedTopics.add(prompt.topic_name);
         }
-        if (prompt.industry_name) {
-          autoCreatedIndustries.add(prompt.industry_name);
+        if (prompt.industry_names) {
+          prompt.industry_names.split(", ").forEach((industryName) => {
+            if (industryName.trim()) {
+              autoCreatedIndustries.add(industryName.trim());
+            }
+          });
         }
       });
 

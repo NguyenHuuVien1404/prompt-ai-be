@@ -29,6 +29,7 @@ async function exportPromptsToExcel(filters = {}) {
         },
         {
           model: Topic,
+          as: "topic",
           attributes: ["id", "name"],
           required: false, // LEFT JOIN để không bị mất prompt khi không có topic
         },
@@ -123,8 +124,8 @@ async function exportPromptsToExcel(filters = {}) {
         stripHtmlTags(prompt.short_description) || "",
         stripHtmlTags(prompt.content) || "",
         prompt.Category ? prompt.Category.name : "",
-        prompt.Topic ? prompt.Topic.name : "",
-        industryNames,
+        prompt.topic ? prompt.topic.name : "",
+        industryNames, // Industries separated by comma
         stripHtmlTags(prompt.text) || "",
         stripHtmlTags(prompt.OptimationGuide) || "",
         prompt.is_type || 1,
@@ -258,7 +259,11 @@ async function createExcelTemplate() {
         "Another content example",
         categories[1] ? categories[1].name : "Another Category",
         topics[1] ? topics[1].name : "Another Topic",
-        industries[1] ? industries[1].name : "Another Industry",
+        industries[1]
+          ? industries[1].name +
+            ", " +
+            (industries[2] ? industries[2].name : "Another Industry")
+          : "Another Industry",
         "More text",
         "Guide 2",
         1,
@@ -273,13 +278,13 @@ async function createExcelTemplate() {
       "INSTRUCTIONS:",
       "ID: Leave empty for new records, fill with existing ID for updates",
       "Fill in the required fields (title, category, topic)",
-      "Industry is optional but recommended",
+      "Industry: Optional, separate multiple industries with comma (e.g., 'E-commerce, Healthcare')",
       "Use existing category/topic/industry names or they will be created automatically",
       "",
       "",
       "",
-      "1 = free, 2 = premium",
-      "1 = basic, 2 = advanced",
+      "is_type: 1 = free, 2 = premium",
+      "sub_type: 1 = basic, 2 = advanced",
     ];
 
     templateData.push(instructionsRow);
