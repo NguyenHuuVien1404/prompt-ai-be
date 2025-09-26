@@ -5,6 +5,17 @@ const {
   authMiddleware,
   adminMiddleware,
 } = require("../middleware/authMiddleware");
+const {
+  sendListResponse,
+  sendDetailResponse,
+  sendCreateResponse,
+  sendUpdateResponse,
+  sendDeleteResponse,
+  sendErrorResponse,
+  sendNotFoundResponse,
+  sendInternalErrorResponse,
+  calculatePagination,
+} = require("../utils/responseUtils");
 
 // Lấy tất cả industries với pagination và search
 router.get("/", async (req, res) => {
@@ -40,24 +51,11 @@ router.get("/", async (req, res) => {
     const hasNextPage = pageNumber < totalPages;
     const hasPrevPage = pageNumber > 1;
 
-    res.json({
-      success: true,
-      data: industries,
-      pagination: {
-        currentPage: pageNumber,
-        pageSize: limit,
-        totalCount,
-        totalPages,
-        hasNextPage,
-        hasPrevPage,
-      },
-    });
+    const pagination = calculatePagination(totalCount, pageNumber, limit);
+    sendListResponse(res, industries, pagination);
   } catch (error) {
     console.error("Error fetching industries:", error);
-    res.status(500).json({
-      success: false,
-      message: "Lỗi máy chủ nội bộ",
-    });
+    sendInternalErrorResponse(res, "Lỗi máy chủ nội bộ");
   }
 });
 
@@ -68,22 +66,13 @@ router.get("/:id", async (req, res) => {
 
     const industry = await Industry.findByPk(id);
     if (!industry) {
-      return res.status(404).json({
-        success: false,
-        message: "Không tìm thấy ngành nghề",
-      });
+      return sendNotFoundResponse(res, "Không tìm thấy ngành nghề");
     }
 
-    res.json({
-      success: true,
-      data: industry,
-    });
+    sendDetailResponse(res, industry);
   } catch (error) {
     console.error("Error fetching industry by ID:", error);
-    res.status(500).json({
-      success: false,
-      message: "Lỗi máy chủ nội bộ",
-    });
+    sendInternalErrorResponse(res, "Lỗi máy chủ nội bộ");
   }
 });
 
@@ -104,16 +93,14 @@ router.get("/by-category/:categoryId", async (req, res) => {
       order: [["name", "ASC"]],
     });
 
-    res.json({
-      success: true,
-      data: industries,
-    });
+    sendListResponse(
+      res,
+      industries,
+      calculatePagination(industries.length, 1, industries.length)
+    );
   } catch (error) {
     console.error("Error fetching industries by category:", error);
-    res.status(500).json({
-      success: false,
-      message: "Lỗi máy chủ nội bộ",
-    });
+    sendInternalErrorResponse(res, "Lỗi máy chủ nội bộ");
   }
 });
 
@@ -134,16 +121,14 @@ router.get("/:industryId/categories", async (req, res) => {
       order: [["name", "ASC"]],
     });
 
-    res.json({
-      success: true,
-      data: categories,
-    });
+    sendListResponse(
+      res,
+      categories,
+      calculatePagination(categories.length, 1, categories.length)
+    );
   } catch (error) {
     console.error("Error fetching categories by industry:", error);
-    res.status(500).json({
-      success: false,
-      message: "Lỗi máy chủ nội bộ",
-    });
+    sendInternalErrorResponse(res, "Lỗi máy chủ nội bộ");
   }
 });
 
@@ -153,10 +138,7 @@ router.post("/", authMiddleware, adminMiddleware, async (req, res) => {
     const { name, description } = req.body;
 
     if (!name) {
-      return res.status(400).json({
-        success: false,
-        message: "Tên là bắt buộc",
-      });
+      return sendErrorResponse(res, "Tên là bắt buộc", "VALIDATION_ERROR", 400);
     }
 
     const industry = await Industry.create({
@@ -164,17 +146,10 @@ router.post("/", authMiddleware, adminMiddleware, async (req, res) => {
       description,
     });
 
-    res.status(201).json({
-      success: true,
-      data: industry,
-      message: "Tạo ngành nghề thành công",
-    });
+    sendCreateResponse(res, industry, "Tạo ngành nghề thành công");
   } catch (error) {
     console.error("Error creating industry:", error);
-    res.status(500).json({
-      success: false,
-      message: "Lỗi máy chủ nội bộ",
-    });
+    sendInternalErrorResponse(res, "Lỗi máy chủ nội bộ");
   }
 });
 
@@ -186,10 +161,7 @@ router.put("/:id", authMiddleware, adminMiddleware, async (req, res) => {
 
     const industry = await Industry.findByPk(id);
     if (!industry) {
-      return res.status(404).json({
-        success: false,
-        message: "Không tìm thấy ngành nghề",
-      });
+      return sendNotFoundResponse(res, "Không tìm thấy ngành nghề");
     }
 
     await industry.update({
@@ -198,17 +170,10 @@ router.put("/:id", authMiddleware, adminMiddleware, async (req, res) => {
         description !== undefined ? description : industry.description,
     });
 
-    res.json({
-      success: true,
-      data: industry,
-      message: "Cập nhật ngành nghề thành công",
-    });
+    sendUpdateResponse(res, industry, "Cập nhật ngành nghề thành công");
   } catch (error) {
     console.error("Error updating industry:", error);
-    res.status(500).json({
-      success: false,
-      message: "Lỗi máy chủ nội bộ",
-    });
+    sendInternalErrorResponse(res, "Lỗi máy chủ nội bộ");
   }
 });
 
@@ -219,11 +184,7 @@ router.delete("/:id", authMiddleware, adminMiddleware, async (req, res) => {
 
     const industry = await Industry.findByPk(id);
     if (!industry) {
-      return res.status(404).json({
-        success: false,
-        message: "Không tìm thấy ngành nghề",
-        errorCode: "INDUSTRY_NOT_FOUND",
-      });
+      return sendNotFoundResponse(res, "Không tìm thấy ngành nghề");
     }
 
     // Kiểm tra xem industry có đang được sử dụng trong category_industries không
@@ -232,44 +193,32 @@ router.delete("/:id", authMiddleware, adminMiddleware, async (req, res) => {
     });
 
     if (categoryIndustries > 0) {
-      return res.status(409).json({
-        success: false,
-        message: `Không thể xóa ngành nghề. Hiện tại đang được liên kết với ${categoryIndustries} danh mục. Vui lòng xóa các liên kết danh mục-ngành nghề trước.`,
-        errorCode: "INDUSTRY_IN_USE",
-        details: {
-          linkedCategories: categoryIndustries,
-        },
-      });
+      return sendErrorResponse(
+        res,
+        `Không thể xóa ngành nghề. Hiện tại đang được liên kết với ${categoryIndustries} danh mục. Vui lòng xóa các liên kết danh mục-ngành nghề trước.`,
+        "INDUSTRY_IN_USE",
+        409
+      );
     }
 
     await industry.destroy();
 
-    res.json({
-      success: true,
-      message: "Xóa ngành nghề thành công",
-    });
+    sendDeleteResponse(res, "Xóa ngành nghề thành công");
   } catch (error) {
     console.error("Error deleting industry:", error);
 
     // Xử lý foreign key constraint error
     if (error.name === "SequelizeForeignKeyConstraintError") {
-      return res.status(409).json({
-        success: false,
-        message:
-          "Không thể xóa ngành nghề vì hiện tại đang được liên kết với một hoặc nhiều danh mục. Vui lòng xóa các liên kết danh mục-ngành nghề trước.",
-        errorCode: "FOREIGN_KEY_CONSTRAINT_VIOLATION",
-        details: {
-          constraint: error.parent?.sqlMessage || "Lỗi ràng buộc khóa ngoại",
-        },
-      });
+      return sendErrorResponse(
+        res,
+        "Không thể xóa ngành nghề vì hiện tại đang được liên kết với một hoặc nhiều danh mục. Vui lòng xóa các liên kết danh mục-ngành nghề trước.",
+        "FOREIGN_KEY_CONSTRAINT_VIOLATION",
+        409
+      );
     }
 
     // Xử lý các lỗi khác
-    res.status(500).json({
-      success: false,
-      message: "Lỗi máy chủ nội bộ",
-      errorCode: "INTERNAL_SERVER_ERROR",
-    });
+    sendInternalErrorResponse(res, "Lỗi máy chủ nội bộ");
   }
 });
 
@@ -287,17 +236,11 @@ router.post(
       const category = await Category.findByPk(categoryId);
 
       if (!industry) {
-        return res.status(404).json({
-          success: false,
-          message: "Không tìm thấy ngành nghề",
-        });
+        return sendNotFoundResponse(res, "Không tìm thấy ngành nghề");
       }
 
       if (!category) {
-        return res.status(404).json({
-          success: false,
-          message: "Không tìm thấy danh mục",
-        });
+        return sendNotFoundResponse(res, "Không tìm thấy danh mục");
       }
 
       // Kiểm tra liên kết đã tồn tại chưa
@@ -309,10 +252,12 @@ router.post(
       });
 
       if (existingLink) {
-        return res.status(400).json({
-          success: false,
-          message: "Liên kết danh mục-ngành nghề đã tồn tại",
-        });
+        return sendErrorResponse(
+          res,
+          "Liên kết danh mục-ngành nghề đã tồn tại",
+          "DUPLICATE_LINK",
+          400
+        );
       }
 
       // Tạo liên kết mới
@@ -321,17 +266,14 @@ router.post(
         category_id: categoryId,
       });
 
-      res.status(201).json({
-        success: true,
-        data: categoryIndustry,
-        message: "Tạo liên kết danh mục-ngành nghề thành công",
-      });
+      sendCreateResponse(
+        res,
+        categoryIndustry,
+        "Tạo liên kết danh mục-ngành nghề thành công"
+      );
     } catch (error) {
       console.error("Error creating category-industry link:", error);
-      res.status(500).json({
-        success: false,
-        message: "Lỗi máy chủ nội bộ",
-      });
+      sendInternalErrorResponse(res, "Lỗi máy chủ nội bộ");
     }
   }
 );
@@ -353,24 +295,18 @@ router.delete(
       });
 
       if (!categoryIndustry) {
-        return res.status(404).json({
-          success: false,
-          message: "Không tìm thấy liên kết danh mục-ngành nghề",
-        });
+        return sendNotFoundResponse(
+          res,
+          "Không tìm thấy liên kết danh mục-ngành nghề"
+        );
       }
 
       await categoryIndustry.destroy();
 
-      res.json({
-        success: true,
-        message: "Xóa liên kết danh mục-ngành nghề thành công",
-      });
+      sendDeleteResponse(res, "Xóa liên kết danh mục-ngành nghề thành công");
     } catch (error) {
       console.error("Error deleting category-industry link:", error);
-      res.status(500).json({
-        success: false,
-        message: "Lỗi máy chủ nội bộ",
-      });
+      sendInternalErrorResponse(res, "Lỗi máy chủ nội bộ");
     }
   }
 );

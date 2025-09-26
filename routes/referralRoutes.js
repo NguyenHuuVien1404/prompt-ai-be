@@ -2,6 +2,17 @@ const express = require("express");
 const router = express.Router();
 const Referral = require("../models/Referral"); // Import the Referral model
 const cache = require("../utils/cache"); // Import cache utility
+const {
+  sendListResponse,
+  sendDetailResponse,
+  sendCreateResponse,
+  sendUpdateResponse,
+  sendDeleteResponse,
+  sendErrorResponse,
+  sendNotFoundResponse,
+  sendInternalErrorResponse,
+  calculatePagination,
+} = require("../utils/responseUtils");
 
 // Create a new referral
 router.post("/", async (req, res) => {
@@ -10,15 +21,23 @@ router.post("/", async (req, res) => {
 
     // Validate required fields
     if (!code || !discount) {
-      return res
-        .status(400)
-        .json({ message: "Code and discount are required" });
+      return sendErrorResponse(
+        res,
+        "Code and discount are required",
+        "VALIDATION_ERROR",
+        400
+      );
     }
 
     // Check if the code already exists
     const existingReferral = await Referral.findOne({ where: { code } });
     if (existingReferral) {
-      return res.status(400).json({ message: "Referral code already exists" });
+      return sendErrorResponse(
+        res,
+        "Referral code already exists",
+        "DUPLICATE_CODE",
+        400
+      );
     }
 
     // Create the referral
@@ -33,13 +52,9 @@ router.post("/", async (req, res) => {
     // Invalidate cache when creating a new referral
     await cache.invalidateCache("all_referrals");
 
-    return res
-      .status(201)
-      .json({ message: "Referral created successfully", referral });
+    sendCreateResponse(res, referral, "Referral created successfully");
   } catch (error) {
-    return res
-      .status(500)
-      .json({ message: "Server error", error: error.message });
+    sendInternalErrorResponse(res, "Error creating referral: " + error.message);
   }
 });
 
@@ -50,9 +65,13 @@ router.get("/", async (req, res) => {
     const cachedReferrals = await cache.getCache("all_referrals");
 
     if (cachedReferrals) {
-      return res
-        .status(200)
-        .json({ referrals: JSON.parse(cachedReferrals), source: "cache" });
+      const referrals = JSON.parse(cachedReferrals);
+      const pagination = calculatePagination(
+        referrals.length,
+        1,
+        referrals.length
+      );
+      return sendListResponse(res, referrals, pagination);
     }
 
     // If not in cache, fetch from database
@@ -61,11 +80,17 @@ router.get("/", async (req, res) => {
     // Store in cache for 10 minutes (600 seconds)
     await cache.setCache("all_referrals", JSON.stringify(referrals), 600);
 
-    return res.status(200).json({ referrals, source: "database" });
+    const pagination = calculatePagination(
+      referrals.length,
+      1,
+      referrals.length
+    );
+    return sendListResponse(res, referrals, pagination);
   } catch (error) {
-    return res
-      .status(500)
-      .json({ message: "Server error", error: error.message });
+    sendInternalErrorResponse(
+      res,
+      "Error fetching referrals: " + error.message
+    );
   }
 });
 
@@ -78,25 +103,30 @@ router.get("/:id", async (req, res) => {
     const cachedReferral = await cache.getCache(`referral_${id}`);
 
     if (cachedReferral) {
-      return res
-        .status(200)
-        .json({ referral: JSON.parse(cachedReferral), source: "cache" });
+      const referral = JSON.parse(cachedReferral);
+      const responseData = {
+        ...referral,
+        source: "cache",
+      };
+      return sendDetailResponse(res, responseData);
     }
 
     const referral = await Referral.findByPk(id);
 
     if (!referral) {
-      return res.status(404).json({ message: "Referral not found" });
+      return sendNotFoundResponse(res, "Referral not found");
     }
 
     // Store in cache for 10 minutes
     await cache.setCache(`referral_${id}`, JSON.stringify(referral), 600);
 
-    return res.status(200).json({ referral, source: "database" });
+    const responseData = {
+      ...referral.toJSON(),
+      source: "database",
+    };
+    return sendDetailResponse(res, responseData);
   } catch (error) {
-    return res
-      .status(500)
-      .json({ message: "Server error", error: error.message });
+    sendInternalErrorResponse(res, "Error fetching referral: " + error.message);
   }
 });
 

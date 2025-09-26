@@ -6,6 +6,17 @@ const History = require("../models/History");
 const { authMiddleware } = require("../middleware/authMiddleware");
 const sequelize = require("../config/database");
 const { prepareMessages } = require("../utils/promptUtils");
+const {
+  sendListResponse,
+  sendDetailResponse,
+  sendCreateResponse,
+  sendUpdateResponse,
+  sendDeleteResponse,
+  sendErrorResponse,
+  sendNotFoundResponse,
+  sendInternalErrorResponse,
+  calculatePagination,
+} = require("../utils/responseUtils");
 
 // ✅ Fix typo trong env variable name
 const OPENROUTER_API_KEY = process.env.OPENT_ROUTER_API_KEY; // Sửa từ OPENT_ROUTER_API_KEY
@@ -183,11 +194,12 @@ router.post(
 
       if (!user || user.count_promt < cost) {
         await transaction.rollback();
-        return res.status(403).json({
-          error: "Không đủ credit",
-          required: cost,
-          available: user?.count_promt || 0,
-        });
+        return sendErrorResponse(
+          res,
+          "Không đủ credit",
+          "INSUFFICIENT_CREDIT",
+          403
+        );
       }
 
       // ✅ Setup enhanced headers
@@ -410,7 +422,7 @@ router.post(
       }
 
       if (!res.headersSent) {
-        res.status(500).json({ error: err.message });
+        sendInternalErrorResponse(res, err.message);
       } else {
         res.write(
           `data: ${JSON.stringify({

@@ -5,14 +5,29 @@ const {
   authMiddleware,
   adminMiddleware,
 } = require("../middleware/authMiddleware");
+const {
+  sendListResponse,
+  sendDetailResponse,
+  sendCreateResponse,
+  sendUpdateResponse,
+  sendDeleteResponse,
+  sendErrorResponse,
+  sendNotFoundResponse,
+  sendInternalErrorResponse,
+  calculatePagination,
+} = require("../utils/responseUtils");
 
 // Lấy tất cả lịch sử
 router.get("/", async (req, res) => {
   try {
     const histories = await History.findAll();
-    res.json(histories);
+    sendListResponse(
+      res,
+      histories,
+      calculatePagination(histories.length, 1, histories.length)
+    );
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    sendInternalErrorResponse(res, error.message);
   }
 });
 
@@ -21,22 +36,19 @@ router.get("/list", async (req, res) => {
   try {
     const { page = 1, pageSize = 10 } = req.query;
     const offset = (page - 1) * pageSize;
+    const pageNum = parseInt(page);
+    const pageSizeNum = parseInt(pageSize);
 
     const { count, rows } = await History.findAndCountAll({
       order: [["created_at", "DESC"]],
-      limit: parseInt(pageSize),
+      limit: pageSizeNum,
       offset: offset,
     });
 
-    res.json({
-      histories: rows,
-      totalItems: count,
-      totalPages: Math.ceil(count / pageSize),
-      currentPage: parseInt(page),
-      pageSize: parseInt(pageSize),
-    });
+    const pagination = calculatePagination(count, pageNum, pageSizeNum);
+    sendListResponse(res, rows, pagination);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    sendInternalErrorResponse(res, error.message);
   }
 });
 
@@ -45,9 +57,9 @@ router.post("/", async (req, res) => {
   try {
     const { title, request, respone, user_id } = req.body;
     const history = await History.create({ title, request, respone, user_id });
-    res.json(history);
+    sendCreateResponse(res, history, "History created successfully");
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    sendInternalErrorResponse(res, error.message);
   }
 });
 
@@ -55,10 +67,14 @@ router.post("/", async (req, res) => {
 router.put("/:id", async (req, res) => {
   try {
     const { id } = req.params;
+    const history = await History.findByPk(id);
+    if (!history) return sendNotFoundResponse(res, "History not found");
+
     await History.update(req.body, { where: { id } });
-    res.json({ message: "Updated successfully" });
+    const updatedHistory = await History.findByPk(id);
+    sendUpdateResponse(res, updatedHistory, "History updated successfully");
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    sendInternalErrorResponse(res, error.message);
   }
 });
 
@@ -66,10 +82,13 @@ router.put("/:id", async (req, res) => {
 router.delete("/:id", async (req, res) => {
   try {
     const { id } = req.params;
+    const history = await History.findByPk(id);
+    if (!history) return sendNotFoundResponse(res, "History not found");
+
     await History.destroy({ where: { id } });
-    res.json({ message: "Deleted successfully" });
+    sendDeleteResponse(res, "History deleted successfully");
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    sendInternalErrorResponse(res, error.message);
   }
 });
 // Lấy lịch sử theo user_id
@@ -83,14 +102,16 @@ router.get("/user/:user_id", async (req, res) => {
     });
 
     if (!histories || histories.length === 0) {
-      return res
-        .status(404)
-        .json({ message: "No histories found for this user" });
+      return sendNotFoundResponse(res, "No histories found for this user");
     }
 
-    res.json(histories);
+    sendListResponse(
+      res,
+      histories,
+      calculatePagination(histories.length, 1, histories.length)
+    );
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    sendInternalErrorResponse(res, error.message);
   }
 });
 

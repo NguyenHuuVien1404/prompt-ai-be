@@ -10,6 +10,17 @@ const {
 } = require("../middleware/authMiddleware");
 const { sendReplyEmail, sendSurveyEmail } = require("../utils/emailService");
 const { User } = require("../models");
+const {
+  sendListResponse,
+  sendDetailResponse,
+  sendCreateResponse,
+  sendUpdateResponse,
+  sendDeleteResponse,
+  sendErrorResponse,
+  sendNotFoundResponse,
+  sendInternalErrorResponse,
+  calculatePagination,
+} = require("../utils/responseUtils");
 // Cấu hình nodemailer
 const transporter = nodemailer.createTransport({
   service: "gmail",
@@ -23,9 +34,13 @@ const transporter = nodemailer.createTransport({
 router.get("/", authMiddleware, adminMiddleware, async (req, res) => {
   try {
     const contacts = await Contact.findAll();
-    res.json(contacts);
+    sendListResponse(
+      res,
+      contacts,
+      calculatePagination(contacts.length, 1, contacts.length)
+    );
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    sendInternalErrorResponse(res, error.message);
   }
 });
 
@@ -92,15 +107,10 @@ router.get("/list", authMiddleware, adminMiddleware, async (req, res) => {
     });
 
     // Trả về dữ liệu phân trang
-    res.json({
-      totalItems: count,
-      totalPages: Math.ceil(count / pageSize),
-      currentPage: page,
-      pageSize,
-      data: rowsWithDeadline, // Dữ liệu đã được bổ sung timeRemaining và deadline
-    });
+    const pagination = calculatePagination(count, page, pageSize);
+    sendListResponse(res, rowsWithDeadline, pagination);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    sendInternalErrorResponse(res, error.message);
   }
 });
 
@@ -224,11 +234,7 @@ router.get("/export", authMiddleware, adminMiddleware, async (req, res) => {
     res.setHeader("Content-Disposition", `attachment; filename=${filename}`);
     res.send(buffer);
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: "Lỗi khi export Excel",
-      error: error.message,
-    });
+    sendInternalErrorResponse(res, "Lỗi khi export Excel: " + error.message);
   }
 });
 
@@ -243,9 +249,9 @@ router.post("/", async (req, res) => {
       type,
       phone_number,
     });
-    res.status(201).json(newContact);
+    sendCreateResponse(res, newContact, "Contact created successfully");
   } catch (error) {
-    res.status(400).json({ message: error.message });
+    sendErrorResponse(res, error.message, "VALIDATION_ERROR", 400);
   }
 });
 
@@ -255,13 +261,23 @@ router.post("/add-email", async (req, res) => {
     const { email, type, name, message, reply, status } = req.body;
 
     if (!email) {
-      return res.status(400).json({ message: "Email is required" });
+      return sendErrorResponse(
+        res,
+        "Email is required",
+        "VALIDATION_ERROR",
+        400
+      );
     }
 
     // Kiểm tra xem email đã tồn tại chưa
     const existingContact = await Contact.findOne({ where: { email } });
     if (existingContact) {
-      return res.status(400).json({ message: "Email already exists" });
+      return sendErrorResponse(
+        res,
+        "Email already exists",
+        "DUPLICATE_EMAIL",
+        400
+      );
     }
 
     // Tạo mới Contact với giá trị mặc định nếu không có trong request
@@ -274,11 +290,9 @@ router.post("/add-email", async (req, res) => {
       status: status ?? 1,
     });
 
-    res
-      .status(201)
-      .json({ message: "Email added successfully", contact: newContact });
+    sendCreateResponse(res, newContact, "Email added successfully");
   } catch (error) {
-    res.status(500).json({ message: "Server error", error: error.message });
+    sendInternalErrorResponse(res, error.message);
   }
 });
 
@@ -288,16 +302,16 @@ router.put("/:id", authMiddleware, adminMiddleware, async (req, res) => {
     const { reply } = req.body;
     const contact = await Contact.findByPk(req.params.id);
     if (!contact) {
-      return res.status(404).json({ message: "Contact not found" });
+      return sendNotFoundResponse(res, "Contact not found");
     }
     await sendReplyEmail(contact.email, reply);
     contact.status = 2;
     contact.reply = reply;
     await contact.save();
 
-    res.json(contact);
+    sendUpdateResponse(res, contact, "Contact updated successfully");
   } catch (error) {
-    res.status(400).json({ message: error.message });
+    sendErrorResponse(res, error.message, "UPDATE_ERROR", 400);
   }
 });
 
@@ -340,7 +354,7 @@ router.post("/survey", async (req, res) => {
 
     const users = await User.findAll({ attributes: ["email"] });
     if (!users || users.length === 0) {
-      return res.status(404).json({ message: "No users found" });
+      return sendNotFoundResponse(res, "No users found");
     }
 
     const emailList = users.map((user) => user.email);
@@ -351,13 +365,13 @@ router.post("/survey", async (req, res) => {
         // Error in email sending handled silently
       });
 
-    res.json({
-      message: "Email sending process started",
-      success: true,
-      totalEmails: emailList.length,
-    });
+    sendDetailResponse(
+      res,
+      { totalEmails: emailList.length },
+      "Email sending process started"
+    );
   } catch (error) {
-    res.status(500).json({ message: "Server error", error: error.message });
+    sendInternalErrorResponse(res, error.message);
   }
 });
 router.post("/survey-test", async (req, res) => {
@@ -368,7 +382,7 @@ router.post("/survey-test", async (req, res) => {
     const users = await User.findAll({ attributes: ["email"] });
 
     if (!users || users.length === 0) {
-      return res.status(404).json({ message: "No users found" });
+      return sendNotFoundResponse(res, "No users found");
     }
 
     // Danh sách email của tất cả users
@@ -390,13 +404,16 @@ router.post("/survey-test", async (req, res) => {
       }
     }
 
-    res.json({
-      message: "All emails have been processed",
-      success: true,
-      failedEmails: failedEmails.length > 0 ? failedEmails : "No failed emails",
-    });
+    sendDetailResponse(
+      res,
+      {
+        failedEmails:
+          failedEmails.length > 0 ? failedEmails : "No failed emails",
+      },
+      "All emails have been processed"
+    );
   } catch (error) {
-    res.status(500).json({ message: "Server error", error: error.message });
+    sendInternalErrorResponse(res, error.message);
   }
 });
 

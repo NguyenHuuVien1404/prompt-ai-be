@@ -6,6 +6,17 @@ const {
   authMiddleware,
   adminMiddleware,
 } = require("../middleware/authMiddleware");
+const {
+  sendListResponse,
+  sendDetailResponse,
+  sendCreateResponse,
+  sendUpdateResponse,
+  sendDeleteResponse,
+  sendErrorResponse,
+  sendNotFoundResponse,
+  sendInternalErrorResponse,
+  calculatePagination,
+} = require("../utils/responseUtils");
 router.get("/:userId", async (req, res) => {
   try {
     const user_id = req.params.userId;
@@ -17,9 +28,10 @@ router.get("/:userId", async (req, res) => {
     });
 
     if (devices.length === 0) {
-      return res
-        .status(404)
-        .json({ message: "Không tìm thấy thông tin thiết bị đăng nhập" });
+      return sendNotFoundResponse(
+        res,
+        "Không tìm thấy thông tin thiết bị đăng nhập"
+      );
     }
 
     // Lọc để chỉ lấy bản ghi mới nhất của mỗi địa chỉ IP
@@ -34,9 +46,13 @@ router.get("/:userId", async (req, res) => {
       }
     }
 
-    res.json(uniqueDevices);
+    sendListResponse(
+      res,
+      uniqueDevices,
+      calculatePagination(uniqueDevices.length, 1, uniqueDevices.length)
+    );
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    sendInternalErrorResponse(res, error.message);
   }
 });
 

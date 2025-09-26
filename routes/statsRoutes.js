@@ -8,6 +8,17 @@ const {
 const { Op } = require("sequelize");
 const sequelize = require("../config/database");
 const router = express.Router();
+const {
+  sendListResponse,
+  sendDetailResponse,
+  sendCreateResponse,
+  sendUpdateResponse,
+  sendDeleteResponse,
+  sendErrorResponse,
+  sendNotFoundResponse,
+  sendInternalErrorResponse,
+  calculatePagination,
+} = require("../utils/responseUtils");
 
 // Thống kê users theo role
 router.get(
@@ -45,17 +56,14 @@ router.get(
         };
       });
 
-      res.json({
-        success: true,
-        data: roleStats,
+      const statsData = {
+        roleStats,
         total_roles: roleStats.length,
         total_users: roleStats.reduce((sum, stat) => sum + stat.user_count, 0),
-      });
+      };
+      sendDetailResponse(res, statsData);
     } catch (error) {
-      res.status(500).json({
-        success: false,
-        error: error.message,
-      });
+      sendInternalErrorResponse(res, error.message);
     }
   }
 );
@@ -94,20 +102,15 @@ router.get(
         raw: true,
       });
 
-      res.json({
-        success: true,
-        data: {
-          total_users: totalUsers,
-          total_roles: totalRoles,
-          role_distribution: roleStats,
-          status_distribution: statusStats,
-        },
-      });
+      const overviewData = {
+        total_users: totalUsers,
+        total_roles: totalRoles,
+        role_distribution: roleStats,
+        status_distribution: statusStats,
+      };
+      sendDetailResponse(res, overviewData);
     } catch (error) {
-      res.status(500).json({
-        success: false,
-        error: error.message,
-      });
+      sendInternalErrorResponse(res, error.message);
     }
   }
 );

@@ -10,6 +10,17 @@ const {
   authMiddleware,
   adminMiddleware,
 } = require("../middleware/authMiddleware");
+const {
+  sendListResponse,
+  sendDetailResponse,
+  sendCreateResponse,
+  sendUpdateResponse,
+  sendDeleteResponse,
+  sendErrorResponse,
+  sendNotFoundResponse,
+  sendInternalErrorResponse,
+  calculatePagination,
+} = require("../utils/responseUtils");
 router.get("/:userId", async (req, res) => {
   try {
     const userId = req.params.userId;
@@ -17,12 +28,16 @@ router.get("/:userId", async (req, res) => {
       where: { user_id: userId },
     });
 
-    res.status(200).json(data);
+    sendListResponse(
+      res,
+      data,
+      calculatePagination(data.length, 1, data.length)
+    );
   } catch (error) {
-    res.status(500).json({
-      message: "Error fetching prompt favorite",
-      error: error.message,
-    });
+    sendInternalErrorResponse(
+      res,
+      "Error fetching prompt favorite: " + error.message
+    );
   }
 });
 router.post("/", async (req, res) => {
@@ -31,9 +46,12 @@ router.post("/", async (req, res) => {
 
     // Kiểm tra nếu dữ liệu cần thiết không tồn tại
     if (!user_id || !prompt_id) {
-      return res
-        .status(400)
-        .json({ message: "user_id and prompt_id are required" });
+      return sendErrorResponse(
+        res,
+        "user_id and prompt_id are required",
+        "VALIDATION_ERROR",
+        400
+      );
     }
 
     // Thêm bản ghi mới vào PromFavorite
@@ -42,37 +60,35 @@ router.post("/", async (req, res) => {
       prompt_id,
     });
 
-    res.status(201).json({
-      message: "Prompt favorite added successfully",
-      data: newFavorite,
-    });
+    sendCreateResponse(res, newFavorite, "Prompt favorite added successfully");
   } catch (error) {
-    res
-      .status(500)
-      .json({ message: "Error adding prompt favorite", error: error.message });
+    sendInternalErrorResponse(
+      res,
+      "Error adding prompt favorite: " + error.message
+    );
   }
 });
 router.delete("/:id", async (req, res) => {
   try {
     const { id } = req.params; // Lấy id từ URL parameter
 
+    // Kiểm tra xem bản ghi có tồn tại không
+    const favorite = await PromFavorite.findByPk(id);
+    if (!favorite) {
+      return sendNotFoundResponse(res, "Prompt favorite not found");
+    }
+
     // Xóa bản ghi yêu thích tương ứng theo id
-    const deleted = await PromFavorite.destroy({
+    await PromFavorite.destroy({
       where: { id }, // Xóa theo id
     });
 
-    if (deleted) {
-      return res.status(200).json({
-        message: "Prompt favorite deleted successfully",
-      });
-    } else {
-      return res.status(404).json({ message: "Prompt favorite not found" });
-    }
+    sendDeleteResponse(res, "Prompt favorite deleted successfully");
   } catch (error) {
-    res.status(500).json({
-      message: "Error deleting prompt favorite",
-      error: error.message,
-    });
+    sendInternalErrorResponse(
+      res,
+      "Error deleting prompt favorite: " + error.message
+    );
   }
 });
 router.get("/list/by-section", async (req, res) => {
@@ -81,7 +97,12 @@ router.get("/list/by-section", async (req, res) => {
     const userId = req.query.user_id;
 
     if (!sectionId) {
-      return res.status(400).json({ message: "section_id is required" });
+      return sendErrorResponse(
+        res,
+        "section_id is required",
+        "VALIDATION_ERROR",
+        400
+      );
     }
 
     let whereCondition;
@@ -122,14 +143,16 @@ router.get("/list/by-section", async (req, res) => {
       where: whereCondition,
     });
 
-    res.status(200).json({
-      data: data,
-    });
+    sendListResponse(
+      res,
+      data,
+      calculatePagination(data.length, 1, data.length)
+    );
   } catch (error) {
-    res.status(500).json({
-      message: "Error fetching favorite prompts",
-      error: error.message,
-    });
+    sendInternalErrorResponse(
+      res,
+      "Error fetching favorite prompts: " + error.message
+    );
   }
 });
 

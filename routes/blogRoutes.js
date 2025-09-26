@@ -11,6 +11,17 @@ const {
   authMiddleware,
   adminMiddleware,
 } = require("../middleware/authMiddleware");
+const {
+  sendListResponse,
+  sendDetailResponse,
+  sendCreateResponse,
+  sendUpdateResponse,
+  sendDeleteResponse,
+  sendErrorResponse,
+  sendNotFoundResponse,
+  sendInternalErrorResponse,
+  calculatePagination,
+} = require("../utils/responseUtils");
 // Cấu hình storage cho multer
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
@@ -76,7 +87,12 @@ const handleUpload = (req, res, next) => {
 const validateBlogData = (req, res, next) => {
   const { title, content, category_id } = req.body;
   if (!title || !content || !category_id) {
-    return res.status(400).json({ error: "Missing required fields" });
+    return sendErrorResponse(
+      res,
+      "Missing required fields",
+      "VALIDATION_ERROR",
+      400
+    );
   }
   next();
 };
@@ -87,9 +103,10 @@ router.get("/", async (req, res) => {
     const blogs = await Blog.findAll({
       include: [{ model: BlogCategory, as: "category", attributes: ["name"] }],
     });
-    res.json(blogs);
+    const pagination = calculatePagination(blogs.length, 1, blogs.length);
+    sendListResponse(res, blogs, pagination);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    sendInternalErrorResponse(res, error.message);
   }
 });
 
@@ -123,7 +140,7 @@ router.get("/list", async (req, res) => {
       blogs: rows,
     });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    sendInternalErrorResponse(res, error.message);
   }
 });
 
@@ -137,9 +154,10 @@ router.get("/by-category/:categoryId", async (req, res) => {
       order: [["published_at", "DESC"]],
     });
 
-    res.json({ blogs });
+    const pagination = calculatePagination(count, page, limit);
+    sendListResponse(res, blogs, pagination);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    sendInternalErrorResponse(res, error.message);
   }
 });
 router.get("/:id", async (req, res) => {
@@ -151,12 +169,12 @@ router.get("/:id", async (req, res) => {
     });
 
     if (!blog) {
-      return res.status(404).json({ error: "Blog không tồn tại" });
+      return sendNotFoundResponse(res, "Blog không tồn tại");
     }
 
-    res.json(blog);
+    sendDetailResponse(res, blog);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    sendInternalErrorResponse(res, error.message);
   }
 });
 // Route tạo blog mới
@@ -215,13 +233,13 @@ router.post("/", handleUpload, validateBlogData, async (req, res) => {
     }
 
     const blog = await Blog.create(blogData);
-    res.status(201).json(blog);
+    sendCreateResponse(res, blog, "Blog created successfully");
   } catch (error) {
     // Xóa file nếu có lỗi khi tạo blog
     if (req.file) {
       fs.unlinkSync(req.file.path);
     }
-    res.status(500).json({ error: error.message });
+    sendInternalErrorResponse(res, error.message);
   }
 });
 
@@ -229,7 +247,7 @@ router.post("/", handleUpload, validateBlogData, async (req, res) => {
 router.put("/:id", handleUpload, validateBlogData, async (req, res) => {
   try {
     const blog = await Blog.findByPk(req.params.id);
-    if (!blog) return res.status(404).json({ message: "Blog not found" });
+    if (!blog) return sendNotFoundResponse(res, "Blog not found");
 
     const serverUrl = `${req.protocol}://${req.get("host")}`;
     let blogData = { ...req.body };
@@ -295,7 +313,7 @@ router.put("/:id", handleUpload, validateBlogData, async (req, res) => {
     if (req.file) {
       fs.unlinkSync(req.file.path);
     }
-    res.status(500).json({ error: error.message });
+    sendInternalErrorResponse(res, error.message);
   }
 });
 
@@ -317,9 +335,9 @@ router.delete("/:id", async (req, res) => {
     }
 
     await blog.destroy();
-    res.json({ message: "Successfully deleted" });
+    sendDeleteResponse(res, "Successfully deleted");
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    sendInternalErrorResponse(res, error.message);
   }
 });
 

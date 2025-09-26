@@ -9,6 +9,17 @@ const {
 } = require("../middleware/authMiddleware");
 const Payment = require("../models/Payment");
 const User = require("../models/User");
+const {
+  sendListResponse,
+  sendDetailResponse,
+  sendCreateResponse,
+  sendUpdateResponse,
+  sendDeleteResponse,
+  sendErrorResponse,
+  sendNotFoundResponse,
+  sendInternalErrorResponse,
+  calculatePagination,
+} = require("../utils/responseUtils");
 
 // Lấy danh sách tất cả coupons (có phân trang, tìm kiếm và thống kê)
 router.get("/", authMiddleware, adminMiddleware, async (req, res) => {
@@ -126,11 +137,10 @@ router.get("/", authMiddleware, adminMiddleware, async (req, res) => {
       },
     });
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: "Lỗi khi lấy danh sách coupons",
-      error: error.message,
-    });
+    sendInternalErrorResponse(
+      res,
+      "Lỗi khi lấy danh sách coupons: " + error.message
+    );
   }
 });
 
@@ -139,23 +149,15 @@ router.get("/:id", authMiddleware, adminMiddleware, async (req, res) => {
   try {
     const coupon = await Coupon.findByPk(req.params.id);
     if (!coupon) {
-      return res.status(404).json({
-        success: false,
-        message: "Không tìm thấy coupon",
-        error: "NOT_FOUND",
-      });
+      return sendNotFoundResponse(res, "Không tìm thấy coupon");
     }
 
-    res.json({
-      success: true,
-      data: coupon,
-    });
+    sendDetailResponse(res, coupon);
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: "Lỗi khi lấy chi tiết coupon",
-      error: error.message,
-    });
+    sendInternalErrorResponse(
+      res,
+      "Lỗi khi lấy chi tiết coupon: " + error.message
+    );
   }
 });
 

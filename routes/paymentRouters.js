@@ -16,6 +16,17 @@ const Subscription = require("../models/Subscription"); // Thêm model Subscript
 const User = require("../models/User");
 const Coupon = require("../models/Coupon"); // Implied import for Coupon model
 const { Op } = require("sequelize");
+const {
+  sendListResponse,
+  sendDetailResponse,
+  sendCreateResponse,
+  sendUpdateResponse,
+  sendDeleteResponse,
+  sendErrorResponse,
+  sendNotFoundResponse,
+  sendInternalErrorResponse,
+  calculatePagination,
+} = require("../utils/responseUtils");
 
 router.get("/", function (req, res, next) {
   res.render("orderlist", { title: "Danh sách đơn hàng" });
@@ -66,7 +77,12 @@ router.post("/create_payment_url", async function (req, res, next) {
 
     // Kiểm tra orderInfo hợp lệ
     if (!orderInfo || !orderInfo.includes("-")) {
-      return res.status(400).json({ error: "Invalid orderInfo format" });
+      return sendErrorResponse(
+        res,
+        "Invalid orderInfo format",
+        "VALIDATION_ERROR",
+        400
+      );
     }
 
     const [userId, subscriptionId] = orderInfo.split("-").map(Number);
@@ -119,7 +135,7 @@ router.post("/create_payment_url", async function (req, res, next) {
     vnpUrl += "?" + querystring.stringify(vnp_Params, { encode: false });
     res.json({ paymentUrl: vnpUrl });
   } catch (error) {
-    res.status(500).json({ error: "Failed to create payment URL" });
+    sendInternalErrorResponse(res, "Failed to create payment URL");
   }
 });
 

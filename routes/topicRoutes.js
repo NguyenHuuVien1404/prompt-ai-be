@@ -6,13 +6,28 @@ const {
   authMiddleware,
   adminMiddleware,
 } = require("../middleware/authMiddleware");
+const {
+  sendListResponse,
+  sendDetailResponse,
+  sendCreateResponse,
+  sendUpdateResponse,
+  sendDeleteResponse,
+  sendErrorResponse,
+  sendNotFoundResponse,
+  sendInternalErrorResponse,
+  calculatePagination,
+} = require("../utils/responseUtils");
 // Lấy danh sách chủ đề
 router.get("/", async (req, res) => {
   try {
     const topics = await Topic.findAll();
-    res.json(topics);
+    sendListResponse(
+      res,
+      topics,
+      calculatePagination(topics.length, 1, topics.length)
+    );
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    sendInternalErrorResponse(res, error.message);
   }
 });
 
@@ -27,15 +42,10 @@ router.get("/list", async (req, res) => {
 
     const { count, rows } = await Topic.findAndCountAll({ limit, offset });
 
-    res.json({
-      totalItems: count,
-      totalPages: Math.ceil(count / pageSize),
-      currentPage: page,
-      pageSize,
-      topics: rows,
-    });
+    const pagination = calculatePagination(count, page, pageSize);
+    sendListResponse(res, rows, pagination);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    sendInternalErrorResponse(res, error.message);
   }
 });
 
@@ -43,11 +53,10 @@ router.get("/list", async (req, res) => {
 router.get("/:id", async (req, res) => {
   try {
     const topic = await Topic.findByPk(req.params.id);
-    if (!topic)
-      return res.status(404).json({ message: "Không tìm thấy chủ đề" });
-    res.json(topic);
+    if (!topic) return sendNotFoundResponse(res, "Không tìm thấy chủ đề");
+    sendDetailResponse(res, topic);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    sendInternalErrorResponse(res, error.message);
   }
 });
 
@@ -56,9 +65,9 @@ router.post("/", async (req, res) => {
   try {
     const { name, description } = req.body;
     const topic = await Topic.create({ name, description });
-    res.json(topic);
+    sendCreateResponse(res, topic, "Topic created successfully");
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    sendInternalErrorResponse(res, error.message);
   }
 });
 
@@ -67,13 +76,12 @@ router.put("/:id", async (req, res) => {
   try {
     const { name } = req.body;
     const topic = await Topic.findByPk(req.params.id);
-    if (!topic)
-      return res.status(404).json({ message: "Không tìm thấy chủ đề" });
+    if (!topic) return sendNotFoundResponse(res, "Không tìm thấy chủ đề");
 
     await topic.update({ name });
-    res.json(topic);
+    sendUpdateResponse(res, topic, "Topic updated successfully");
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    sendInternalErrorResponse(res, error.message);
   }
 });
 
@@ -81,13 +89,12 @@ router.put("/:id", async (req, res) => {
 router.delete("/:id", async (req, res) => {
   try {
     const topic = await Topic.findByPk(req.params.id);
-    if (!topic)
-      return res.status(404).json({ message: "Không tìm thấy chủ đề" });
+    if (!topic) return sendNotFoundResponse(res, "Không tìm thấy chủ đề");
 
     await topic.destroy();
-    res.json({ message: "Xóa thành công" });
+    sendDeleteResponse(res, "Topic deleted successfully");
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    sendInternalErrorResponse(res, error.message);
   }
 });
 

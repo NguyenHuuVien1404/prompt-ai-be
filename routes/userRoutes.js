@@ -21,6 +21,17 @@ const { Op } = require("sequelize");
 const { OAuth2Client } = require("google-auth-library");
 const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 const { getRolePermissions } = require("../utils/permissionUtils");
+const {
+  sendListResponse,
+  sendDetailResponse,
+  sendCreateResponse,
+  sendUpdateResponse,
+  sendDeleteResponse,
+  sendErrorResponse,
+  sendNotFoundResponse,
+  sendInternalErrorResponse,
+  calculatePagination,
+} = require("../utils/responseUtils");
 
 // Cấu hình Multer để lưu file vào thư mục "uploads"
 const storage = multer.diskStorage({
@@ -187,15 +198,10 @@ router.post(
         };
       });
 
-      res.json({
-        data: transformedRows,
-        total: count,
-        currentPage: page,
-        pageSize,
-        totalPages: Math.ceil(count / pageSize),
-      });
+      const pagination = calculatePagination(count, page, pageSize);
+      sendListResponse(res, transformedRows, pagination);
     } catch (error) {
-      res.status(500).json({ error: error.message });
+      sendInternalErrorResponse(res, error.message);
     }
   }
 );
@@ -204,9 +210,9 @@ router.post(
 router.post("/", authMiddleware, adminMiddleware, async (req, res) => {
   try {
     const user = await User.create(req.body);
-    res.status(201).json(user);
+    sendCreateResponse(res, user, "User created successfully");
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    sendInternalErrorResponse(res, error.message);
   }
 });
 
@@ -223,7 +229,7 @@ router.get("/:id", async (req, res) => {
       ],
     });
 
-    if (!user) return res.status(404).json({ message: "User not found" });
+    if (!user) return sendNotFoundResponse(res, "User not found");
 
     const userSubs = await user.getUserSubs({
       include: [Subscription],
@@ -263,18 +269,18 @@ router.get("/:id", async (req, res) => {
       permissions = getRolePermissions(user.role_id || user.role);
     }
 
-    res.json({
-      data: {
-        user: {
-          ...user.toJSON(),
-          permissions: permissions, // ✅ Thêm permissions array
-        },
-        userSub: sortedUserSubs.length > 0 ? sortedUserSubs[0] : null,
-        // allUserSubs: sortedUserSubs  // Thêm để debug
+    const userData = {
+      user: {
+        ...user.toJSON(),
+        permissions: permissions, // ✅ Thêm permissions array
       },
-    });
+      userSub: sortedUserSubs.length > 0 ? sortedUserSubs[0] : null,
+      // allUserSubs: sortedUserSubs  // Thêm để debug
+    };
+
+    sendDetailResponse(res, userData);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    sendInternalErrorResponse(res, error.message);
   }
 });
 
@@ -282,7 +288,7 @@ router.get("/:id", async (req, res) => {
 router.put("/:id", async (req, res) => {
   try {
     const user = await User.findByPk(req.params.id);
-    if (!user) return res.status(404).json({ message: "User not found" });
+    if (!user) return sendNotFoundResponse(res, "User not found");
 
     // Update user information
     await user.update(req.body);
@@ -320,9 +326,9 @@ router.put("/:id", async (req, res) => {
       ],
     });
 
-    res.json(updatedUser);
+    sendUpdateResponse(res, updatedUser, "User updated successfully");
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    sendInternalErrorResponse(res, error.message);
   }
 });
 
@@ -330,12 +336,12 @@ router.put("/:id", async (req, res) => {
 router.delete("/:id", authMiddleware, adminMiddleware, async (req, res) => {
   try {
     const user = await User.findByPk(req.params.id);
-    if (!user) return res.status(404).json({ message: "User not found" });
+    if (!user) return sendNotFoundResponse(res, "User not found");
 
     await user.destroy();
-    res.json({ message: "User deleted successfully" });
+    sendDeleteResponse(res, "User deleted successfully");
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    sendInternalErrorResponse(res, error.message);
   }
 });
 const generateOtp = () =>
@@ -349,9 +355,12 @@ router.post("/register", async (req, res) => {
     // Kiểm tra xem email đã tồn tại chưa
     const existingUser = await User.findOne({ where: { email } });
     if (existingUser) {
-      return res
-        .status(400)
-        .json({ error: "Email đã được sử dụng. Vui lòng chọn email khác." });
+      return sendErrorResponse(
+        res,
+        "Email đã được sử dụng. Vui lòng chọn email khác.",
+        "DUPLICATE_EMAIL",
+        400
+      );
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
@@ -374,7 +383,7 @@ router.post("/register", async (req, res) => {
       attributes: ["id"],
     });
     if (!freeSub) {
-      return res.status(404).json({ error: "Không có subscription miễn phí" });
+      return sendNotFoundResponse(res, "Không có subscription miễn phí");
     }
 
     // Tạo bản ghi mới trong bảng UserSub
@@ -387,11 +396,13 @@ router.post("/register", async (req, res) => {
     });
 
     await sendOtpEmail(email, otp);
-    res.json({
-      message: "Mã OTP đã được gửi đến email. Vui lòng xác thực tài khoản.",
-    });
+    sendDetailResponse(
+      res,
+      { user_id: newUser.id },
+      "Mã OTP đã được gửi đến email. Vui lòng xác thực tài khoản."
+    );
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    sendInternalErrorResponse(res, error.message);
   }
 });
 // Gửi lại mã OTP
@@ -400,7 +411,12 @@ router.post("/resend-otp", async (req, res) => {
     const { email } = req.body;
 
     if (!email) {
-      return res.status(400).json({ error: "Vui lòng cung cấp địa chỉ email" });
+      return sendErrorResponse(
+        res,
+        "Vui lòng cung cấp địa chỉ email",
+        "VALIDATION_ERROR",
+        400
+      );
     }
 
     // Tìm user theo email
@@ -408,9 +424,10 @@ router.post("/resend-otp", async (req, res) => {
 
     // Kiểm tra người dùng tồn tại
     if (!user) {
-      return res
-        .status(404)
-        .json({ error: "Không tìm thấy tài khoản với email này" });
+      return sendNotFoundResponse(
+        res,
+        "Không tìm thấy tài khoản với email này"
+      );
     }
 
     // Kiểm tra nếu tài khoản đã được xác thực
@@ -430,11 +447,13 @@ router.post("/resend-otp", async (req, res) => {
     await sendOtpEmail(email, otp);
 
     // Trả về thông báo thành công
-    res.status(200).json({
-      message: "Mã OTP đã được gửi lại đến email. Vui lòng xác thực tài khoản.",
-    });
+    sendDetailResponse(
+      res,
+      { user_id: user.id },
+      "Mã OTP đã được gửi lại đến email. Vui lòng xác thực tài khoản."
+    );
   } catch (error) {
-    res.status(500).json({ error: "Đã xảy ra lỗi khi gửi lại mã OTP" });
+    sendInternalErrorResponse(res, "Đã xảy ra lỗi khi gửi lại mã OTP");
   }
 });
 // Xác thực OTP
@@ -459,7 +478,7 @@ router.post("/verify-otp", async (req, res) => {
 
     res.json({ message: "Tài khoản đã được xác thực thành công" });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    sendInternalErrorResponse(res, error.message);
   }
 });
 // Đăng nhập
@@ -555,7 +574,7 @@ router.post("/login", async (req, res) => {
     });
     //}
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    sendInternalErrorResponse(res, error.message);
   }
 });
 
@@ -684,7 +703,7 @@ router.post("/login-verify", async (req, res) => {
       },
     });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    sendInternalErrorResponse(res, error.message);
   }
 });
 // Đăng nhập bằng mật khẩu
@@ -821,7 +840,7 @@ router.post("/login-password", async (req, res) => {
       });
     }
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    sendInternalErrorResponse(res, error.message);
   }
 });
 // Cập nhật count_promt giảm 1 cho user theo id
@@ -984,7 +1003,7 @@ router.post("/forgot-password", async (req, res) => {
 
     res.json({ message: "Yêu cầu đặt lại mật khẩu đã được gửi" });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    sendInternalErrorResponse(res, error.message);
   }
 });
 // Đặt lại mật khẩu
@@ -1011,7 +1030,7 @@ router.post("/reset-password", async (req, res) => {
 
     res.json({ message: "Đặt lại mật khẩu thành công" });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    sendInternalErrorResponse(res, error.message);
   }
 });
 // Cập nhật gói đăng ký của user (Cho phép thay đổi sub_id)
@@ -1053,7 +1072,7 @@ router.put(
         subscription: userSub,
       });
     } catch (error) {
-      res.status(500).json({ error: error.message });
+      sendInternalErrorResponse(res, error.message);
     }
   }
 );
@@ -1082,7 +1101,7 @@ router.get(
       });
       res.json(subscriptions);
     } catch (error) {
-      res.status(500).json({ error: error.message });
+      sendInternalErrorResponse(res, error.message);
     }
   }
 );
@@ -1118,7 +1137,7 @@ router.post(
         subscription: userSub,
       });
     } catch (error) {
-      res.status(500).json({ error: error.message });
+      sendInternalErrorResponse(res, error.message);
     }
   }
 );
@@ -1139,7 +1158,7 @@ router.delete(
       await userSub.destroy();
       res.json({ message: "Subscription deleted successfully" });
     } catch (error) {
-      res.status(500).json({ error: error.message });
+      sendInternalErrorResponse(res, error.message);
     }
   }
 );
@@ -1187,7 +1206,7 @@ router.patch(
         newSubscription: newUserSub,
       });
     } catch (error) {
-      res.status(500).json({ error: error.message });
+      sendInternalErrorResponse(res, error.message);
     }
   }
 );
@@ -1483,7 +1502,7 @@ router.post(
       // Gửi file
       res.send(excelBuffer);
     } catch (error) {
-      res.status(500).json({ error: error.message });
+      sendInternalErrorResponse(res, error.message);
     }
   }
 );

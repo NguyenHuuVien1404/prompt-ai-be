@@ -9,6 +9,17 @@ const { getRolePermissions } = require("../utils/permissionUtils");
 const router = express.Router();
 const { Op } = require("sequelize");
 const sequelize = require("../config/database");
+const {
+  sendListResponse,
+  sendDetailResponse,
+  sendCreateResponse,
+  sendUpdateResponse,
+  sendDeleteResponse,
+  sendErrorResponse,
+  sendNotFoundResponse,
+  sendInternalErrorResponse,
+  calculatePagination,
+} = require("../utils/responseUtils");
 
 // Lấy danh sách tất cả roles
 router.get("/", authMiddleware, adminOrMarketerMiddleware, async (req, res) => {
@@ -18,16 +29,13 @@ router.get("/", authMiddleware, adminOrMarketerMiddleware, async (req, res) => {
       order: [["id", "ASC"]],
     });
 
-    res.json({
-      success: true,
-      data: roles,
-      total: roles.length,
-    });
+    sendListResponse(
+      res,
+      roles,
+      calculatePagination(roles.length, 1, roles.length)
+    );
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      error: error.message,
-    });
+    sendInternalErrorResponse(res, error.message);
   }
 });
 
@@ -41,21 +49,12 @@ router.get(
       const role = await Role.findByPk(req.params.id);
 
       if (!role) {
-        return res.status(404).json({
-          success: false,
-          message: "Role không tồn tại",
-        });
+        return sendNotFoundResponse(res, "Role không tồn tại");
       }
 
-      res.json({
-        success: true,
-        data: role,
-      });
+      sendDetailResponse(res, role);
     } catch (error) {
-      res.status(500).json({
-        success: false,
-        error: error.message,
-      });
+      sendInternalErrorResponse(res, error.message);
     }
   }
 );
@@ -68,10 +67,12 @@ router.post("/", authMiddleware, adminMiddleware, async (req, res) => {
     // Kiểm tra role name đã tồn tại chưa
     const existingRole = await Role.findOne({ where: { name } });
     if (existingRole) {
-      return res.status(400).json({
-        success: false,
-        message: "Tên role đã tồn tại",
-      });
+      return sendErrorResponse(
+        res,
+        "Tên role đã tồn tại",
+        "DUPLICATE_NAME",
+        400
+      );
     }
 
     const newRole = await Role.create({
@@ -81,16 +82,9 @@ router.post("/", authMiddleware, adminMiddleware, async (req, res) => {
       is_active: true,
     });
 
-    res.status(201).json({
-      success: true,
-      message: "Tạo role thành công",
-      data: newRole,
-    });
+    sendCreateResponse(res, newRole, "Tạo role thành công");
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      error: error.message,
-    });
+    sendInternalErrorResponse(res, error.message);
   }
 });
 
@@ -102,20 +96,19 @@ router.put("/:id", authMiddleware, adminMiddleware, async (req, res) => {
 
     const role = await Role.findByPk(roleId);
     if (!role) {
-      return res.status(404).json({
-        success: false,
-        message: "Role không tồn tại",
-      });
+      return sendNotFoundResponse(res, "Role không tồn tại");
     }
 
     // Kiểm tra nếu đổi tên thì tên mới có trùng không
     if (name && name !== role.name) {
       const existingRole = await Role.findOne({ where: { name } });
       if (existingRole) {
-        return res.status(400).json({
-          success: false,
-          message: "Tên role đã tồn tại",
-        });
+        return sendErrorResponse(
+          res,
+          "Tên role đã tồn tại",
+          "DUPLICATE_NAME",
+          400
+        );
       }
     }
 
@@ -127,16 +120,9 @@ router.put("/:id", authMiddleware, adminMiddleware, async (req, res) => {
       is_active: is_active !== undefined ? is_active : role.is_active,
     });
 
-    res.json({
-      success: true,
-      message: "Cập nhật role thành công",
-      data: role,
-    });
+    sendUpdateResponse(res, role, "Cập nhật role thành công");
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      error: error.message,
-    });
+    sendInternalErrorResponse(res, error.message);
   }
 });
 
@@ -147,34 +133,27 @@ router.delete("/:id", authMiddleware, adminMiddleware, async (req, res) => {
 
     const role = await Role.findByPk(roleId);
     if (!role) {
-      return res.status(404).json({
-        success: false,
-        message: "Role không tồn tại",
-      });
+      return sendNotFoundResponse(res, "Role không tồn tại");
     }
 
     // Kiểm tra xem có user nào đang sử dụng role này không
     const usersWithRole = await User.count({ where: { role_id: roleId } });
 
     if (usersWithRole > 0) {
-      return res.status(400).json({
-        success: false,
-        message: `Không thể xóa role này vì có ${usersWithRole} user đang sử dụng`,
-      });
+      return sendErrorResponse(
+        res,
+        `Không thể xóa role này vì có ${usersWithRole} user đang sử dụng`,
+        "ROLE_IN_USE",
+        400
+      );
     }
 
     // Soft delete bằng cách set is_active = false
     await role.update({ is_active: false });
 
-    res.json({
-      success: true,
-      message: "Xóa role thành công",
-    });
+    sendDeleteResponse(res, "Xóa role thành công");
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      error: error.message,
-    });
+    sendInternalErrorResponse(res, error.message);
   }
 });
 
@@ -189,24 +168,14 @@ router.patch(
 
       const role = await Role.findByPk(roleId);
       if (!role) {
-        return res.status(404).json({
-          success: false,
-          message: "Role không tồn tại",
-        });
+        return sendNotFoundResponse(res, "Role không tồn tại");
       }
 
       await role.update({ is_active: true });
 
-      res.json({
-        success: true,
-        message: "Khôi phục role thành công",
-        data: role,
-      });
+      sendUpdateResponse(res, role, "Khôi phục role thành công");
     } catch (error) {
-      res.status(500).json({
-        success: false,
-        error: error.message,
-      });
+      sendInternalErrorResponse(res, error.message);
     }
   }
 );

@@ -17,6 +17,17 @@ const {
 const checkSubTypeAccess = require("../middleware/subTypeMiddleware");
 const Industry = require("../models/Industry");
 const CategoryIndustry = require("../models/CategoryIndustry");
+const {
+  sendListResponse,
+  sendDetailResponse,
+  sendCreateResponse,
+  sendUpdateResponse,
+  sendDeleteResponse,
+  sendErrorResponse,
+  sendNotFoundResponse,
+  sendInternalErrorResponse,
+  calculatePagination,
+} = require("../utils/responseUtils");
 
 // Cấu hình Multer để lưu file vào thư mục "uploads"
 const storage = multer.diskStorage({
@@ -139,7 +150,12 @@ router.get("/test-cors", (req, res) => {
 router.post("/upload", authMiddleware, upload.any(), async (req, res) => {
   try {
     if (!req.files || req.files.length === 0) {
-      return res.status(400).json({ message: "No files uploaded" });
+      return sendErrorResponse(
+        res,
+        "No files uploaded",
+        "VALIDATION_ERROR",
+        400
+      );
     }
 
     const { runTask } = require("../utils/worker");
@@ -156,18 +172,17 @@ router.post("/upload", authMiddleware, upload.any(), async (req, res) => {
         throw new Error(result.error);
       }
 
-      res.status(200).json({
-        message: "Files uploaded and processed successfully",
-        // TODO
-        // imageUrls: result.imageUrls,
-        // Thêm URLs gốc để backup
-        imageUrls: req.files.map(
-          (file) =>
-            `${req.protocol}://${req.get("host")}/api/prompts/upload/${
-              file.filename
-            }`
-        ),
-      });
+      const imageUrls = req.files.map(
+        (file) =>
+          `${req.protocol}://${req.get("host")}/api/prompts/upload/${
+            file.filename
+          }`
+      );
+      sendCreateResponse(
+        res,
+        { imageUrls },
+        "Files uploaded and processed successfully"
+      );
     } catch (error) {
       const baseUrl = `${req.protocol}://${req.get("host")}`;
       const imageUrls = req.files.map(

@@ -8,6 +8,17 @@ const {
   authMiddleware,
   adminMiddleware,
 } = require("../middleware/authMiddleware");
+const {
+  sendListResponse,
+  sendDetailResponse,
+  sendCreateResponse,
+  sendUpdateResponse,
+  sendDeleteResponse,
+  sendErrorResponse,
+  sendNotFoundResponse,
+  sendInternalErrorResponse,
+  calculatePagination,
+} = require("../utils/responseUtils");
 const uploadDir = path.join(__dirname, "../uploads");
 
 const storage = multer.diskStorage({
@@ -71,17 +82,10 @@ router.get("/", async (req, res) => {
       order: [["created_at", "DESC"]],
     });
 
-    res.status(200).json({
-      data: rows,
-      total: count,
-      currentPage: parseInt(page),
-      pageSize: limit,
-      totalPages: Math.ceil(count / limit),
-    });
+    const pagination = calculatePagination(count, parseInt(page), limit);
+    sendListResponse(res, rows, pagination);
   } catch (error) {
-    res
-      .status(500)
-      .json({ message: "Error fetching products", error: error.message });
+    sendInternalErrorResponse(res, "Error fetching products: " + error.message);
   }
 });
 
@@ -94,14 +98,12 @@ router.get("/:id", async (req, res) => {
     });
 
     if (!product) {
-      return res.status(404).json({ message: "Product not found" });
+      return sendNotFoundResponse(res, "Product not found");
     }
 
-    res.status(200).json(product);
+    sendDetailResponse(res, product);
   } catch (error) {
-    res
-      .status(500)
-      .json({ message: "Error fetching product", error: error.message });
+    sendInternalErrorResponse(res, "Error fetching product: " + error.message);
   }
 });
 
@@ -112,15 +114,18 @@ router.post("/", upload.single("image"), async (req, res) => {
 
     // Validate required fields
     if (!name || !link || !section_id) {
-      return res.status(400).json({
-        message: "Name, link, and section_id are required",
-      });
+      return sendErrorResponse(
+        res,
+        "Name, link, and section_id are required",
+        "VALIDATION_ERROR",
+        400
+      );
     }
 
     // Kiểm tra section_id có tồn tại không
     const section = await Section.findByPk(section_id);
     if (!section) {
-      return res.status(404).json({ message: "Section not found" });
+      return sendNotFoundResponse(res, "Section not found");
     }
 
     // Lấy URL của ảnh từ req.file (nếu có)
@@ -134,11 +139,9 @@ router.post("/", upload.single("image"), async (req, res) => {
       section_id,
     });
 
-    res.status(201).json(newProduct);
+    sendCreateResponse(res, newProduct, "Product created successfully");
   } catch (error) {
-    res
-      .status(500)
-      .json({ message: "Error creating product", error: error.message });
+    sendInternalErrorResponse(res, "Error creating product: " + error.message);
   }
 });
 
@@ -150,14 +153,14 @@ router.put("/:id", upload.single("image"), async (req, res) => {
 
     const product = await Product.findByPk(productId);
     if (!product) {
-      return res.status(404).json({ message: "Product not found" });
+      return sendNotFoundResponse(res, "Product not found");
     }
 
     // Kiểm tra section_id nếu được cung cấp
     if (section_id) {
       const section = await Section.findByPk(section_id);
       if (!section) {
-        return res.status(404).json({ message: "Section not found" });
+        return sendNotFoundResponse(res, "Section not found");
       }
     }
 
@@ -178,11 +181,9 @@ router.put("/:id", upload.single("image"), async (req, res) => {
       include: [{ model: Section, attributes: ["id", "name"] }],
     });
 
-    res.status(200).json(updatedProduct);
+    sendUpdateResponse(res, updatedProduct, "Product updated successfully");
   } catch (error) {
-    res
-      .status(500)
-      .json({ message: "Error updating product", error: error.message });
+    sendInternalErrorResponse(res, "Error updating product: " + error.message);
   }
 });
 
@@ -193,15 +194,13 @@ router.delete("/:id", async (req, res) => {
     const product = await Product.findByPk(productId);
 
     if (!product) {
-      return res.status(404).json({ message: "Product not found" });
+      return sendNotFoundResponse(res, "Product not found");
     }
 
     await product.destroy();
-    res.status(200).json({ message: "Product deleted successfully" });
+    sendDeleteResponse(res, "Product deleted successfully");
   } catch (error) {
-    res
-      .status(500)
-      .json({ message: "Error deleting product", error: error.message });
+    sendInternalErrorResponse(res, "Error deleting product: " + error.message);
   }
 });
 

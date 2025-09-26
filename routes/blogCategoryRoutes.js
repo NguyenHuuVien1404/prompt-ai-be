@@ -5,13 +5,28 @@ const {
   authMiddleware,
   adminMiddleware,
 } = require("../middleware/authMiddleware");
+const {
+  sendListResponse,
+  sendDetailResponse,
+  sendCreateResponse,
+  sendUpdateResponse,
+  sendDeleteResponse,
+  sendErrorResponse,
+  sendNotFoundResponse,
+  sendInternalErrorResponse,
+  calculatePagination,
+} = require("../utils/responseUtils");
 // Lấy tất cả danh mục
 router.get("/", async (req, res) => {
   try {
     const categories = await BlogCategory.findAll();
-    res.json(categories);
+    sendListResponse(
+      res,
+      categories,
+      calculatePagination(categories.length, 1, categories.length)
+    );
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    sendInternalErrorResponse(res, error.message);
   }
 });
 // Lấy danh sách danh mục có phân trang
@@ -19,22 +34,19 @@ router.get("/list", async (req, res) => {
   try {
     const { page = 1, pageSize = 10 } = req.query;
     const offset = (page - 1) * pageSize;
+    const pageNum = parseInt(page);
+    const pageSizeNum = parseInt(pageSize);
 
     const { count, rows } = await BlogCategory.findAndCountAll({
       order: [["created_at", "DESC"]],
-      limit: parseInt(pageSize),
+      limit: pageSizeNum,
       offset: offset,
     });
 
-    res.json({
-      categories: rows,
-      totalItems: count,
-      totalPages: Math.ceil(count / pageSize),
-      currentPage: parseInt(page),
-      pageSize: parseInt(pageSize),
-    });
+    const pagination = calculatePagination(count, pageNum, pageSizeNum);
+    sendListResponse(res, rows, pagination);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    sendInternalErrorResponse(res, error.message);
   }
 });
 // Thêm danh mục mới
@@ -42,9 +54,9 @@ router.post("/", async (req, res) => {
   try {
     const { name, description, slug } = req.body;
     const category = await BlogCategory.create({ name, description, slug });
-    res.json(category);
+    sendCreateResponse(res, category, "Blog category created successfully");
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    sendInternalErrorResponse(res, error.message);
   }
 });
 
@@ -52,10 +64,18 @@ router.post("/", async (req, res) => {
 router.put("/:id", async (req, res) => {
   try {
     const { id } = req.params;
+    const category = await BlogCategory.findByPk(id);
+    if (!category) return sendNotFoundResponse(res, "Blog category not found");
+
     await BlogCategory.update(req.body, { where: { id } });
-    res.json({ message: "Updated successfully" });
+    const updatedCategory = await BlogCategory.findByPk(id);
+    sendUpdateResponse(
+      res,
+      updatedCategory,
+      "Blog category updated successfully"
+    );
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    sendInternalErrorResponse(res, error.message);
   }
 });
 
@@ -63,10 +83,13 @@ router.put("/:id", async (req, res) => {
 router.delete("/:id", async (req, res) => {
   try {
     const { id } = req.params;
+    const category = await BlogCategory.findByPk(id);
+    if (!category) return sendNotFoundResponse(res, "Blog category not found");
+
     await BlogCategory.destroy({ where: { id } });
-    res.json({ message: "Deleted successfully" });
+    sendDeleteResponse(res, "Blog category deleted successfully");
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    sendInternalErrorResponse(res, error.message);
   }
 });
 

@@ -14,6 +14,17 @@ const {
   adminMiddleware,
 } = require("../middleware/authMiddleware");
 const cache = require("../utils/cache");
+const {
+  sendListResponse,
+  sendDetailResponse,
+  sendCreateResponse,
+  sendUpdateResponse,
+  sendDeleteResponse,
+  sendErrorResponse,
+  sendNotFoundResponse,
+  sendInternalErrorResponse,
+  calculatePagination,
+} = require("../utils/responseUtils");
 
 // Cấu hình Multer để lưu file vào thư mục "uploads"
 const storage = multer.diskStorage({
@@ -118,7 +129,7 @@ router.get("/", async (req, res) => {
     }
 
     // Filter theo section_id
-    if (sectionId) {
+    if (sectionId && !isNaN(parseInt(sectionId))) {
       whereCondition.section_id = parseInt(sectionId);
     }
 
@@ -202,27 +213,15 @@ router.get("/", async (req, res) => {
       order: [["created_at", "DESC"]],
     });
 
-    const result = {
-      total: count,
-      page,
-      pageSize,
-      filters: {
-        type,
-        sectionId,
-        isCommingSoon,
-        searchTxt,
-        topicId,
-        industryId,
-      },
-      data: rows,
-    };
+    const pagination = calculatePagination(count, page, pageSize);
 
-    res.status(200).json(result);
+    sendListResponse(res, rows, pagination);
   } catch (error) {
     console.error("Error in GET /api/categories:", error);
-    res
-      .status(500)
-      .json({ message: "Error fetching categories", error: error.message });
+    sendInternalErrorResponse(
+      res,
+      "Error fetching categories: " + error.message
+    );
   }
 });
 
@@ -244,15 +243,13 @@ router.get("/:id", async (req, res) => {
     });
 
     if (!category) {
-      return res.status(404).json({ message: "Category not found" });
+      return sendNotFoundResponse(res, "Category not found");
     }
 
-    res.status(200).json(category);
+    sendDetailResponse(res, category);
   } catch (error) {
     console.error("Error in GET /api/categories/:id:", error);
-    res
-      .status(500)
-      .json({ message: "Error fetching category", error: error.message });
+    sendInternalErrorResponse(res, "Error fetching category: " + error.message);
   }
 });
 
@@ -267,16 +264,22 @@ router.post(
 
       // Validate required fields
       if (!name || !section_id) {
-        return res
-          .status(400)
-          .json({ message: "Name and section_id are required" });
+        return sendErrorResponse(
+          res,
+          "Name and section_id are required",
+          "VALIDATION_ERROR",
+          400
+        );
       }
 
       // Validate type field
       if (category_type && !["free", "premium"].includes(category_type)) {
-        return res
-          .status(400)
-          .json({ message: "Type must be either 'free' or 'premium'" });
+        return sendErrorResponse(
+          res,
+          "Type must be either 'free' or 'premium'",
+          "VALIDATION_ERROR",
+          400
+        );
       }
 
       // Lấy URL của ảnh từ req.files
@@ -310,11 +313,12 @@ router.post(
       //     cache.invalidateCache(`categories_by_section_${section_id}*`),
       // ]);
 
-      res.status(201).json(newCategory);
+      sendCreateResponse(res, newCategory, "Category created successfully");
     } catch (error) {
-      res
-        .status(500)
-        .json({ message: "Error creating category", error: error.message });
+      sendInternalErrorResponse(
+        res,
+        "Error creating category: " + error.message
+      );
     }
   }
 );
@@ -354,14 +358,17 @@ router.put(
       const category = await Category.findByPk(categoryId);
 
       if (!category) {
-        return res.status(404).json({ message: "Category not found" });
+        return sendNotFoundResponse(res, "Category not found");
       }
 
       // Validate type field if provided
       if (category_type && !["free", "premium"].includes(category_type)) {
-        return res
-          .status(400)
-          .json({ message: "Type must be either 'free' or 'premium'" });
+        return sendErrorResponse(
+          res,
+          "Type must be either 'free' or 'premium'",
+          "VALIDATION_ERROR",
+          400
+        );
       }
 
       const oldSectionId = category.section_id;
@@ -385,7 +392,9 @@ router.put(
         description:
           description !== undefined ? description : category.description,
         image_card,
-        section_id: parseInt(newSectionId) || oldSectionId,
+        section_id: !isNaN(parseInt(newSectionId))
+          ? parseInt(newSectionId)
+          : oldSectionId,
         is_comming_soon:
           is_comming_soon !== undefined
             ? parseBoolean(is_comming_soon)
@@ -445,12 +454,13 @@ router.put(
         ],
       });
 
-      res.status(200).json(updatedCategory);
+      sendUpdateResponse(res, updatedCategory, "Category updated successfully");
     } catch (error) {
       console.error("Error in PUT /api/categories/:id:", error);
-      res
-        .status(500)
-        .json({ message: "Error updating category", error: error.message });
+      sendInternalErrorResponse(
+        res,
+        "Error updating category: " + error.message
+      );
     }
   }
 );
@@ -462,10 +472,7 @@ router.delete("/:id", async (req, res) => {
     const category = await Category.findByPk(categoryId);
 
     if (!category) {
-      return res.status(404).json({
-        success: false,
-        message: "Category not found",
-      });
+      return sendNotFoundResponse(res, "Category not found");
     }
 
     const sectionId = category.section_id;
@@ -480,21 +487,9 @@ router.delete("/:id", async (req, res) => {
     //     cache.invalidateCache(`categories_by_section_${sectionId}*`),
     // ]);
 
-    res.status(200).json({
-      success: true,
-      message: "Category deleted successfully",
-      data: {
-        id: categoryId,
-        name: categoryName,
-        section_id: sectionId,
-      },
-    });
+    sendDeleteResponse(res, "Category deleted successfully");
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: "Error deleting category",
-      error: error.message,
-    });
+    sendInternalErrorResponse(res, "Error deleting category: " + error.message);
   }
 });
 
@@ -507,9 +502,12 @@ router.get("/by-type/:type", async (req, res) => {
 
     // Validate type parameter
     if (!["free", "premium"].includes(type)) {
-      return res
-        .status(400)
-        .json({ message: "Type must be either 'free' or 'premium'" });
+      return sendErrorResponse(
+        res,
+        "Type must be either 'free' or 'premium'",
+        "VALIDATION_ERROR",
+        400
+      );
     }
 
     const offset = (page - 1) * pageSize;
@@ -522,20 +520,14 @@ router.get("/by-type/:type", async (req, res) => {
       order: [["created_at", "DESC"]],
     });
 
-    const result = {
-      type,
-      total: count,
-      page,
-      pageSize,
-      data: rows,
-    };
+    const pagination = calculatePagination(count, page, pageSize);
 
-    res.status(200).json(result);
+    sendListResponse(res, rows, pagination);
   } catch (error) {
-    res.status(500).json({
-      message: "Error fetching categories by type",
-      error: error.message,
-    });
+    sendInternalErrorResponse(
+      res,
+      "Error fetching categories by type: " + error.message
+    );
   }
 });
 
@@ -549,7 +541,18 @@ router.get("/by-sectionId/:sectionId", async (req, res) => {
     const type = req.query.type;
     const industry_id = req.query.industry_id; // Thêm industry filtering
 
-    let whereCondition = { section_id: sectionId };
+    // Validate sectionId
+    const parsedSectionId = parseInt(sectionId);
+    if (isNaN(parsedSectionId)) {
+      return sendErrorResponse(
+        res,
+        "Invalid sectionId",
+        "VALIDATION_ERROR",
+        400
+      );
+    }
+
+    let whereCondition = { section_id: parsedSectionId };
 
     // Thêm filter theo type nếu có
     if (type && ["free", "premium"].includes(type)) {
@@ -623,13 +626,8 @@ router.get("/by-sectionId/:sectionId", async (req, res) => {
 
       if (categoryIds.length === 0) {
         // Không có category nào match industry filter
-        return res.status(200).json({
-          section_id: sectionId,
-          type: type || "all",
-          industry_id: industry_id || "all",
-          total: 0,
-          data: [],
-        });
+        const pagination = calculatePagination(0, 1, 10);
+        return sendListResponse(res, [], pagination);
       }
 
       // Bước 2: Query categories với prompt count (không include industries)
@@ -688,15 +686,13 @@ router.get("/by-sectionId/:sectionId", async (req, res) => {
         return categoryData;
       });
 
-      const result = {
-        section_id: sectionId,
-        type: type || "all",
-        industry_id: industry_id || "all",
-        total: modifiedCategories.length,
-        data: modifiedCategories,
-      };
+      const pagination = calculatePagination(
+        modifiedCategories.length,
+        1,
+        modifiedCategories.length
+      );
 
-      return res.status(200).json(result);
+      return sendListResponse(res, modifiedCategories, pagination);
     } else {
       // Không có industry filter, query bình thường (không include industries trong GROUP BY)
       categories = await Category.findAll({
@@ -754,22 +750,20 @@ router.get("/by-sectionId/:sectionId", async (req, res) => {
         return categoryData;
       });
 
-      const result = {
-        section_id: sectionId,
-        type: type || "all",
-        industry_id: industry_id || "all",
-        total: modifiedCategories.length,
-        data: modifiedCategories,
-      };
+      const pagination = calculatePagination(
+        modifiedCategories.length,
+        1,
+        modifiedCategories.length
+      );
 
-      res.status(200).json(result);
+      sendListResponse(res, modifiedCategories, pagination);
     }
   } catch (error) {
     console.error("Error in /by-sectionId/:sectionId:", error);
-    res.status(500).json({
-      message: "Error fetching categories by section",
-      error: error.message,
-    });
+    sendInternalErrorResponse(
+      res,
+      "Error fetching categories by section: " + error.message
+    );
   }
 });
 
