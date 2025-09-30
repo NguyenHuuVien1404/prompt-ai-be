@@ -17,6 +17,7 @@ const {
 const checkSubTypeAccess = require("../middleware/subTypeMiddleware");
 const Industry = require("../models/Industry");
 const CategoryIndustry = require("../models/CategoryIndustry");
+const PromptIndustry = require("../models/PromptIndustry");
 
 // Cấu hình Multer để lưu file vào thư mục "uploads"
 const storage = multer.diskStorage({
@@ -61,7 +62,7 @@ const fileFilter = (req, file, cb) => {
 const upload = multer({
   storage: storage,
   fileFilter: fileFilter,
-  limits: { fileSize: 5 * 1024 * 1024 }, // Giới hạn file tối đa 5MB
+  limits: { fileSize: 50 * 1024 * 1024 }, // Giới hạn file tối đa 50MB
 });
 
 // Tạo middleware riêng cho Excel files
@@ -97,7 +98,7 @@ const excelFileFilter = (req, file, cb) => {
 const uploadExcel = multer({
   storage: excelStorage,
   fileFilter: excelFileFilter,
-  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
+  limits: { fileSize: 100 * 1024 * 1024 }, // 100MB cho Excel files
 });
 
 // Cho phép truy cập ảnh đã upload với CORS headers
@@ -655,25 +656,14 @@ router.get("/", authMiddleware, checkSubTypeAccess, async (req, res) => {
       where.topic_id = req.query.topic_id;
     }
 
-    // Handle industry filter - need to find categories that belong to this industry
-    let industryFilter = null;
+    // Handle industry filter - filter directly on Prompt's industries
     if (req.query.industry_id) {
-      industryFilter = {
-        model: Category,
-        attributes: ["id", "name", "image", "image_card", "section_id"],
-        include: [
-          {
-            model: Section,
-            attributes: ["id", "name", "description"],
-          },
-          {
-            model: Industry,
-            as: "industries",
-            where: { id: req.query.industry_id },
-            attributes: ["id", "name", "description"],
-            through: { attributes: [] },
-          },
-        ],
+      includeArray[2] = {
+        model: Industry,
+        as: "promptIndustries",
+        where: { id: req.query.industry_id },
+        attributes: ["id", "name", "description"],
+        through: { attributes: [] },
         required: true,
       };
     }
@@ -737,12 +727,6 @@ router.get("/", authMiddleware, checkSubTypeAccess, async (req, res) => {
             model: Section,
             attributes: ["id", "name", "description"],
           },
-          {
-            model: Industry,
-            as: "industries",
-            attributes: ["id", "name", "description"],
-            through: { attributes: [] }, // Exclude join table attributes
-          },
         ],
       },
       {
@@ -750,12 +734,13 @@ router.get("/", authMiddleware, checkSubTypeAccess, async (req, res) => {
         as: "topic",
         attributes: ["id", "name"],
       },
+      {
+        model: Industry,
+        as: "promptIndustries",
+        attributes: ["id", "name", "description"],
+        through: { attributes: [] },
+      },
     ];
-
-    // Add industry filter if specified
-    if (industryFilter) {
-      includeArray[0] = industryFilter;
-    }
 
     const { count, rows } = await Prompt.findAndCountAll({
       where,
@@ -829,15 +814,15 @@ router.get("/by-category", checkSubTypeAccess, async (req, res) => {
               model: Section,
               attributes: ["id", "name", "description"],
             },
-            {
-              model: Industry,
-              as: "industries",
-              attributes: ["id", "name", "description"],
-              through: { attributes: [] },
-            },
           ],
         },
         { model: Topic, as: "topic", attributes: ["id", "name"] },
+        {
+          model: Industry,
+          as: "promptIndustries",
+          attributes: ["id", "name", "description"],
+          through: { attributes: [] },
+        },
       ],
       limit: pageSize,
       offset: offset,
@@ -938,15 +923,15 @@ router.get("/newest", checkSubTypeAccess, async (req, res) => {
               model: Section,
               attributes: ["id", "name", "description"],
             },
-            {
-              model: Industry,
-              as: "industries",
-              attributes: ["id", "name", "description"],
-              through: { attributes: [] },
-            },
           ],
         },
         { model: Topic, as: "topic", attributes: ["id", "name"] },
+        {
+          model: Industry,
+          as: "promptIndustries",
+          attributes: ["id", "name", "description"],
+          through: { attributes: [] },
+        },
       ],
       limit: 30,
       order: [["created_at", "DESC"]],
@@ -982,15 +967,15 @@ router.get("/:id", authMiddleware, checkSubTypeAccess, async (req, res) => {
               model: Section,
               attributes: ["id", "name", "description"],
             },
-            {
-              model: Industry,
-              as: "industries",
-              attributes: ["id", "name", "description"],
-              through: { attributes: [] },
-            },
           ],
         },
         { model: Topic, as: "topic", attributes: ["id", "name"] },
+        {
+          model: Industry,
+          as: "promptIndustries",
+          attributes: ["id", "name", "description"],
+          through: { attributes: [] },
+        },
       ],
     });
 
@@ -1056,7 +1041,7 @@ router.post(
         return res.status(400).json({ message: "Invalid topic_id" });
       }
 
-      // Handle industry_id array - link industries to category
+      // Handle industry_id array - link industries directly to prompt
       if (req.body.industry_id && Array.isArray(req.body.industry_id)) {
         const industryIds = req.body.industry_id;
 
@@ -1071,14 +1056,14 @@ router.post(
           });
         }
 
-        // Create category-industry relationships
-        const categoryIndustryData = industryIds.map((industryId) => ({
-          category_id: req.body.category_id,
+        // Create prompt-industry relationships
+        const promptIndustryData = industryIds.map((industryId) => ({
+          prompt_id: newPrompt.id,
           industry_id: industryId,
           created_at: new Date(),
         }));
 
-        await CategoryIndustry.bulkCreate(categoryIndustryData);
+        await PromptIndustry.bulkCreate(promptIndustryData);
       }
 
       // Set default values for optional fields
@@ -1114,15 +1099,15 @@ router.post(
                 model: Section,
                 attributes: ["id", "name", "description"],
               },
-              {
-                model: Industry,
-                as: "industries",
-                attributes: ["id", "name", "description"],
-                through: { attributes: [] },
-              },
             ],
           },
           { model: Topic, as: "topic", attributes: ["id", "name"] },
+          {
+            model: Industry,
+            as: "promptIndustries",
+            attributes: ["id", "name", "description"],
+            through: { attributes: [] },
+          },
         ],
       });
 
@@ -1168,37 +1153,35 @@ router.put(
         }
       }
 
-      // Handle industry_id array - link industries to category
+      // Handle industry_id array - link industries directly to prompt
       if (req.body.industry_id && Array.isArray(req.body.industry_id)) {
         const industryIds = req.body.industry_id;
-        const categoryId = req.body.category_id || prompt.category_id;
+        const promptId = req.params.id;
 
-        if (categoryId) {
-          // Validate all industry IDs exist
-          const industries = await Industry.findAll({
-            where: { id: industryIds },
+        // Validate all industry IDs exist
+        const industries = await Industry.findAll({
+          where: { id: industryIds },
+        });
+
+        if (industries.length !== industryIds.length) {
+          return res.status(400).json({
+            message: "Some industry IDs are invalid",
           });
-
-          if (industries.length !== industryIds.length) {
-            return res.status(400).json({
-              message: "Some industry IDs are invalid",
-            });
-          }
-
-          // Remove existing category-industry relationships
-          await CategoryIndustry.destroy({
-            where: { category_id: categoryId },
-          });
-
-          // Create new category-industry relationships
-          const categoryIndustryData = industryIds.map((industryId) => ({
-            category_id: categoryId,
-            industry_id: industryId,
-            created_at: new Date(),
-          }));
-
-          await CategoryIndustry.bulkCreate(categoryIndustryData);
         }
+
+        // Remove existing prompt-industry relationships
+        await PromptIndustry.destroy({
+          where: { prompt_id: promptId },
+        });
+
+        // Create new prompt-industry relationships
+        const promptIndustryData = industryIds.map((industryId) => ({
+          prompt_id: promptId,
+          industry_id: industryId,
+          created_at: new Date(),
+        }));
+
+        await PromptIndustry.bulkCreate(promptIndustryData);
       }
 
       // Remove industry_id from update data as it's not a field in Prompt table
@@ -1219,15 +1202,15 @@ router.put(
                 model: Section,
                 attributes: ["id", "name", "description"],
               },
-              {
-                model: Industry,
-                as: "industries",
-                attributes: ["id", "name", "description"],
-                through: { attributes: [] },
-              },
             ],
           },
           { model: Topic, as: "topic", attributes: ["id", "name"] },
+          {
+            model: Industry,
+            as: "promptIndustries",
+            attributes: ["id", "name", "description"],
+            through: { attributes: [] },
+          },
         ],
       });
 
@@ -1261,5 +1244,124 @@ router.delete("/:id", authMiddleware, adminMiddleware, async (req, res) => {
       .json({ message: "Error deleting prompt", error: error.message });
   }
 });
+
+// Get industries of a specific prompt
+router.get("/:id/industries", authMiddleware, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const prompt = await Prompt.findByPk(id, {
+      include: [
+        {
+          model: Industry,
+          as: "promptIndustries",
+          attributes: ["id", "name", "description"],
+          through: { attributes: [] },
+        },
+      ],
+    });
+
+    if (!prompt) {
+      return res.status(404).json({ message: "Prompt not found" });
+    }
+
+    res.status(200).json({
+      prompt_id: id,
+      industries: prompt.promptIndustries,
+    });
+  } catch (error) {
+    res.status(500).json({
+      message: "Error fetching prompt industries",
+      error: error.message,
+    });
+  }
+});
+
+// Add industry to prompt
+router.post(
+  "/:id/industries/:industryId",
+  authMiddleware,
+  adminMiddleware,
+  async (req, res) => {
+    try {
+      const { id, industryId } = req.params;
+
+      // Check if prompt exists
+      const prompt = await Prompt.findByPk(id);
+      if (!prompt) {
+        return res.status(404).json({ message: "Prompt not found" });
+      }
+
+      // Check if industry exists
+      const industry = await Industry.findByPk(industryId);
+      if (!industry) {
+        return res.status(404).json({ message: "Industry not found" });
+      }
+
+      // Check if relationship already exists
+      const existingRelation = await PromptIndustry.findOne({
+        where: { prompt_id: id, industry_id: industryId },
+      });
+
+      if (existingRelation) {
+        return res.status(400).json({
+          message: "Industry already linked to this prompt",
+        });
+      }
+
+      // Create relationship
+      await PromptIndustry.create({
+        prompt_id: id,
+        industry_id: industryId,
+      });
+
+      res.status(201).json({
+        message: "Industry linked to prompt successfully",
+        prompt_id: id,
+        industry_id: industryId,
+      });
+    } catch (error) {
+      res.status(500).json({
+        message: "Error linking industry to prompt",
+        error: error.message,
+      });
+    }
+  }
+);
+
+// Remove industry from prompt
+router.delete(
+  "/:id/industries/:industryId",
+  authMiddleware,
+  adminMiddleware,
+  async (req, res) => {
+    try {
+      const { id, industryId } = req.params;
+
+      const relation = await PromptIndustry.findOne({
+        where: { prompt_id: id, industry_id: industryId },
+      });
+
+      if (!relation) {
+        return res.status(404).json({
+          message: "Industry not linked to this prompt",
+        });
+      }
+
+      await relation.destroy();
+
+      res.status(200).json({
+        message: "Industry unlinked from prompt successfully",
+        prompt_id: id,
+        industry_id: industryId,
+      });
+    } catch (error) {
+      res.status(500).json({
+        message: "Error unlinking industry from prompt",
+        error: error.message,
+      });
+    }
+  }
+);
 
 module.exports = router;

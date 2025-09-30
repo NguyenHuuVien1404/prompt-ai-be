@@ -56,7 +56,7 @@ const fileFilter = (req, file, cb) => {
 const upload = multer({
   storage: storage,
   fileFilter: fileFilter,
-  limits: { fileSize: 5 * 1024 * 1024 }, // Giới hạn file tối đa 5MB
+  limits: { fileSize: 50 * 1024 * 1024 }, // Giới hạn file tối đa 50MB
 });
 
 router.use("/upload", express.static("uploads")); // Cho phép truy cập ảnh đã upload
