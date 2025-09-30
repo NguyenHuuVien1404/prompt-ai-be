@@ -656,18 +656,6 @@ router.get("/", authMiddleware, checkSubTypeAccess, async (req, res) => {
       where.topic_id = req.query.topic_id;
     }
 
-    // Handle industry filter - filter directly on Prompt's industries
-    if (req.query.industry_id) {
-      includeArray[2] = {
-        model: Industry,
-        as: "promptIndustries",
-        where: { id: req.query.industry_id },
-        attributes: ["id", "name", "description"],
-        through: { attributes: [] },
-        required: true,
-      };
-    }
-
     if (req.query.search) {
       const searchTerm = `%${req.query.search}%`;
       where[Op.or] = [
@@ -742,7 +730,25 @@ router.get("/", authMiddleware, checkSubTypeAccess, async (req, res) => {
       },
     ];
 
-    const { count, rows } = await Prompt.findAndCountAll({
+    // Handle industry filter - modify include array after it's defined
+    if (req.query.industry_id) {
+      includeArray[2] = {
+        model: Industry,
+        as: "promptIndustries",
+        where: { id: req.query.industry_id },
+        attributes: ["id", "name", "description"],
+        through: { attributes: [] },
+        required: true,
+      };
+    }
+
+    // Get total count without includes to avoid JOIN counting issues
+    const totalCount = await Prompt.count({
+      where,
+    });
+
+    // Get actual data with includes
+    const rows = await Prompt.findAll({
       where,
       include: includeArray,
       limit: pageSize,
@@ -751,7 +757,7 @@ router.get("/", authMiddleware, checkSubTypeAccess, async (req, res) => {
     });
 
     const result = {
-      total: count,
+      total: totalCount,
       page,
       pageSize,
       data: rows,
@@ -803,33 +809,71 @@ router.get("/by-category", checkSubTypeAccess, async (req, res) => {
       ];
     }
 
-    const { count, rows } = await Prompt.findAndCountAll({
+    // Build include array
+    const includeArray = [
+      {
+        model: Category,
+        attributes: ["id", "name", "image", "image_card"],
+        include: [
+          {
+            model: Section,
+            attributes: ["id", "name", "description"],
+          },
+        ],
+      },
+      { model: Topic, as: "topic", attributes: ["id", "name"] },
+      {
+        model: Industry,
+        as: "promptIndustries",
+        attributes: ["id", "name", "description"],
+        through: { attributes: [] },
+      },
+    ];
+
+    // Handle industry filter - modify include array after it's defined
+    if (req.query.industry_id) {
+      const industryIds = Array.isArray(req.query.industry_id)
+        ? req.query.industry_id
+        : req.query.industry_id.split(",").map((id) => parseInt(id.trim()));
+
+      includeArray[2] = {
+        model: Industry,
+        as: "promptIndustries",
+        where: { id: industryIds },
+        attributes: ["id", "name", "description"],
+        through: { attributes: [] },
+        required: true,
+      };
+    }
+
+    // Get total count - use same logic as data query for industry filtering
+    let countQuery;
+    if (req.query.industry_id) {
+      countQuery = await Prompt.findAndCountAll({
+        where: whereCondition,
+        include: [includeArray[2]], // Only include industry filter for count
+        distinct: true,
+        col: "id",
+      });
+    } else {
+      countQuery = await Prompt.findAndCountAll({
+        where: whereCondition,
+        distinct: true,
+        col: "id",
+      });
+    }
+    const totalCount = countQuery.count;
+
+    // Get actual data with includes
+    const rows = await Prompt.findAll({
       where: whereCondition,
-      include: [
-        {
-          model: Category,
-          attributes: ["id", "name", "image", "image_card"],
-          include: [
-            {
-              model: Section,
-              attributes: ["id", "name", "description"],
-            },
-          ],
-        },
-        { model: Topic, as: "topic", attributes: ["id", "name"] },
-        {
-          model: Industry,
-          as: "promptIndustries",
-          attributes: ["id", "name", "description"],
-          through: { attributes: [] },
-        },
-      ],
+      include: includeArray,
       limit: pageSize,
       offset: offset,
     });
 
     const result = {
-      total: count,
+      total: totalCount,
       page,
       pageSize,
       data: rows,
