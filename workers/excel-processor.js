@@ -7,6 +7,7 @@ const {
   Topic,
   Industry,
   CategoryIndustry,
+  PromptIndustry,
 } = require("../models");
 
 // Function to process Excel file
@@ -448,6 +449,55 @@ async function processExcelFile(filePath) {
               // Insert new prompt
               promptRecord.created_at = new Date();
               resultPrompt = await Prompt.create(promptRecord, { transaction });
+            }
+
+            // Handle industry relationships for both insert and update
+            if (promptData.industry_names && resultPrompt) {
+              try {
+                // Parse industry names from the data
+                const industryNames = promptData.industry_names
+                  .split(", ")
+                  .map((name) => name.trim())
+                  .filter((name) => name);
+
+                if (industryNames.length > 0) {
+                  // Find or create industries by name
+                  const industries = await Industry.findAll({
+                    where: { name: industryNames },
+                    transaction,
+                  });
+
+                  if (industries.length > 0) {
+                    // Remove existing relationships for this prompt
+                    await PromptIndustry.destroy({
+                      where: { prompt_id: resultPrompt.id },
+                      transaction,
+                    });
+
+                    // Create new relationships
+                    const promptIndustryData = industries.map((industry) => ({
+                      prompt_id: resultPrompt.id,
+                      industry_id: industry.id,
+                      created_at: new Date(),
+                    }));
+
+                    await PromptIndustry.bulkCreate(promptIndustryData, {
+                      transaction,
+                    });
+                    console.log(
+                      `Row ${promptData.rowIndex + 1}: Linked ${
+                        industries.length
+                      } industries to prompt ${resultPrompt.id}`
+                    );
+                  }
+                }
+              } catch (industryError) {
+                console.warn(
+                  `Row ${promptData.rowIndex + 1}: Error linking industries: ${
+                    industryError.message
+                  }`
+                );
+              }
             }
 
             // Store processed records for response

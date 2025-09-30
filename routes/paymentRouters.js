@@ -28,6 +28,33 @@ const {
   calculatePagination,
 } = require("../utils/responseUtils");
 
+// Utility function to convert snake_case to camelCase
+const toCamelCase = (str) => {
+  return str.replace(/_([a-z])/g, (match, letter) => letter.toUpperCase());
+};
+
+// Utility function to transform object fields from snake_case to camelCase
+const transformToCamelCase = (obj) => {
+  if (!obj || typeof obj !== "object") return obj;
+
+  if (Array.isArray(obj)) {
+    return obj.map(transformToCamelCase);
+  }
+
+  const transformed = {};
+  for (const [key, value] of Object.entries(obj)) {
+    const camelKey = toCamelCase(key);
+    if (value && typeof value === "object" && !Array.isArray(value)) {
+      transformed[camelKey] = transformToCamelCase(value);
+    } else if (Array.isArray(value)) {
+      transformed[camelKey] = value.map(transformToCamelCase);
+    } else {
+      transformed[camelKey] = value;
+    }
+  }
+  return transformed;
+};
+
 router.get("/", function (req, res, next) {
   res.render("orderlist", { title: "Danh sách đơn hàng" });
 });
@@ -135,7 +162,7 @@ router.post("/create_payment_url", async function (req, res, next) {
     vnpUrl += "?" + querystring.stringify(vnp_Params, { encode: false });
     sendCreateResponse(
       res,
-      { paymentUrl: vnpUrl },
+      transformToCamelCase({ paymentUrl: vnpUrl }),
       "Payment URL created successfully"
     );
   } catch (error) {
@@ -164,7 +191,7 @@ router.get("/vnpay_return", async function (req, res, next) {
       result = { code: vnp_Params["vnp_ResponseCode"] };
     }
 
-    sendDetailResponse(res, result);
+    sendDetailResponse(res, transformToCamelCase(result));
   } catch (error) {
     sendInternalErrorResponse(res, "Server error");
   }

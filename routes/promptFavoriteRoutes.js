@@ -21,6 +21,33 @@ const {
   sendInternalErrorResponse,
   calculatePagination,
 } = require("../utils/responseUtils");
+
+// Utility function to convert snake_case to camelCase
+const toCamelCase = (str) => {
+  return str.replace(/_([a-z])/g, (match, letter) => letter.toUpperCase());
+};
+
+// Utility function to transform object fields from snake_case to camelCase
+const transformToCamelCase = (obj) => {
+  if (!obj || typeof obj !== "object") return obj;
+
+  if (Array.isArray(obj)) {
+    return obj.map(transformToCamelCase);
+  }
+
+  const transformed = {};
+  for (const [key, value] of Object.entries(obj)) {
+    const camelKey = toCamelCase(key);
+    if (value && typeof value === "object" && !Array.isArray(value)) {
+      transformed[camelKey] = transformToCamelCase(value);
+    } else if (Array.isArray(value)) {
+      transformed[camelKey] = value.map(transformToCamelCase);
+    } else {
+      transformed[camelKey] = value;
+    }
+  }
+  return transformed;
+};
 router.get("/:userId", async (req, res) => {
   try {
     const userId = req.params.userId;
@@ -30,7 +57,7 @@ router.get("/:userId", async (req, res) => {
 
     sendListResponse(
       res,
-      data,
+      transformToCamelCase(data),
       calculatePagination(data.length, 1, data.length)
     );
   } catch (error) {
@@ -60,7 +87,11 @@ router.post("/", async (req, res) => {
       prompt_id,
     });
 
-    sendCreateResponse(res, newFavorite, "Prompt favorite added successfully");
+    sendCreateResponse(
+      res,
+      transformToCamelCase(newFavorite),
+      "Prompt favorite added successfully"
+    );
   } catch (error) {
     sendInternalErrorResponse(
       res,
@@ -145,7 +176,7 @@ router.get("/list/by-section", async (req, res) => {
 
     sendListResponse(
       res,
-      data,
+      transformToCamelCase(data),
       calculatePagination(data.length, 1, data.length)
     );
   } catch (error) {

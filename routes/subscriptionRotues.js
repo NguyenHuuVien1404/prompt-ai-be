@@ -17,13 +17,40 @@ const {
   sendInternalErrorResponse,
   calculatePagination,
 } = require("../utils/responseUtils");
+
+// Utility function to convert snake_case to camelCase
+const toCamelCase = (str) => {
+  return str.replace(/_([a-z])/g, (match, letter) => letter.toUpperCase());
+};
+
+// Utility function to transform object fields from snake_case to camelCase
+const transformToCamelCase = (obj) => {
+  if (!obj || typeof obj !== "object") return obj;
+
+  if (Array.isArray(obj)) {
+    return obj.map(transformToCamelCase);
+  }
+
+  const transformed = {};
+  for (const [key, value] of Object.entries(obj)) {
+    const camelKey = toCamelCase(key);
+    if (value && typeof value === "object" && !Array.isArray(value)) {
+      transformed[camelKey] = transformToCamelCase(value);
+    } else if (Array.isArray(value)) {
+      transformed[camelKey] = value.map(transformToCamelCase);
+    } else {
+      transformed[camelKey] = value;
+    }
+  }
+  return transformed;
+};
 // 📌 Lấy danh sách Subscription
 router.get("/", async (req, res) => {
   try {
     const subscriptions = await Subscription.findAll();
     sendListResponse(
       res,
-      subscriptions,
+      transformToCamelCase(subscriptions),
       calculatePagination(subscriptions.length, 1, subscriptions.length)
     );
   } catch (error) {
@@ -61,7 +88,7 @@ router.get("/list", async (req, res) => {
     });
 
     const pagination = calculatePagination(count, page, limit);
-    sendListResponse(res, rows, pagination);
+    sendListResponse(res, transformToCamelCase(rows), pagination);
   } catch (error) {
     sendInternalErrorResponse(res, error.message);
   }
@@ -88,7 +115,7 @@ router.get("/by-duration", async (req, res) => {
 
     sendListResponse(
       res,
-      subscriptions,
+      transformToCamelCase(subscriptions),
       calculatePagination(subscriptions.length, 1, subscriptions.length)
     );
   } catch (error) {
@@ -127,7 +154,7 @@ router.get("/by-duration-and-type", async (req, res) => {
     if (!subscriptions) {
       return sendNotFoundResponse(res, "Không tìm thấy Subscription!");
     }
-    sendDetailResponse(res, subscriptions);
+    sendDetailResponse(res, transformToCamelCase(subscriptions));
   } catch (error) {
     sendInternalErrorResponse(
       res,
@@ -142,7 +169,7 @@ router.get("/:id", async (req, res) => {
     if (!subscription) {
       return sendNotFoundResponse(res, "Không tìm thấy Subscription!");
     }
-    sendDetailResponse(res, subscription);
+    sendDetailResponse(res, transformToCamelCase(subscription));
   } catch (error) {
     sendInternalErrorResponse(res, "Lỗi khi lấy Subscription!");
   }
@@ -183,7 +210,7 @@ router.post("/", authMiddleware, adminMiddleware, async (req, res) => {
 
     sendCreateResponse(
       res,
-      newSubscription,
+      transformToCamelCase(newSubscription),
       "Subscription created successfully"
     );
   } catch (error) {
@@ -229,7 +256,11 @@ router.put("/:id", authMiddleware, adminMiddleware, async (req, res) => {
       is_popular,
     });
 
-    sendUpdateResponse(res, subscription, "Subscription updated successfully");
+    sendUpdateResponse(
+      res,
+      transformToCamelCase(subscription),
+      "Subscription updated successfully"
+    );
   } catch (error) {
     sendInternalErrorResponse(res, "Lỗi khi cập nhật Subscription!");
   }

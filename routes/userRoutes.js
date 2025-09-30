@@ -33,6 +33,33 @@ const {
   calculatePagination,
 } = require("../utils/responseUtils");
 
+// Utility function to convert snake_case to camelCase
+const toCamelCase = (str) => {
+  return str.replace(/_([a-z])/g, (match, letter) => letter.toUpperCase());
+};
+
+// Utility function to transform object fields from snake_case to camelCase
+const transformToCamelCase = (obj) => {
+  if (!obj || typeof obj !== "object") return obj;
+
+  if (Array.isArray(obj)) {
+    return obj.map(transformToCamelCase);
+  }
+
+  const transformed = {};
+  for (const [key, value] of Object.entries(obj)) {
+    const camelKey = toCamelCase(key);
+    if (value && typeof value === "object" && !Array.isArray(value)) {
+      transformed[camelKey] = transformToCamelCase(value);
+    } else if (Array.isArray(value)) {
+      transformed[camelKey] = value.map(transformToCamelCase);
+    } else {
+      transformed[camelKey] = value;
+    }
+  }
+  return transformed;
+};
+
 // Cấu hình Multer để lưu file vào thư mục "uploads"
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
@@ -73,7 +100,7 @@ const fileFilter = (req, file, cb) => {
 const upload = multer({
   storage: storage,
   fileFilter: fileFilter,
-  limits: { fileSize: 5 * 1024 * 1024 }, // Giới hạn file tối đa 5MB
+  limits: { fileSize: 50 * 1024 * 1024 }, // Giới hạn file tối đa 50MB
 });
 router.use("/upload", express.static("uploads")); // Cho phép truy cập ảnh đã upload
 
@@ -84,15 +111,23 @@ router.post(
   adminOrMarketerMiddleware,
   async (req, res) => {
     try {
-      // Lấy tham số từ request body thay vì query
+      // Lấy tham số từ request body thay vì query - support both camelCase and snake_case
       let {
         page = 1,
         pageSize = 10,
         search,
+        accountStatus,
         account_status,
+        isVerified,
         is_verified,
         role,
       } = req.body;
+
+      // Normalize to snake_case for database queries
+      const account_status_normalized =
+        accountStatus !== undefined ? accountStatus : account_status;
+      const is_verified_normalized =
+        isVerified !== undefined ? isVerified : is_verified;
 
       // Đảm bảo các tham số số nguyên không bị NaN
       page = parseInt(page) || 1; // Mặc định là 1 nếu không phải số
@@ -113,8 +148,11 @@ router.post(
       }
 
       // Lọc theo trạng thái
-      if (account_status !== undefined && account_status !== null) {
-        const parsedStatus = parseInt(account_status);
+      if (
+        account_status_normalized !== undefined &&
+        account_status_normalized !== null
+      ) {
+        const parsedStatus = parseInt(account_status_normalized);
         // Chỉ thêm nếu là số hợp lệ
         if (!isNaN(parsedStatus)) {
           whereConditions.account_status = parsedStatus;
@@ -122,11 +160,14 @@ router.post(
       }
 
       // Lọc theo tình trạng xác thực
-      if (is_verified !== undefined && is_verified !== null) {
-        if (typeof is_verified === "string") {
-          whereConditions.is_verified = is_verified === "true";
+      if (
+        is_verified_normalized !== undefined &&
+        is_verified_normalized !== null
+      ) {
+        if (typeof is_verified_normalized === "string") {
+          whereConditions.is_verified = is_verified_normalized === "true";
         } else {
-          whereConditions.is_verified = !!is_verified;
+          whereConditions.is_verified = !!is_verified_normalized;
         }
       }
 
@@ -189,13 +230,19 @@ router.post(
           roleName = roleMap[plainRow.role] || "Unknown";
         }
 
-        return {
+        const transformedRow = {
           ...plainRow,
-          sub_id: plainRow.UserSubs?.[0]?.sub_id || null,
+          subId: plainRow.UserSubs?.[0]?.sub_id || null,
           UserSubs: undefined, // Remove the UserSubs array
-          role_name: roleName,
+          roleName: roleName,
           Role: undefined, // Remove the Role object
         };
+
+        // Remove snake_case fields that have camelCase equivalents
+        delete transformedRow.sub_id;
+        delete transformedRow.role_name;
+
+        return transformToCamelCase(transformedRow);
       });
 
       const pagination = calculatePagination(count, page, pageSize);
@@ -210,7 +257,11 @@ router.post(
 router.post("/", authMiddleware, adminMiddleware, async (req, res) => {
   try {
     const user = await User.create(req.body);
-    sendCreateResponse(res, user, "User created successfully");
+    sendCreateResponse(
+      res,
+      transformToCamelCase(user),
+      "User created successfully"
+    );
   } catch (error) {
     sendInternalErrorResponse(res, error.message);
   }
@@ -239,8 +290,8 @@ router.get("/:id", async (req, res) => {
       .map((us) => ({
         // id: us.id,
         status: us.status,
-        start_date: us.start_date,
-        end_date: us.end_date,
+        startDate: us.start_date,
+        endDate: us.end_date,
         // token: us.token,
         subscription: {
           name: us.Subscription
@@ -270,15 +321,18 @@ router.get("/:id", async (req, res) => {
     }
 
     const userData = {
-      user: {
+      user: transformToCamelCase({
         ...user.toJSON(),
         permissions: permissions, // ✅ Thêm permissions array
-      },
-      userSub: sortedUserSubs.length > 0 ? sortedUserSubs[0] : null,
+      }),
+      userSub:
+        sortedUserSubs.length > 0
+          ? transformToCamelCase(sortedUserSubs[0])
+          : null,
       // allUserSubs: sortedUserSubs  // Thêm để debug
     };
 
-    sendDetailResponse(res, userData);
+    sendDetailResponse(res, transformToCamelCase(userData));
   } catch (error) {
     sendInternalErrorResponse(res, error.message);
   }
@@ -293,21 +347,22 @@ router.put("/:id", async (req, res) => {
     // Update user information
     await user.update(req.body);
 
-    // Update subscription if sub_id is provided
-    if (req.body.sub_id) {
+    // Update subscription if subId or sub_id is provided
+    const subId = req.body.subId || req.body.sub_id;
+    if (subId) {
       const userSub = await UserSub.findOne({
         where: { user_id: req.params.id, status: 1 },
       });
 
       if (userSub) {
         await userSub.update({
-          sub_id: req.body.sub_id,
+          sub_id: subId,
         });
       } else {
         // Create new subscription if none exists
         await UserSub.create({
           user_id: req.params.id,
-          sub_id: req.body.sub_id,
+          sub_id: subId,
           status: 1,
           start_date: new Date(),
           end_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days from now
@@ -326,7 +381,11 @@ router.put("/:id", async (req, res) => {
       ],
     });
 
-    sendUpdateResponse(res, updatedUser, "User updated successfully");
+    sendUpdateResponse(
+      res,
+      transformToCamelCase(updatedUser),
+      "User updated successfully"
+    );
   } catch (error) {
     sendInternalErrorResponse(res, error.message);
   }
@@ -398,7 +457,7 @@ router.post("/register", async (req, res) => {
     await sendOtpEmail(email, otp);
     sendDetailResponse(
       res,
-      { user_id: newUser.id },
+      { userId: newUser.id },
       "Mã OTP đã được gửi đến email. Vui lòng xác thực tài khoản."
     );
   } catch (error) {
@@ -449,7 +508,7 @@ router.post("/resend-otp", async (req, res) => {
     // Trả về thông báo thành công
     sendDetailResponse(
       res,
-      { user_id: user.id },
+      { userId: user.id },
       "Mã OTP đã được gửi lại đến email. Vui lòng xác thực tài khoản."
     );
   } catch (error) {
@@ -476,7 +535,11 @@ router.post("/verify-otp", async (req, res) => {
     user.otp_code = null;
     await user.save();
 
-    sendDetailResponse(res, null, "Tài khoản đã được xác thực thành công");
+    sendDetailResponse(
+      res,
+      transformToCamelCase(null),
+      "Tài khoản đã được xác thực thành công"
+    );
   } catch (error) {
     sendInternalErrorResponse(res, error.message);
   }
@@ -694,14 +757,21 @@ router.post("/login-verify", async (req, res) => {
         fullName: user.full_name,
         email: user.email,
         role: user.role,
-        count_prompt: user.count_promt,
-        updated_at: user.updated_at,
-        profile_image: user.profile_image,
+        countPrompt: user.count_promt,
+        updatedAt: user.updated_at,
+        profileImage: user.profile_image,
         permissions: permissions, // ✅ Thêm permissions vào response
-        userSub: sortedUserSubs.length > 0 ? sortedUserSubs[0] : null, // Lấy userSub có type lớn nhất
+        userSub:
+          sortedUserSubs.length > 0
+            ? transformToCamelCase(sortedUserSubs[0])
+            : null, // Lấy userSub có type lớn nhất
       },
     };
-    sendDetailResponse(res, userData, "Đăng nhập thành công");
+    sendDetailResponse(
+      res,
+      transformToCamelCase(userData),
+      "Đăng nhập thành công"
+    );
   } catch (error) {
     sendInternalErrorResponse(res, error.message);
   }
@@ -814,14 +884,21 @@ router.post("/login-password", async (req, res) => {
           fullName: user.full_name,
           email: user.email,
           role: user.role,
-          count_prompt: user.count_promt,
-          updated_at: user.updated_at,
-          profile_image: user.profile_image,
+          countPrompt: user.count_promt,
+          updatedAt: user.updated_at,
+          profileImage: user.profile_image,
           permissions: permissions, // ✅ Thêm permissions vào response
-          userSub: sortedUserSubs.length > 0 ? sortedUserSubs[0] : null,
+          userSub:
+            sortedUserSubs.length > 0
+              ? transformToCamelCase(sortedUserSubs[0])
+              : null,
         },
       };
-      sendDetailResponse(res, userData, "Đăng nhập thành công");
+      sendDetailResponse(
+        res,
+        transformToCamelCase(userData),
+        "Đăng nhập thành công"
+      );
     } else {
       // Tài khoản chưa xác thực - tạo OTP mới và gửi
       const otp = generateOtp();
@@ -1001,7 +1078,11 @@ router.post("/forgot-password", async (req, res) => {
     // Gửi email chứa mã OTP
     await sendOtpEmail(email, otp);
 
-    sendDetailResponse(res, null, "Yêu cầu đặt lại mật khẩu đã được gửi");
+    sendDetailResponse(
+      res,
+      transformToCamelCase(null),
+      "Yêu cầu đặt lại mật khẩu đã được gửi"
+    );
   } catch (error) {
     sendInternalErrorResponse(res, error.message);
   }

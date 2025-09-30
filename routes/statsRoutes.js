@@ -20,6 +20,33 @@ const {
   calculatePagination,
 } = require("../utils/responseUtils");
 
+// Utility function to convert snake_case to camelCase
+const toCamelCase = (str) => {
+  return str.replace(/_([a-z])/g, (match, letter) => letter.toUpperCase());
+};
+
+// Utility function to transform object fields from snake_case to camelCase
+const transformToCamelCase = (obj) => {
+  if (!obj || typeof obj !== "object") return obj;
+
+  if (Array.isArray(obj)) {
+    return obj.map(transformToCamelCase);
+  }
+
+  const transformed = {};
+  for (const [key, value] of Object.entries(obj)) {
+    const camelKey = toCamelCase(key);
+    if (value && typeof value === "object" && !Array.isArray(value)) {
+      transformed[camelKey] = transformToCamelCase(value);
+    } else if (Array.isArray(value)) {
+      transformed[camelKey] = value.map(transformToCamelCase);
+    } else {
+      transformed[camelKey] = value;
+    }
+  }
+  return transformed;
+};
+
 // Thống kê users theo role
 router.get(
   "/users-by-role",
@@ -61,7 +88,7 @@ router.get(
         total_roles: roleStats.length,
         total_users: roleStats.reduce((sum, stat) => sum + stat.user_count, 0),
       };
-      sendDetailResponse(res, statsData);
+      sendDetailResponse(res, transformToCamelCase(statsData));
     } catch (error) {
       sendInternalErrorResponse(res, error.message);
     }
@@ -108,7 +135,7 @@ router.get(
         role_distribution: roleStats,
         status_distribution: statusStats,
       };
-      sendDetailResponse(res, overviewData);
+      sendDetailResponse(res, transformToCamelCase(overviewData));
     } catch (error) {
       sendInternalErrorResponse(res, error.message);
     }

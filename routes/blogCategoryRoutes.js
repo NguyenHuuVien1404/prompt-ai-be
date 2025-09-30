@@ -16,13 +16,40 @@ const {
   sendInternalErrorResponse,
   calculatePagination,
 } = require("../utils/responseUtils");
+
+// Utility function to convert snake_case to camelCase
+const toCamelCase = (str) => {
+  return str.replace(/_([a-z])/g, (match, letter) => letter.toUpperCase());
+};
+
+// Utility function to transform object fields from snake_case to camelCase
+const transformToCamelCase = (obj) => {
+  if (!obj || typeof obj !== "object") return obj;
+
+  if (Array.isArray(obj)) {
+    return obj.map(transformToCamelCase);
+  }
+
+  const transformed = {};
+  for (const [key, value] of Object.entries(obj)) {
+    const camelKey = toCamelCase(key);
+    if (value && typeof value === "object" && !Array.isArray(value)) {
+      transformed[camelKey] = transformToCamelCase(value);
+    } else if (Array.isArray(value)) {
+      transformed[camelKey] = value.map(transformToCamelCase);
+    } else {
+      transformed[camelKey] = value;
+    }
+  }
+  return transformed;
+};
 // Lấy tất cả danh mục
 router.get("/", async (req, res) => {
   try {
     const categories = await BlogCategory.findAll();
     sendListResponse(
       res,
-      categories,
+      transformToCamelCase(categories),
       calculatePagination(categories.length, 1, categories.length)
     );
   } catch (error) {
@@ -44,7 +71,7 @@ router.get("/list", async (req, res) => {
     });
 
     const pagination = calculatePagination(count, pageNum, pageSizeNum);
-    sendListResponse(res, rows, pagination);
+    sendListResponse(res, transformToCamelCase(rows), pagination);
   } catch (error) {
     sendInternalErrorResponse(res, error.message);
   }
@@ -54,7 +81,11 @@ router.post("/", async (req, res) => {
   try {
     const { name, description, slug } = req.body;
     const category = await BlogCategory.create({ name, description, slug });
-    sendCreateResponse(res, category, "Blog category created successfully");
+    sendCreateResponse(
+      res,
+      transformToCamelCase(category),
+      "Blog category created successfully"
+    );
   } catch (error) {
     sendInternalErrorResponse(res, error.message);
   }
@@ -71,7 +102,7 @@ router.put("/:id", async (req, res) => {
     const updatedCategory = await BlogCategory.findByPk(id);
     sendUpdateResponse(
       res,
-      updatedCategory,
+      transformToCamelCase(updatedCategory),
       "Blog category updated successfully"
     );
   } catch (error) {

@@ -17,13 +17,40 @@ const {
   calculatePagination,
 } = require("../utils/responseUtils");
 
+// Utility function to convert snake_case to camelCase
+const toCamelCase = (str) => {
+  return str.replace(/_([a-z])/g, (match, letter) => letter.toUpperCase());
+};
+
+// Utility function to transform object fields from snake_case to camelCase
+const transformToCamelCase = (obj) => {
+  if (!obj || typeof obj !== "object") return obj;
+
+  if (Array.isArray(obj)) {
+    return obj.map(transformToCamelCase);
+  }
+
+  const transformed = {};
+  for (const [key, value] of Object.entries(obj)) {
+    const camelKey = toCamelCase(key);
+    if (value && typeof value === "object" && !Array.isArray(value)) {
+      transformed[camelKey] = transformToCamelCase(value);
+    } else if (Array.isArray(value)) {
+      transformed[camelKey] = value.map(transformToCamelCase);
+    } else {
+      transformed[camelKey] = value;
+    }
+  }
+  return transformed;
+};
+
 // Lấy tất cả lịch sử
 router.get("/", async (req, res) => {
   try {
     const histories = await History.findAll();
     sendListResponse(
       res,
-      histories,
+      transformToCamelCase(histories),
       calculatePagination(histories.length, 1, histories.length)
     );
   } catch (error) {
@@ -46,7 +73,7 @@ router.get("/list", async (req, res) => {
     });
 
     const pagination = calculatePagination(count, pageNum, pageSizeNum);
-    sendListResponse(res, rows, pagination);
+    sendListResponse(res, transformToCamelCase(rows), pagination);
   } catch (error) {
     sendInternalErrorResponse(res, error.message);
   }
@@ -57,7 +84,11 @@ router.post("/", async (req, res) => {
   try {
     const { title, request, respone, user_id } = req.body;
     const history = await History.create({ title, request, respone, user_id });
-    sendCreateResponse(res, history, "History created successfully");
+    sendCreateResponse(
+      res,
+      transformToCamelCase(history),
+      "History created successfully"
+    );
   } catch (error) {
     sendInternalErrorResponse(res, error.message);
   }
@@ -72,7 +103,11 @@ router.put("/:id", async (req, res) => {
 
     await History.update(req.body, { where: { id } });
     const updatedHistory = await History.findByPk(id);
-    sendUpdateResponse(res, updatedHistory, "History updated successfully");
+    sendUpdateResponse(
+      res,
+      transformToCamelCase(updatedHistory),
+      "History updated successfully"
+    );
   } catch (error) {
     sendInternalErrorResponse(res, error.message);
   }
@@ -107,7 +142,7 @@ router.get("/user/:user_id", async (req, res) => {
 
     sendListResponse(
       res,
-      histories,
+      transformToCamelCase(histories),
       calculatePagination(histories.length, 1, histories.length)
     );
   } catch (error) {

@@ -19,6 +19,33 @@ const {
   sendInternalErrorResponse,
   calculatePagination,
 } = require("../utils/responseUtils");
+
+// Utility function to convert snake_case to camelCase
+const toCamelCase = (str) => {
+  return str.replace(/_([a-z])/g, (match, letter) => letter.toUpperCase());
+};
+
+// Utility function to transform object fields from snake_case to camelCase
+const transformToCamelCase = (obj) => {
+  if (!obj || typeof obj !== "object") return obj;
+
+  if (Array.isArray(obj)) {
+    return obj.map(transformToCamelCase);
+  }
+
+  const transformed = {};
+  for (const [key, value] of Object.entries(obj)) {
+    const camelKey = toCamelCase(key);
+    if (value && typeof value === "object" && !Array.isArray(value)) {
+      transformed[camelKey] = transformToCamelCase(value);
+    } else if (Array.isArray(value)) {
+      transformed[camelKey] = value.map(transformToCamelCase);
+    } else {
+      transformed[camelKey] = value;
+    }
+  }
+  return transformed;
+};
 const uploadDir = path.join(__dirname, "../uploads");
 
 const storage = multer.diskStorage({
@@ -62,7 +89,7 @@ const fileFilter = (req, file, cb) => {
 const upload = multer({
   storage: storage,
   fileFilter: fileFilter,
-  limits: { fileSize: 5 * 1024 * 1024 }, // Giới hạn file tối đa 5MB
+  limits: { fileSize: 50 * 1024 * 1024 }, // Giới hạn file tối đa 50MB
 });
 
 router.use("/uploads", express.static(uploadDir)); // Cho phép truy cập ảnh đã upload
@@ -83,7 +110,7 @@ router.get("/", async (req, res) => {
     });
 
     const pagination = calculatePagination(count, parseInt(page), limit);
-    sendListResponse(res, rows, pagination);
+    sendListResponse(res, transformToCamelCase(rows), pagination);
   } catch (error) {
     sendInternalErrorResponse(res, "Error fetching products: " + error.message);
   }
@@ -101,7 +128,7 @@ router.get("/:id", async (req, res) => {
       return sendNotFoundResponse(res, "Product not found");
     }
 
-    sendDetailResponse(res, product);
+    sendDetailResponse(res, transformToCamelCase(product));
   } catch (error) {
     sendInternalErrorResponse(res, "Error fetching product: " + error.message);
   }
@@ -139,7 +166,11 @@ router.post("/", upload.single("image"), async (req, res) => {
       section_id,
     });
 
-    sendCreateResponse(res, newProduct, "Product created successfully");
+    sendCreateResponse(
+      res,
+      transformToCamelCase(newProduct),
+      "Product created successfully"
+    );
   } catch (error) {
     sendInternalErrorResponse(res, "Error creating product: " + error.message);
   }
@@ -181,7 +212,11 @@ router.put("/:id", upload.single("image"), async (req, res) => {
       include: [{ model: Section, attributes: ["id", "name"] }],
     });
 
-    sendUpdateResponse(res, updatedProduct, "Product updated successfully");
+    sendUpdateResponse(
+      res,
+      transformToCamelCase(updatedProduct),
+      "Product updated successfully"
+    );
   } catch (error) {
     sendInternalErrorResponse(res, "Error updating product: " + error.message);
   }

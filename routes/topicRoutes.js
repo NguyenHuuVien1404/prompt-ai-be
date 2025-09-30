@@ -17,13 +17,40 @@ const {
   sendInternalErrorResponse,
   calculatePagination,
 } = require("../utils/responseUtils");
+
+// Utility function to convert snake_case to camelCase
+const toCamelCase = (str) => {
+  return str.replace(/_([a-z])/g, (match, letter) => letter.toUpperCase());
+};
+
+// Utility function to transform object fields from snake_case to camelCase
+const transformToCamelCase = (obj) => {
+  if (!obj || typeof obj !== "object") return obj;
+
+  if (Array.isArray(obj)) {
+    return obj.map(transformToCamelCase);
+  }
+
+  const transformed = {};
+  for (const [key, value] of Object.entries(obj)) {
+    const camelKey = toCamelCase(key);
+    if (value && typeof value === "object" && !Array.isArray(value)) {
+      transformed[camelKey] = transformToCamelCase(value);
+    } else if (Array.isArray(value)) {
+      transformed[camelKey] = value.map(transformToCamelCase);
+    } else {
+      transformed[camelKey] = value;
+    }
+  }
+  return transformed;
+};
 // Lấy danh sách chủ đề
 router.get("/", async (req, res) => {
   try {
     const topics = await Topic.findAll();
     sendListResponse(
       res,
-      topics,
+      transformToCamelCase(topics),
       calculatePagination(topics.length, 1, topics.length)
     );
   } catch (error) {
@@ -43,7 +70,7 @@ router.get("/list", async (req, res) => {
     const { count, rows } = await Topic.findAndCountAll({ limit, offset });
 
     const pagination = calculatePagination(count, page, pageSize);
-    sendListResponse(res, rows, pagination);
+    sendListResponse(res, transformToCamelCase(rows), pagination);
   } catch (error) {
     sendInternalErrorResponse(res, error.message);
   }
@@ -54,7 +81,7 @@ router.get("/:id", async (req, res) => {
   try {
     const topic = await Topic.findByPk(req.params.id);
     if (!topic) return sendNotFoundResponse(res, "Không tìm thấy chủ đề");
-    sendDetailResponse(res, topic);
+    sendDetailResponse(res, transformToCamelCase(topic));
   } catch (error) {
     sendInternalErrorResponse(res, error.message);
   }
@@ -65,7 +92,11 @@ router.post("/", async (req, res) => {
   try {
     const { name, description } = req.body;
     const topic = await Topic.create({ name, description });
-    sendCreateResponse(res, topic, "Topic created successfully");
+    sendCreateResponse(
+      res,
+      transformToCamelCase(topic),
+      "Topic created successfully"
+    );
   } catch (error) {
     sendInternalErrorResponse(res, error.message);
   }
@@ -79,7 +110,11 @@ router.put("/:id", async (req, res) => {
     if (!topic) return sendNotFoundResponse(res, "Không tìm thấy chủ đề");
 
     await topic.update({ name });
-    sendUpdateResponse(res, topic, "Topic updated successfully");
+    sendUpdateResponse(
+      res,
+      transformToCamelCase(topic),
+      "Topic updated successfully"
+    );
   } catch (error) {
     sendInternalErrorResponse(res, error.message);
   }

@@ -21,6 +21,33 @@ const {
   sendInternalErrorResponse,
   calculatePagination,
 } = require("../utils/responseUtils");
+
+// Utility function to convert snake_case to camelCase
+const toCamelCase = (str) => {
+  return str.replace(/_([a-z])/g, (match, letter) => letter.toUpperCase());
+};
+
+// Utility function to transform object fields from snake_case to camelCase
+const transformToCamelCase = (obj) => {
+  if (!obj || typeof obj !== "object") return obj;
+
+  if (Array.isArray(obj)) {
+    return obj.map(transformToCamelCase);
+  }
+
+  const transformed = {};
+  for (const [key, value] of Object.entries(obj)) {
+    const camelKey = toCamelCase(key);
+    if (value && typeof value === "object" && !Array.isArray(value)) {
+      transformed[camelKey] = transformToCamelCase(value);
+    } else if (Array.isArray(value)) {
+      transformed[camelKey] = value.map(transformToCamelCase);
+    } else {
+      transformed[camelKey] = value;
+    }
+  }
+  return transformed;
+};
 // Cấu hình nodemailer
 const transporter = nodemailer.createTransport({
   service: "gmail",
@@ -36,7 +63,7 @@ router.get("/", authMiddleware, adminMiddleware, async (req, res) => {
     const contacts = await Contact.findAll();
     sendListResponse(
       res,
-      contacts,
+      transformToCamelCase(contacts),
       calculatePagination(contacts.length, 1, contacts.length)
     );
   } catch (error) {
@@ -108,7 +135,7 @@ router.get("/list", authMiddleware, adminMiddleware, async (req, res) => {
 
     // Trả về dữ liệu phân trang
     const pagination = calculatePagination(count, page, pageSize);
-    sendListResponse(res, rowsWithDeadline, pagination);
+    sendListResponse(res, transformToCamelCase(rowsWithDeadline), pagination);
   } catch (error) {
     sendInternalErrorResponse(res, error.message);
   }
@@ -249,7 +276,11 @@ router.post("/", async (req, res) => {
       type,
       phone_number,
     });
-    sendCreateResponse(res, newContact, "Contact created successfully");
+    sendCreateResponse(
+      res,
+      transformToCamelCase(newContact),
+      "Contact created successfully"
+    );
   } catch (error) {
     sendErrorResponse(res, error.message, "VALIDATION_ERROR", 400);
   }
@@ -290,7 +321,11 @@ router.post("/add-email", async (req, res) => {
       status: status ?? 1,
     });
 
-    sendCreateResponse(res, newContact, "Email added successfully");
+    sendCreateResponse(
+      res,
+      transformToCamelCase(newContact),
+      "Email added successfully"
+    );
   } catch (error) {
     sendInternalErrorResponse(res, error.message);
   }
@@ -309,7 +344,11 @@ router.put("/:id", authMiddleware, adminMiddleware, async (req, res) => {
     contact.reply = reply;
     await contact.save();
 
-    sendUpdateResponse(res, contact, "Contact updated successfully");
+    sendUpdateResponse(
+      res,
+      transformToCamelCase(contact),
+      "Contact updated successfully"
+    );
   } catch (error) {
     sendErrorResponse(res, error.message, "UPDATE_ERROR", 400);
   }

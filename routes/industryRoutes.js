@@ -17,6 +17,33 @@ const {
   calculatePagination,
 } = require("../utils/responseUtils");
 
+// Utility function to convert snake_case to camelCase
+const toCamelCase = (str) => {
+  return str.replace(/_([a-z])/g, (match, letter) => letter.toUpperCase());
+};
+
+// Utility function to transform object fields from snake_case to camelCase
+const transformToCamelCase = (obj) => {
+  if (!obj || typeof obj !== "object") return obj;
+
+  if (Array.isArray(obj)) {
+    return obj.map(transformToCamelCase);
+  }
+
+  const transformed = {};
+  for (const [key, value] of Object.entries(obj)) {
+    const camelKey = toCamelCase(key);
+    if (value && typeof value === "object" && !Array.isArray(value)) {
+      transformed[camelKey] = transformToCamelCase(value);
+    } else if (Array.isArray(value)) {
+      transformed[camelKey] = value.map(transformToCamelCase);
+    } else {
+      transformed[camelKey] = value;
+    }
+  }
+  return transformed;
+};
+
 // Lấy tất cả industries với pagination và search
 router.get("/", async (req, res) => {
   try {
@@ -52,7 +79,7 @@ router.get("/", async (req, res) => {
     const hasPrevPage = pageNumber > 1;
 
     const pagination = calculatePagination(totalCount, pageNumber, limit);
-    sendListResponse(res, industries, pagination);
+    sendListResponse(res, transformToCamelCase(industries), pagination);
   } catch (error) {
     console.error("Error fetching industries:", error);
     sendInternalErrorResponse(res, "Lỗi máy chủ nội bộ");
@@ -69,7 +96,7 @@ router.get("/:id", async (req, res) => {
       return sendNotFoundResponse(res, "Không tìm thấy ngành nghề");
     }
 
-    sendDetailResponse(res, industry);
+    sendDetailResponse(res, transformToCamelCase(industry));
   } catch (error) {
     console.error("Error fetching industry by ID:", error);
     sendInternalErrorResponse(res, "Lỗi máy chủ nội bộ");
@@ -95,7 +122,7 @@ router.get("/by-category/:categoryId", async (req, res) => {
 
     sendListResponse(
       res,
-      industries,
+      transformToCamelCase(industries),
       calculatePagination(industries.length, 1, industries.length)
     );
   } catch (error) {
@@ -123,7 +150,7 @@ router.get("/:industryId/categories", async (req, res) => {
 
     sendListResponse(
       res,
-      categories,
+      transformToCamelCase(categories),
       calculatePagination(categories.length, 1, categories.length)
     );
   } catch (error) {
@@ -146,7 +173,11 @@ router.post("/", authMiddleware, adminMiddleware, async (req, res) => {
       description,
     });
 
-    sendCreateResponse(res, industry, "Tạo ngành nghề thành công");
+    sendCreateResponse(
+      res,
+      transformToCamelCase(industry),
+      "Tạo ngành nghề thành công"
+    );
   } catch (error) {
     console.error("Error creating industry:", error);
     sendInternalErrorResponse(res, "Lỗi máy chủ nội bộ");
@@ -170,7 +201,11 @@ router.put("/:id", authMiddleware, adminMiddleware, async (req, res) => {
         description !== undefined ? description : industry.description,
     });
 
-    sendUpdateResponse(res, industry, "Cập nhật ngành nghề thành công");
+    sendUpdateResponse(
+      res,
+      transformToCamelCase(industry),
+      "Cập nhật ngành nghề thành công"
+    );
   } catch (error) {
     console.error("Error updating industry:", error);
     sendInternalErrorResponse(res, "Lỗi máy chủ nội bộ");
@@ -268,7 +303,7 @@ router.post(
 
       sendCreateResponse(
         res,
-        categoryIndustry,
+        transformToCamelCase(categoryIndustry),
         "Tạo liên kết danh mục-ngành nghề thành công"
       );
     } catch (error) {

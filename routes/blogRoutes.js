@@ -22,6 +22,33 @@ const {
   sendInternalErrorResponse,
   calculatePagination,
 } = require("../utils/responseUtils");
+
+// Utility function to convert snake_case to camelCase
+const toCamelCase = (str) => {
+  return str.replace(/_([a-z])/g, (match, letter) => letter.toUpperCase());
+};
+
+// Utility function to transform object fields from snake_case to camelCase
+const transformToCamelCase = (obj) => {
+  if (!obj || typeof obj !== "object") return obj;
+
+  if (Array.isArray(obj)) {
+    return obj.map(transformToCamelCase);
+  }
+
+  const transformed = {};
+  for (const [key, value] of Object.entries(obj)) {
+    const camelKey = toCamelCase(key);
+    if (value && typeof value === "object" && !Array.isArray(value)) {
+      transformed[camelKey] = transformToCamelCase(value);
+    } else if (Array.isArray(value)) {
+      transformed[camelKey] = value.map(transformToCamelCase);
+    } else {
+      transformed[camelKey] = value;
+    }
+  }
+  return transformed;
+};
 // Cấu hình storage cho multer
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
@@ -55,7 +82,7 @@ const upload = multer({
   storage: storage,
   fileFilter: fileFilter,
   limits: {
-    fileSize: 5 * 1024 * 1024, // 5MB
+    fileSize: 50 * 1024 * 1024, // 50MB
   },
 }).single("featured_image");
 
@@ -103,7 +130,7 @@ router.get("/", async (req, res) => {
       include: [{ model: BlogCategory, as: "category", attributes: ["name"] }],
     });
     const pagination = calculatePagination(blogs.length, 1, blogs.length);
-    sendListResponse(res, blogs, pagination);
+    sendListResponse(res, transformToCamelCase(blogs), pagination);
   } catch (error) {
     sendInternalErrorResponse(res, error.message);
   }
@@ -132,7 +159,7 @@ router.get("/list", async (req, res) => {
     });
 
     const pagination = calculatePagination(count, page, pageSize);
-    sendListResponse(res, rows, pagination);
+    sendListResponse(res, transformToCamelCase(rows), pagination);
   } catch (error) {
     sendInternalErrorResponse(res, error.message);
   }
@@ -149,7 +176,7 @@ router.get("/by-category/:categoryId", async (req, res) => {
     });
 
     const pagination = calculatePagination(count, page, limit);
-    sendListResponse(res, blogs, pagination);
+    sendListResponse(res, transformToCamelCase(blogs), pagination);
   } catch (error) {
     sendInternalErrorResponse(res, error.message);
   }
@@ -166,7 +193,7 @@ router.get("/:id", async (req, res) => {
       return sendNotFoundResponse(res, "Blog không tồn tại");
     }
 
-    sendDetailResponse(res, blog);
+    sendDetailResponse(res, transformToCamelCase(blog));
   } catch (error) {
     sendInternalErrorResponse(res, error.message);
   }
@@ -222,7 +249,11 @@ router.post("/", handleUpload, validateBlogData, async (req, res) => {
     }
 
     const blog = await Blog.create(blogData);
-    sendCreateResponse(res, blog, "Blog created successfully");
+    sendCreateResponse(
+      res,
+      transformToCamelCase(blog),
+      "Blog created successfully"
+    );
   } catch (error) {
     // Xóa file nếu có lỗi khi tạo blog
     if (req.file) {
@@ -291,7 +322,11 @@ router.put("/:id", handleUpload, validateBlogData, async (req, res) => {
     }
 
     await blog.update(blogData);
-    sendUpdateResponse(res, blog, "Blog updated successfully");
+    sendUpdateResponse(
+      res,
+      transformToCamelCase(blog),
+      "Blog updated successfully"
+    );
   } catch (error) {
     // Xóa file mới nếu có lỗi khi cập nhật
     if (req.file) {

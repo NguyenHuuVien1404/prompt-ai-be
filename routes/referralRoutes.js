@@ -14,6 +14,33 @@ const {
   calculatePagination,
 } = require("../utils/responseUtils");
 
+// Utility function to convert snake_case to camelCase
+const toCamelCase = (str) => {
+  return str.replace(/_([a-z])/g, (match, letter) => letter.toUpperCase());
+};
+
+// Utility function to transform object fields from snake_case to camelCase
+const transformToCamelCase = (obj) => {
+  if (!obj || typeof obj !== "object") return obj;
+
+  if (Array.isArray(obj)) {
+    return obj.map(transformToCamelCase);
+  }
+
+  const transformed = {};
+  for (const [key, value] of Object.entries(obj)) {
+    const camelKey = toCamelCase(key);
+    if (value && typeof value === "object" && !Array.isArray(value)) {
+      transformed[camelKey] = transformToCamelCase(value);
+    } else if (Array.isArray(value)) {
+      transformed[camelKey] = value.map(transformToCamelCase);
+    } else {
+      transformed[camelKey] = value;
+    }
+  }
+  return transformed;
+};
+
 // Create a new referral
 router.post("/", async (req, res) => {
   try {
@@ -52,7 +79,11 @@ router.post("/", async (req, res) => {
     // Invalidate cache when creating a new referral
     await cache.invalidateCache("all_referrals");
 
-    sendCreateResponse(res, referral, "Referral created successfully");
+    sendCreateResponse(
+      res,
+      transformToCamelCase(referral),
+      "Referral created successfully"
+    );
   } catch (error) {
     sendInternalErrorResponse(res, "Error creating referral: " + error.message);
   }
@@ -71,7 +102,7 @@ router.get("/", async (req, res) => {
         1,
         referrals.length
       );
-      return sendListResponse(res, referrals, pagination);
+      return sendListResponse(res, transformToCamelCase(referrals), pagination);
     }
 
     // If not in cache, fetch from database
@@ -85,7 +116,7 @@ router.get("/", async (req, res) => {
       1,
       referrals.length
     );
-    return sendListResponse(res, referrals, pagination);
+    return sendListResponse(res, transformToCamelCase(referrals), pagination);
   } catch (error) {
     sendInternalErrorResponse(
       res,
@@ -108,7 +139,7 @@ router.get("/:id", async (req, res) => {
         ...referral,
         source: "cache",
       };
-      return sendDetailResponse(res, responseData);
+      return sendDetailResponse(res, transformToCamelCase(responseData));
     }
 
     const referral = await Referral.findByPk(id);
@@ -124,7 +155,7 @@ router.get("/:id", async (req, res) => {
       ...referral.toJSON(),
       source: "database",
     };
-    return sendDetailResponse(res, responseData);
+    return sendDetailResponse(res, transformToCamelCase(responseData));
   } catch (error) {
     sendInternalErrorResponse(res, "Error fetching referral: " + error.message);
   }
@@ -240,7 +271,7 @@ router.get("/get-discount/:code", async (req, res) => {
     const cachedDiscount = await cache.getCache(`discount_${code}`);
 
     if (cachedDiscount) {
-      sendDetailResponse(res, JSON.parse(cachedDiscount));
+      sendDetailResponse(res, transformToCamelCase(JSON.parse(cachedDiscount)));
     }
 
     const referral = await Referral.findOne({ where: { code } });
@@ -272,7 +303,7 @@ router.get("/get-discount/:code", async (req, res) => {
     // Cache discount for 5 minutes (300 seconds)
     await cache.setCache(`discount_${code}`, JSON.stringify(response), 300);
 
-    sendDetailResponse(res, response);
+    sendDetailResponse(res, transformToCamelCase(response));
   } catch (error) {
     sendInternalErrorResponse(res, "Server error: " + error.message);
   }

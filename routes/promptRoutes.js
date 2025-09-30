@@ -17,6 +17,7 @@ const {
 const checkSubTypeAccess = require("../middleware/subTypeMiddleware");
 const Industry = require("../models/Industry");
 const CategoryIndustry = require("../models/CategoryIndustry");
+const PromptIndustry = require("../models/PromptIndustry");
 const {
   sendListResponse,
   sendDetailResponse,
@@ -28,6 +29,33 @@ const {
   sendInternalErrorResponse,
   calculatePagination,
 } = require("../utils/responseUtils");
+
+// Utility function to convert snake_case to camelCase
+const toCamelCase = (str) => {
+  return str.replace(/_([a-z])/g, (match, letter) => letter.toUpperCase());
+};
+
+// Utility function to transform object fields from snake_case to camelCase
+const transformToCamelCase = (obj) => {
+  if (!obj || typeof obj !== "object") return obj;
+
+  if (Array.isArray(obj)) {
+    return obj.map(transformToCamelCase);
+  }
+
+  const transformed = {};
+  for (const [key, value] of Object.entries(obj)) {
+    const camelKey = toCamelCase(key);
+    if (value && typeof value === "object" && !Array.isArray(value)) {
+      transformed[camelKey] = transformToCamelCase(value);
+    } else if (Array.isArray(value)) {
+      transformed[camelKey] = value.map(transformToCamelCase);
+    } else {
+      transformed[camelKey] = value;
+    }
+  }
+  return transformed;
+};
 
 // Cấu hình Multer để lưu file vào thư mục "uploads"
 const storage = multer.diskStorage({
@@ -267,11 +295,11 @@ router.get(
 
       // Get filters from query parameters
       const filters = {
-        categoryId: req.query.category_id,
-        industryId: req.query.industry_id,
-        topicId: req.query.topic_id,
-        subType: req.query.sub_type,
-        isType: req.query.is_type,
+        categoryId: req.query.categoryId || req.query.category_id,
+        industryId: req.query.industryId || req.query.industry_id,
+        topicId: req.query.topicId || req.query.topic_id,
+        subType: req.query.subType || req.query.sub_type,
+        isType: req.query.isType || req.query.is_type,
         search: req.query.search,
         limit: req.query.limit,
       };
@@ -489,11 +517,11 @@ router.get(
 
       // Get filters from query parameters
       const filters = {
-        categoryId: req.query.category_id,
-        industryId: req.query.industry_id,
-        topicId: req.query.topic_id,
-        subType: req.query.sub_type,
-        isType: req.query.is_type,
+        categoryId: req.query.categoryId || req.query.category_id,
+        industryId: req.query.industryId || req.query.industry_id,
+        topicId: req.query.topicId || req.query.topic_id,
+        subType: req.query.subType || req.query.sub_type,
+        isType: req.query.isType || req.query.is_type,
         search: req.query.search,
         limit: req.query.limit,
       };
@@ -711,12 +739,15 @@ router.get("/", authMiddleware, checkSubTypeAccess, async (req, res) => {
       }
     }
 
-    if (!!req.query.sub_type && Number(req.query.sub_type) !== 0) {
-      where.sub_type = req.query.sub_type;
+    if (
+      (!!req.query.subType && Number(req.query.subType) !== 0) ||
+      (!!req.query.sub_type && Number(req.query.sub_type) !== 0)
+    ) {
+      where.sub_type = req.query.subType || req.query.sub_type;
     }
 
-    if (req.query.topic_id !== undefined) {
-      where.topic_id = req.query.topic_id;
+    if (req.query.topicId !== undefined || req.query.topic_id !== undefined) {
+      where.topic_id = req.query.topicId || req.query.topic_id;
     }
 
     // Handle industry filtering - support multiple industryIds
@@ -743,7 +774,7 @@ router.get("/", authMiddleware, checkSubTypeAccess, async (req, res) => {
             },
             {
               model: Industry,
-              as: "industries",
+              as: "promptIndustries",
               where:
                 validIndustryIds.length === 1
                   ? { id: validIndustryIds[0] }
@@ -806,6 +837,7 @@ router.get("/", authMiddleware, checkSubTypeAccess, async (req, res) => {
         const allowedSortFields = [
           "id",
           "title",
+          "shortDescription",
           "short_description",
           "content",
           "what",
@@ -817,14 +849,31 @@ router.get("/", authMiddleware, checkSubTypeAccess, async (req, res) => {
           "OptimationGuide",
           "addtip",
           "addinformation",
+          "isType",
           "is_type",
+          "subType",
           "sub_type",
+          "createdAt",
           "created_at",
+          "updatedAt",
           "updated_at",
         ];
 
         if (allowedSortFields.includes(sortField)) {
-          order = [[sortField, sortOrder]];
+          // Map camelCase to snake_case for database
+          const dbField =
+            sortField === "shortDescription"
+              ? "short_description"
+              : sortField === "isType"
+              ? "is_type"
+              : sortField === "subType"
+              ? "sub_type"
+              : sortField === "createdAt"
+              ? "created_at"
+              : sortField === "updatedAt"
+              ? "updated_at"
+              : sortField;
+          order = [[dbField, sortOrder]];
         }
       }
     }
@@ -868,7 +917,8 @@ router.get("/", authMiddleware, checkSubTypeAccess, async (req, res) => {
     });
 
     const pagination = calculatePagination(count, page, pageSize);
-    sendListResponse(res, rows, pagination);
+    const transformedRows = transformToCamelCase(rows);
+    sendListResponse(res, transformedRows, pagination);
   } catch (error) {
     res
       .status(500)
@@ -879,18 +929,18 @@ router.get("/", authMiddleware, checkSubTypeAccess, async (req, res) => {
 // Get all prompts for user by categoryId with pagination
 router.get("/by-category", checkSubTypeAccess, async (req, res) => {
   try {
-    const category_id = req.query.category_id;
+    const category_id = req.query.categoryId || req.query.category_id;
     if (!category_id) {
       return sendErrorResponse(
         res,
-        "category_id is required",
+        "categoryId is required",
         "VALIDATION_ERROR",
         400
       );
     }
-    const is_type = req.query.is_type || 1;
-    const topic_id = req.query.topic_id;
-    const searchText = req.query.search_text;
+    const is_type = req.query.isType || req.query.is_type || 1;
+    const topic_id = req.query.topicId || req.query.topic_id;
+    const searchText = req.query.searchText || req.query.search_text;
     const page = parseInt(req.query.page) || 1;
     const pageSize =
       parseInt(req.query.limit) || parseInt(req.query.pageSize) || 12;
@@ -900,8 +950,11 @@ router.get("/by-category", checkSubTypeAccess, async (req, res) => {
       category_id: category_id,
     };
 
-    if (!!req.query.sub_type && Number(req.query.sub_type) !== 0) {
-      whereCondition.sub_type = req.query.sub_type;
+    if (
+      (!!req.query.subType && Number(req.query.subType) !== 0) ||
+      (!!req.query.sub_type && Number(req.query.sub_type) !== 0)
+    ) {
+      whereCondition.sub_type = req.query.subType || req.query.sub_type;
     }
 
     if (
@@ -933,7 +986,7 @@ router.get("/by-category", checkSubTypeAccess, async (req, res) => {
             },
             {
               model: Industry,
-              as: "industries",
+              as: "promptIndustries",
               attributes: ["id", "name", "description"],
               through: { attributes: [] },
             },
@@ -949,10 +1002,10 @@ router.get("/by-category", checkSubTypeAccess, async (req, res) => {
       total: count,
       page,
       pageSize,
-      data: rows,
+      data: transformToCamelCase(rows),
     };
 
-    sendDetailResponse(res, result);
+    sendDetailResponse(res, transformToCamelCase(result));
   } catch (error) {
     res
       .status(500)
@@ -962,11 +1015,11 @@ router.get("/by-category", checkSubTypeAccess, async (req, res) => {
 
 router.get("/topics/by-category", checkSubTypeAccess, async (req, res) => {
   try {
-    const { category_id } = req.query;
+    const category_id = req.query.categoryId || req.query.category_id;
     if (!category_id) {
       return sendErrorResponse(
         res,
-        "category_id is required",
+        "categoryId is required",
         "VALIDATION_ERROR",
         400
       );
@@ -976,8 +1029,11 @@ router.get("/topics/by-category", checkSubTypeAccess, async (req, res) => {
       category_id,
     };
 
-    if (!!req.query.sub_type && Number(req.query.sub_type) !== 0) {
-      whereCondition.sub_type = req.query.sub_type;
+    if (
+      (!!req.query.subType && Number(req.query.subType) !== 0) ||
+      (!!req.query.sub_type && Number(req.query.sub_type) !== 0)
+    ) {
+      whereCondition.sub_type = req.query.subType || req.query.sub_type;
     }
 
     const prompts = await Prompt.findAll({
@@ -999,12 +1055,12 @@ router.get("/topics/by-category", checkSubTypeAccess, async (req, res) => {
     });
 
     const result = {
-      category_id,
+      categoryId: category_id,
       total: topics.length,
-      topics,
+      topics: transformToCamelCase(topics),
     };
 
-    sendDetailResponse(res, result);
+    sendDetailResponse(res, transformToCamelCase(result));
   } catch (error) {
     res
       .status(500)
@@ -1015,11 +1071,11 @@ router.get("/topics/by-category", checkSubTypeAccess, async (req, res) => {
 // lấy list prompts mới nhất
 router.get("/newest", checkSubTypeAccess, async (req, res) => {
   try {
-    const category_id = req.query.category_id;
+    const category_id = req.query.categoryId || req.query.category_id;
     if (!category_id) {
       return sendErrorResponse(
         res,
-        "category_id is required",
+        "categoryId is required",
         "VALIDATION_ERROR",
         400
       );
@@ -1035,8 +1091,11 @@ router.get("/newest", checkSubTypeAccess, async (req, res) => {
       },
     };
 
-    if (!!req.query.sub_type && Number(req.query.sub_type) !== 0) {
-      whereCondition.sub_type = req.query.sub_type;
+    if (
+      (!!req.query.subType && Number(req.query.subType) !== 0) ||
+      (!!req.query.sub_type && Number(req.query.sub_type) !== 0)
+    ) {
+      whereCondition.sub_type = req.query.subType || req.query.sub_type;
     }
 
     const newest_prompts = await Prompt.findAll({
@@ -1052,7 +1111,7 @@ router.get("/newest", checkSubTypeAccess, async (req, res) => {
             },
             {
               model: Industry,
-              as: "industries",
+              as: "promptIndustries",
               attributes: ["id", "name", "description"],
               through: { attributes: [] },
             },
@@ -1065,10 +1124,10 @@ router.get("/newest", checkSubTypeAccess, async (req, res) => {
     });
 
     const result = {
-      data: newest_prompts,
+      data: transformToCamelCase(newest_prompts),
     };
 
-    sendDetailResponse(res, result);
+    sendDetailResponse(res, transformToCamelCase(result));
   } catch (error) {
     res
       .status(500)
@@ -1096,7 +1155,7 @@ router.get("/:id", authMiddleware, checkSubTypeAccess, async (req, res) => {
             },
             {
               model: Industry,
-              as: "industries",
+              as: "promptIndustries",
               attributes: ["id", "name", "description"],
               through: { attributes: [] },
             },
@@ -1123,7 +1182,8 @@ router.get("/:id", authMiddleware, checkSubTypeAccess, async (req, res) => {
       limit: 5,
     });
 
-    sendDetailResponse(res, prompt);
+    const transformedPrompt = transformToCamelCase(prompt);
+    sendDetailResponse(res, transformedPrompt);
   } catch (error) {
     res
       .status(500)
@@ -1139,39 +1199,64 @@ router.post(
   checkSubTypeAccess,
   async (req, res) => {
     try {
-      // Validate required fields
+      // Validate required fields - support both camelCase and snake_case
       const requiredFields = [
         "title",
+        "shortDescription",
         "short_description",
+        "categoryId",
         "category_id",
+        "topicId",
         "topic_id",
         "content",
       ];
-      for (const field of requiredFields) {
-        if (!req.body[field]) {
-          return res.status(400).json({
-            message: `Missing required field: ${field}`,
-            required: requiredFields,
-          });
-        }
+
+      // Check if at least one form of each required field is present
+      const hasShortDescription =
+        req.body.shortDescription || req.body.short_description;
+      const hasCategoryId = req.body.categoryId || req.body.category_id;
+      const hasTopicId = req.body.topicId || req.body.topic_id;
+
+      if (
+        !req.body.title ||
+        !hasShortDescription ||
+        !hasCategoryId ||
+        !hasTopicId ||
+        !req.body.content
+      ) {
+        return res.status(400).json({
+          message: "Missing required fields",
+          required: [
+            "title",
+            "shortDescription",
+            "categoryId",
+            "topicId",
+            "content",
+          ],
+        });
       }
 
+      // Normalize field names to snake_case for database
+      const categoryId = req.body.categoryId || req.body.category_id;
+      const topicId = req.body.topicId || req.body.topic_id;
+      const shortDescription =
+        req.body.shortDescription || req.body.short_description;
+
       // Check if category exists
-      const category = await Category.findByPk(req.body.category_id);
+      const category = await Category.findByPk(categoryId);
       if (!category) {
-        return res.status(400).json({ message: "Invalid category_id" });
+        return res.status(400).json({ message: "Invalid categoryId" });
       }
 
       // Check if topic exists
-      const topic = await Topic.findByPk(req.body.topic_id);
+      const topic = await Topic.findByPk(topicId);
       if (!topic) {
-        return res.status(400).json({ message: "Invalid topic_id" });
+        return res.status(400).json({ message: "Invalid topicId" });
       }
 
-      // Handle industry_id array - link industries to category
-      if (req.body.industry_id && Array.isArray(req.body.industry_id)) {
-        const industryIds = req.body.industry_id;
-
+      // Handle industry_id array - link industries directly to prompt
+      const industryIds = req.body.industryId || req.body.industry_id;
+      if (industryIds && Array.isArray(industryIds)) {
         // Validate all industry IDs exist
         const industries = await Industry.findAll({
           where: { id: industryIds },
@@ -1183,19 +1268,18 @@ router.post(
           });
         }
 
-        // Create category-industry relationships
-        const categoryIndustryData = industryIds.map((industryId) => ({
-          category_id: req.body.category_id,
-          industry_id: industryId,
-          created_at: new Date(),
-        }));
-
-        await CategoryIndustry.bulkCreate(categoryIndustryData);
+        // Note: We'll create prompt-industry relationships after creating the prompt
+        // Store industryIds for later use
+        req.industryIds = industryIds;
       }
 
-      // Set default values for optional fields
+      // Set default values for optional fields - normalize to snake_case
       const promptData = {
-        ...req.body,
+        title: req.body.title,
+        short_description: shortDescription,
+        category_id: categoryId,
+        topic_id: topicId,
+        content: req.body.content,
         what: req.body.what || "",
         tips: req.body.tips || "",
         text: req.body.text || "",
@@ -1205,14 +1289,22 @@ router.post(
         OptimationGuide: req.body.OptimationGuide || "",
         addtip: req.body.addtip || "",
         addinformation: req.body.addinformation || "",
-        is_type: req.body.is_type || 1,
-        sub_type: req.body.sub_type || 1,
+        is_type: req.body.isType || req.body.is_type || 1,
+        sub_type: req.body.subType || req.body.sub_type || 1,
       };
 
-      // Remove industry_id from prompt data as it's not a field in Prompt table
-      delete promptData.industry_id;
-
       const newPrompt = await Prompt.create(promptData);
+
+      // Create prompt-industry relationships if industryIds were provided
+      if (req.industryIds && req.industryIds.length > 0) {
+        const promptIndustryData = req.industryIds.map((industryId) => ({
+          prompt_id: newPrompt.id,
+          industry_id: industryId,
+          created_at: new Date(),
+        }));
+
+        await PromptIndustry.bulkCreate(promptIndustryData);
+      }
 
       // Fetch the created prompt with related data
       const createdPrompt = await Prompt.findOne({
@@ -1226,21 +1318,21 @@ router.post(
                 model: Section,
                 attributes: ["id", "name", "description"],
               },
-              {
-                model: Industry,
-                as: "industries",
-                attributes: ["id", "name", "description"],
-                through: { attributes: [] },
-              },
             ],
           },
           { model: Topic, as: "topic", attributes: ["id", "name"] },
+          {
+            model: Industry,
+            as: "promptIndustries",
+            attributes: ["id", "name", "description"],
+            through: { attributes: [] },
+          },
         ],
       });
 
       res.status(201).json({
         message: "Prompt created successfully",
-        prompt: createdPrompt,
+        prompt: transformToCamelCase(createdPrompt),
       });
     } catch (error) {
       res
@@ -1266,56 +1358,81 @@ router.put(
       }
 
       // Validate category and topic if they're being updated
-      if (req.body.category_id) {
-        const category = await Category.findByPk(req.body.category_id);
+      const categoryId = req.body.categoryId || req.body.category_id;
+      const topicId = req.body.topicId || req.body.topic_id;
+
+      if (categoryId) {
+        const category = await Category.findByPk(categoryId);
         if (!category) {
-          return res.status(400).json({ message: "Invalid category_id" });
+          return res.status(400).json({ message: "Invalid categoryId" });
         }
       }
 
-      if (req.body.topic_id) {
-        const topic = await Topic.findByPk(req.body.topic_id);
+      if (topicId) {
+        const topic = await Topic.findByPk(topicId);
         if (!topic) {
-          return res.status(400).json({ message: "Invalid topic_id" });
+          return res.status(400).json({ message: "Invalid topicId" });
         }
       }
 
-      // Handle industry_id array - link industries to category
-      if (req.body.industry_id && Array.isArray(req.body.industry_id)) {
-        const industryIds = req.body.industry_id;
-        const categoryId = req.body.category_id || prompt.category_id;
+      // Handle industry_id array - link industries directly to prompt
+      const industryIds = req.body.industryId || req.body.industry_id;
+      if (industryIds && Array.isArray(industryIds)) {
+        const promptId = req.params.id;
 
-        if (categoryId) {
-          // Validate all industry IDs exist
-          const industries = await Industry.findAll({
-            where: { id: industryIds },
+        // Validate all industry IDs exist
+        const industries = await Industry.findAll({
+          where: { id: industryIds },
+        });
+
+        if (industries.length !== industryIds.length) {
+          return res.status(400).json({
+            message: "Some industry IDs are invalid",
           });
-
-          if (industries.length !== industryIds.length) {
-            return res.status(400).json({
-              message: "Some industry IDs are invalid",
-            });
-          }
-
-          // Remove existing category-industry relationships
-          await CategoryIndustry.destroy({
-            where: { category_id: categoryId },
-          });
-
-          // Create new category-industry relationships
-          const categoryIndustryData = industryIds.map((industryId) => ({
-            category_id: categoryId,
-            industry_id: industryId,
-            created_at: new Date(),
-          }));
-
-          await CategoryIndustry.bulkCreate(categoryIndustryData);
         }
+
+        // Remove existing prompt-industry relationships
+        await PromptIndustry.destroy({
+          where: { prompt_id: promptId },
+        });
+
+        // Create new prompt-industry relationships
+        const promptIndustryData = industryIds.map((industryId) => ({
+          prompt_id: promptId,
+          industry_id: industryId,
+          created_at: new Date(),
+        }));
+
+        await PromptIndustry.bulkCreate(promptIndustryData);
       }
 
-      // Remove industry_id from update data as it's not a field in Prompt table
-      const updateData = { ...req.body };
-      delete updateData.industry_id;
+      // Normalize update data to snake_case for database
+      const updateData = {};
+      if (req.body.title) updateData.title = req.body.title;
+      if (req.body.shortDescription || req.body.short_description) {
+        updateData.short_description =
+          req.body.shortDescription || req.body.short_description;
+      }
+      if (categoryId) updateData.category_id = categoryId;
+      if (topicId) updateData.topic_id = topicId;
+      if (req.body.content) updateData.content = req.body.content;
+      if (req.body.what) updateData.what = req.body.what;
+      if (req.body.tips) updateData.tips = req.body.tips;
+      if (req.body.text) updateData.text = req.body.text;
+      if (req.body.how) updateData.how = req.body.how;
+      if (req.body.input) updateData.input = req.body.input;
+      if (req.body.output) updateData.output = req.body.output;
+      if (req.body.OptimationGuide)
+        updateData.OptimationGuide = req.body.OptimationGuide;
+      if (req.body.addtip) updateData.addtip = req.body.addtip;
+      if (req.body.addinformation)
+        updateData.addinformation = req.body.addinformation;
+      if (req.body.isType || req.body.is_type) {
+        updateData.is_type = req.body.isType || req.body.is_type;
+      }
+      if (req.body.subType || req.body.sub_type) {
+        updateData.sub_type = req.body.subType || req.body.sub_type;
+      }
 
       await prompt.update(updateData);
 
@@ -1331,21 +1448,21 @@ router.put(
                 model: Section,
                 attributes: ["id", "name", "description"],
               },
-              {
-                model: Industry,
-                as: "industries",
-                attributes: ["id", "name", "description"],
-                through: { attributes: [] },
-              },
             ],
           },
           { model: Topic, as: "topic", attributes: ["id", "name"] },
+          {
+            model: Industry,
+            as: "promptIndustries",
+            attributes: ["id", "name", "description"],
+            through: { attributes: [] },
+          },
         ],
       });
 
       res.status(200).json({
         message: "Prompt updated successfully",
-        prompt: updatedPrompt,
+        prompt: transformToCamelCase(updatedPrompt),
       });
     } catch (error) {
       res

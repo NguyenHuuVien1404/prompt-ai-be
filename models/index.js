@@ -18,6 +18,7 @@ const DeviceLog = require("./DeviceLog");
 const History = require("./History");
 const Industry = require("./Industry");
 const CategoryIndustry = require("./CategoryIndustry");
+const PromptIndustry = require("./PromptIndustry");
 // Định nghĩa các quan hệ với tên khóa ngoại cụ thể
 User.hasMany(UserSub, {
   foreignKey: "user_id",
@@ -240,6 +241,32 @@ Industry.belongsToMany(Category, {
   as: "categories",
 });
 
+// Định nghĩa quan hệ many-to-many giữa Prompt và Industry
+Prompt.belongsToMany(Industry, {
+  through: PromptIndustry,
+  foreignKey: "prompt_id",
+  otherKey: "industry_id",
+  as: "promptIndustries",
+});
+
+Industry.belongsToMany(Prompt, {
+  through: PromptIndustry,
+  foreignKey: "industry_id",
+  otherKey: "prompt_id",
+  as: "prompts",
+});
+
+// Define direct relationships for PromptIndustry
+PromptIndustry.belongsTo(Prompt, {
+  foreignKey: "prompt_id",
+  as: "Prompt",
+});
+
+PromptIndustry.belongsTo(Industry, {
+  foreignKey: "industry_id",
+  as: "Industry",
+});
+
 // Đồng bộ Models với Database
 sequelize
   .sync({ force: false, alter: false })
@@ -267,4 +294,5 @@ module.exports = {
   History,
   Industry,
   CategoryIndustry,
+  PromptIndustry,
 };

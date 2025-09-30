@@ -21,6 +21,33 @@ const {
   calculatePagination,
 } = require("../utils/responseUtils");
 
+// Utility function to convert snake_case to camelCase
+const toCamelCase = (str) => {
+  return str.replace(/_([a-z])/g, (match, letter) => letter.toUpperCase());
+};
+
+// Utility function to transform object fields from snake_case to camelCase
+const transformToCamelCase = (obj) => {
+  if (!obj || typeof obj !== "object") return obj;
+
+  if (Array.isArray(obj)) {
+    return obj.map(transformToCamelCase);
+  }
+
+  const transformed = {};
+  for (const [key, value] of Object.entries(obj)) {
+    const camelKey = toCamelCase(key);
+    if (value && typeof value === "object" && !Array.isArray(value)) {
+      transformed[camelKey] = transformToCamelCase(value);
+    } else if (Array.isArray(value)) {
+      transformed[camelKey] = value.map(transformToCamelCase);
+    } else {
+      transformed[camelKey] = value;
+    }
+  }
+  return transformed;
+};
+
 // Lấy danh sách tất cả roles
 router.get("/", authMiddleware, adminOrMarketerMiddleware, async (req, res) => {
   try {
@@ -31,7 +58,7 @@ router.get("/", authMiddleware, adminOrMarketerMiddleware, async (req, res) => {
 
     sendListResponse(
       res,
-      roles,
+      transformToCamelCase(roles),
       calculatePagination(roles.length, 1, roles.length)
     );
   } catch (error) {
@@ -52,7 +79,7 @@ router.get(
         return sendNotFoundResponse(res, "Role không tồn tại");
       }
 
-      sendDetailResponse(res, role);
+      sendDetailResponse(res, transformToCamelCase(role));
     } catch (error) {
       sendInternalErrorResponse(res, error.message);
     }
@@ -82,7 +109,11 @@ router.post("/", authMiddleware, adminMiddleware, async (req, res) => {
       is_active: true,
     });
 
-    sendCreateResponse(res, newRole, "Tạo role thành công");
+    sendCreateResponse(
+      res,
+      transformToCamelCase(newRole),
+      "Tạo role thành công"
+    );
   } catch (error) {
     sendInternalErrorResponse(res, error.message);
   }
@@ -120,7 +151,11 @@ router.put("/:id", authMiddleware, adminMiddleware, async (req, res) => {
       is_active: is_active !== undefined ? is_active : role.is_active,
     });
 
-    sendUpdateResponse(res, role, "Cập nhật role thành công");
+    sendUpdateResponse(
+      res,
+      transformToCamelCase(role),
+      "Cập nhật role thành công"
+    );
   } catch (error) {
     sendInternalErrorResponse(res, error.message);
   }
@@ -173,7 +208,11 @@ router.patch(
 
       await role.update({ is_active: true });
 
-      sendUpdateResponse(res, role, "Khôi phục role thành công");
+      sendUpdateResponse(
+        res,
+        transformToCamelCase(role),
+        "Khôi phục role thành công"
+      );
     } catch (error) {
       sendInternalErrorResponse(res, error.message);
     }
@@ -192,7 +231,7 @@ router.get(
         order: [["id", "ASC"]],
       });
 
-      sendListResponse(res, deletedRoles, {
+      sendListResponse(res, transformToCamelCase(deletedRoles), {
         total: deletedRoles.length,
         page: 1,
         pageSize: deletedRoles.length,
@@ -302,7 +341,7 @@ router.get(
           description: role.description,
         },
       };
-      sendListResponse(res, responseData, pagination);
+      sendListResponse(res, transformToCamelCase(responseData), pagination);
     } catch (error) {
       sendInternalErrorResponse(res, error.message);
     }
@@ -362,7 +401,7 @@ router.post(
       };
       sendUpdateResponse(
         res,
-        responseData,
+        transformToCamelCase(responseData),
         `Đã gán role "${role.name}" cho user thành công`
       );
     } catch (error) {
@@ -440,7 +479,7 @@ router.post(
       };
       sendUpdateResponse(
         res,
-        responseData,
+        transformToCamelCase(responseData),
         `Đã gán role "${role.name}" cho ${users.length} users thành công`
       );
     } catch (error) {
@@ -499,7 +538,7 @@ router.delete(
       };
       sendUpdateResponse(
         res,
-        responseData,
+        transformToCamelCase(responseData),
         `Đã xóa role "${role.name}" khỏi user thành công`
       );
     } catch (error) {
@@ -536,7 +575,7 @@ router.get(
         description: role.description,
         user_count: userCount,
       };
-      sendDetailResponse(res, responseData);
+      sendDetailResponse(res, transformToCamelCase(responseData));
     } catch (error) {
       sendInternalErrorResponse(res, error.message);
     }

@@ -26,6 +26,33 @@ const {
   calculatePagination,
 } = require("../utils/responseUtils");
 
+// Utility function to convert snake_case to camelCase
+const toCamelCase = (str) => {
+  return str.replace(/_([a-z])/g, (match, letter) => letter.toUpperCase());
+};
+
+// Utility function to transform object fields from snake_case to camelCase
+const transformToCamelCase = (obj) => {
+  if (!obj || typeof obj !== "object") return obj;
+
+  if (Array.isArray(obj)) {
+    return obj.map(transformToCamelCase);
+  }
+
+  const transformed = {};
+  for (const [key, value] of Object.entries(obj)) {
+    const camelKey = toCamelCase(key);
+    if (value && typeof value === "object" && !Array.isArray(value)) {
+      transformed[camelKey] = transformToCamelCase(value);
+    } else if (Array.isArray(value)) {
+      transformed[camelKey] = value.map(transformToCamelCase);
+    } else {
+      transformed[camelKey] = value;
+    }
+  }
+  return transformed;
+};
+
 // Cấu hình Multer để lưu file vào thư mục "uploads"
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
@@ -67,7 +94,7 @@ const fileFilter = (req, file, cb) => {
 const upload = multer({
   storage: storage,
   fileFilter: fileFilter,
-  limits: { fileSize: 5 * 1024 * 1024 }, // Giới hạn file tối đa 5MB
+  limits: { fileSize: 50 * 1024 * 1024 }, // Giới hạn file tối đa 50MB
 });
 
 router.use("/upload", express.static("uploads")); // Cho phép truy cập ảnh đã upload
@@ -100,7 +127,11 @@ router.post(
           : null,
       };
 
-      sendCreateResponse(res, { imageUrls }, "Files uploaded successfully");
+      sendCreateResponse(
+        res,
+        transformToCamelCase({ imageUrls }),
+        "Files uploaded successfully"
+      );
     } catch (error) {
       sendInternalErrorResponse(res, "Error uploading files: " + error.message);
     }
@@ -218,7 +249,7 @@ router.get("/", async (req, res) => {
 
     const pagination = calculatePagination(count, page, pageSize);
 
-    sendListResponse(res, rows, pagination);
+    sendListResponse(res, transformToCamelCase(rows), pagination);
   } catch (error) {
     console.error("Error in GET /api/categories:", error);
     sendInternalErrorResponse(
@@ -249,7 +280,7 @@ router.get("/:id", async (req, res) => {
       return sendNotFoundResponse(res, "Category not found");
     }
 
-    sendDetailResponse(res, category);
+    sendDetailResponse(res, transformToCamelCase(category));
   } catch (error) {
     console.error("Error in GET /api/categories/:id:", error);
     sendInternalErrorResponse(res, "Error fetching category: " + error.message);
@@ -316,7 +347,11 @@ router.post(
       //     cache.invalidateCache(`categories_by_section_${section_id}*`),
       // ]);
 
-      sendCreateResponse(res, newCategory, "Category created successfully");
+      sendCreateResponse(
+        res,
+        transformToCamelCase(newCategory),
+        "Category created successfully"
+      );
     } catch (error) {
       sendInternalErrorResponse(
         res,
@@ -457,7 +492,11 @@ router.put(
         ],
       });
 
-      sendUpdateResponse(res, updatedCategory, "Category updated successfully");
+      sendUpdateResponse(
+        res,
+        transformToCamelCase(updatedCategory),
+        "Category updated successfully"
+      );
     } catch (error) {
       console.error("Error in PUT /api/categories/:id:", error);
       sendInternalErrorResponse(
@@ -526,7 +565,7 @@ router.get("/by-type/:type", async (req, res) => {
 
     const pagination = calculatePagination(count, page, pageSize);
 
-    sendListResponse(res, rows, pagination);
+    sendListResponse(res, transformToCamelCase(rows), pagination);
   } catch (error) {
     sendInternalErrorResponse(
       res,
@@ -631,7 +670,7 @@ router.get("/by-sectionId/:sectionId", async (req, res) => {
       if (categoryIds.length === 0) {
         // Không có category nào match industry filter
         const pagination = calculatePagination(0, 1, 10);
-        return sendListResponse(res, [], pagination);
+        return sendListResponse(res, transformToCamelCase([]), pagination);
       }
 
       // Bước 2: Query categories với prompt count (không include industries)
@@ -696,7 +735,11 @@ router.get("/by-sectionId/:sectionId", async (req, res) => {
         modifiedCategories.length
       );
 
-      return sendListResponse(res, modifiedCategories, pagination);
+      return sendListResponse(
+        res,
+        transformToCamelCase(modifiedCategories),
+        pagination
+      );
     } else {
       // Không có industry filter, query bình thường (không include industries trong GROUP BY)
       categories = await Category.findAll({
@@ -760,7 +803,11 @@ router.get("/by-sectionId/:sectionId", async (req, res) => {
         modifiedCategories.length
       );
 
-      sendListResponse(res, modifiedCategories, pagination);
+      sendListResponse(
+        res,
+        transformToCamelCase(modifiedCategories),
+        pagination
+      );
     }
   } catch (error) {
     console.error("Error in /by-sectionId/:sectionId:", error);
