@@ -192,16 +192,16 @@ router.get(
         order: [["id", "ASC"]],
       });
 
-      res.json({
-        success: true,
-        data: deletedRoles,
+      sendListResponse(res, deletedRoles, {
         total: deletedRoles.length,
+        page: 1,
+        pageSize: deletedRoles.length,
+        totalPages: 1,
+        hasNext: false,
+        hasPrev: false,
       });
     } catch (error) {
-      res.status(500).json({
-        success: false,
-        error: error.message,
-      });
+      sendInternalErrorResponse(res, error.message);
     }
   }
 );
@@ -221,10 +221,7 @@ router.get(
       // Kiểm tra role có tồn tại không
       const role = await Role.findByPk(roleId);
       if (!role) {
-        return res.status(404).json({
-          success: false,
-          message: "Role không tồn tại",
-        });
+        return sendNotFoundResponse(res, "Role không tồn tại");
       }
 
       // Tạo điều kiện tìm kiếm
@@ -296,26 +293,18 @@ router.get(
         };
       });
 
-      res.json({
-        success: true,
-        data: usersWithRole,
-        pagination: {
-          page: parseInt(page),
-          limit: parseInt(limit),
-          total: totalUsers,
-          totalPages: Math.ceil(totalUsers / parseInt(limit)),
-        },
+      const pagination = calculatePagination(totalUsers, page, limit);
+      const responseData = {
+        users: usersWithRole,
         role: {
           id: role.id,
           name: role.name,
           description: role.description,
         },
-      });
+      };
+      sendListResponse(res, responseData, pagination);
     } catch (error) {
-      res.status(500).json({
-        success: false,
-        error: error.message,
-      });
+      sendInternalErrorResponse(res, error.message);
     }
   }
 );
@@ -331,28 +320,22 @@ router.post(
       const { userId } = req.body;
 
       if (!userId) {
-        return res.status(400).json({
-          success: false,
-          message: "Thiếu userId",
-        });
+        return sendErrorResponse(res, "Thiếu userId", "VALIDATION_ERROR", 400);
       }
 
       // Kiểm tra role có tồn tại không
       const role = await Role.findByPk(roleId);
       if (!role || !role.is_active) {
-        return res.status(404).json({
-          success: false,
-          message: "Role không tồn tại hoặc đã bị vô hiệu hóa",
-        });
+        return sendNotFoundResponse(
+          res,
+          "Role không tồn tại hoặc đã bị vô hiệu hóa"
+        );
       }
 
       // Kiểm tra user có tồn tại không
       const user = await User.findByPk(userId);
       if (!user) {
-        return res.status(404).json({
-          success: false,
-          message: "User không tồn tại",
-        });
+        return sendNotFoundResponse(res, "User không tồn tại");
       }
 
       // Cập nhật role cho user
@@ -362,30 +345,28 @@ router.post(
         role: roleId,
       });
 
-      res.json({
-        success: true,
-        message: `Đã gán role "${role.name}" cho user thành công`,
-        data: {
-          user: {
-            id: user.id,
-            email: user.email,
-            full_name: user.full_name,
-            role: user.role,
-            role_id: user.role_id,
-            role_name: role.name,
-          },
-          role: {
-            id: role.id,
-            name: role.name,
-            description: role.description,
-          },
+      const responseData = {
+        user: {
+          id: user.id,
+          email: user.email,
+          full_name: user.full_name,
+          role: user.role,
+          role_id: user.role_id,
+          role_name: role.name,
         },
-      });
+        role: {
+          id: role.id,
+          name: role.name,
+          description: role.description,
+        },
+      };
+      sendUpdateResponse(
+        res,
+        responseData,
+        `Đã gán role "${role.name}" cho user thành công`
+      );
     } catch (error) {
-      res.status(500).json({
-        success: false,
-        error: error.message,
-      });
+      sendInternalErrorResponse(res, error.message);
     }
   }
 );
@@ -401,19 +382,21 @@ router.post(
       const { userIds } = req.body;
 
       if (!userIds || !Array.isArray(userIds) || userIds.length === 0) {
-        return res.status(400).json({
-          success: false,
-          message: "Thiếu userIds hoặc không đúng định dạng",
-        });
+        return sendErrorResponse(
+          res,
+          "Thiếu userIds hoặc không đúng định dạng",
+          "VALIDATION_ERROR",
+          400
+        );
       }
 
       // Kiểm tra role có tồn tại không
       const role = await Role.findByPk(roleId);
       if (!role || !role.is_active) {
-        return res.status(404).json({
-          success: false,
-          message: "Role không tồn tại hoặc đã bị vô hiệu hóa",
-        });
+        return sendNotFoundResponse(
+          res,
+          "Role không tồn tại hoặc đã bị vô hiệu hóa"
+        );
       }
 
       // Kiểm tra tất cả users có tồn tại không
@@ -424,10 +407,10 @@ router.post(
       if (users.length !== userIds.length) {
         const foundUserIds = users.map((u) => u.id);
         const notFoundIds = userIds.filter((id) => !foundUserIds.includes(id));
-        return res.status(404).json({
-          success: false,
-          message: `Không tìm thấy users với IDs: ${notFoundIds.join(", ")}`,
-        });
+        return sendNotFoundResponse(
+          res,
+          `Không tìm thấy users với IDs: ${notFoundIds.join(", ")}`
+        );
       }
 
       // Cập nhật role cho tất cả users
@@ -440,30 +423,28 @@ router.post(
 
       await Promise.all(updatePromises);
 
-      res.json({
-        success: true,
-        message: `Đã gán role "${role.name}" cho ${users.length} users thành công`,
-        data: {
-          updatedUsers: users.map((user) => ({
-            id: user.id,
-            email: user.email,
-            full_name: user.full_name,
-            role: user.role,
-            role_id: user.role_id,
-            role_name: role.name,
-          })),
-          role: {
-            id: role.id,
-            name: role.name,
-            description: role.description,
-          },
+      const responseData = {
+        updatedUsers: users.map((user) => ({
+          id: user.id,
+          email: user.email,
+          full_name: user.full_name,
+          role: user.role,
+          role_id: user.role_id,
+          role_name: role.name,
+        })),
+        role: {
+          id: role.id,
+          name: role.name,
+          description: role.description,
         },
-      });
+      };
+      sendUpdateResponse(
+        res,
+        responseData,
+        `Đã gán role "${role.name}" cho ${users.length} users thành công`
+      );
     } catch (error) {
-      res.status(500).json({
-        success: false,
-        error: error.message,
-      });
+      sendInternalErrorResponse(res, error.message);
     }
   }
 );
@@ -481,27 +462,23 @@ router.delete(
       // Kiểm tra role có tồn tại không
       const role = await Role.findByPk(roleId);
       if (!role) {
-        return res.status(404).json({
-          success: false,
-          message: "Role không tồn tại",
-        });
+        return sendNotFoundResponse(res, "Role không tồn tại");
       }
 
       // Kiểm tra user có tồn tại không
       const user = await User.findByPk(userId);
       if (!user) {
-        return res.status(404).json({
-          success: false,
-          message: "User không tồn tại",
-        });
+        return sendNotFoundResponse(res, "User không tồn tại");
       }
 
       // Kiểm tra user có đang sử dụng role này không
       if (user.role_id !== parseInt(roleId) && user.role !== parseInt(roleId)) {
-        return res.status(400).json({
-          success: false,
-          message: "User không sử dụng role này",
-        });
+        return sendErrorResponse(
+          res,
+          "User không sử dụng role này",
+          "VALIDATION_ERROR",
+          400
+        );
       }
 
       // Set về User role (ID = 1)
@@ -510,25 +487,23 @@ router.delete(
         role: 1,
       });
 
-      res.json({
-        success: true,
-        message: `Đã xóa role "${role.name}" khỏi user thành công`,
-        data: {
-          user: {
-            id: user.id,
-            email: user.email,
-            full_name: user.full_name,
-            role: user.role,
-            role_id: user.role_id,
-            role_name: "User",
-          },
+      const responseData = {
+        user: {
+          id: user.id,
+          email: user.email,
+          full_name: user.full_name,
+          role: user.role,
+          role_id: user.role_id,
+          role_name: "User",
         },
-      });
+      };
+      sendUpdateResponse(
+        res,
+        responseData,
+        `Đã xóa role "${role.name}" khỏi user thành công`
+      );
     } catch (error) {
-      res.status(500).json({
-        success: false,
-        error: error.message,
-      });
+      sendInternalErrorResponse(res, error.message);
     }
   }
 );
@@ -545,10 +520,7 @@ router.get(
       // Kiểm tra role có tồn tại không
       const role = await Role.findByPk(roleId);
       if (!role) {
-        return res.status(404).json({
-          success: false,
-          message: "Role không tồn tại",
-        });
+        return sendNotFoundResponse(res, "Role không tồn tại");
       }
 
       // Đếm số users trong role này
@@ -558,20 +530,15 @@ router.get(
         },
       });
 
-      res.json({
-        success: true,
-        data: {
-          role_id: role.id,
-          role_name: role.name,
-          description: role.description,
-          user_count: userCount,
-        },
-      });
+      const responseData = {
+        role_id: role.id,
+        role_name: role.name,
+        description: role.description,
+        user_count: userCount,
+      };
+      sendDetailResponse(res, responseData);
     } catch (error) {
-      res.status(500).json({
-        success: false,
-        error: error.message,
-      });
+      sendInternalErrorResponse(res, error.message);
     }
   }
 );

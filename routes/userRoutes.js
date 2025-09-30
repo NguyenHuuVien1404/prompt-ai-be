@@ -476,7 +476,7 @@ router.post("/verify-otp", async (req, res) => {
     user.otp_code = null;
     await user.save();
 
-    res.json({ message: "Tài khoản đã được xác thực thành công" });
+    sendDetailResponse(res, null, "Tài khoản đã được xác thực thành công");
   } catch (error) {
     sendInternalErrorResponse(res, error.message);
   }
@@ -687,8 +687,7 @@ router.post("/login-verify", async (req, res) => {
     );
 
     // Trả về thông tin người dùng
-    res.json({
-      message: "Đăng nhập thành công",
+    const userData = {
       token, // Thêm token vào response
       user: {
         id: user.id,
@@ -701,7 +700,8 @@ router.post("/login-verify", async (req, res) => {
         permissions: permissions, // ✅ Thêm permissions vào response
         userSub: sortedUserSubs.length > 0 ? sortedUserSubs[0] : null, // Lấy userSub có type lớn nhất
       },
-    });
+    };
+    sendDetailResponse(res, userData, "Đăng nhập thành công");
   } catch (error) {
     sendInternalErrorResponse(res, error.message);
   }
@@ -807,8 +807,7 @@ router.post("/login-password", async (req, res) => {
         { expiresIn: 60 * 60 * 24 * 30 * 6 }
       );
 
-      res.json({
-        message: "Đăng nhập thành công",
+      const userData = {
         token,
         user: {
           id: user.id,
@@ -821,7 +820,8 @@ router.post("/login-password", async (req, res) => {
           permissions: permissions, // ✅ Thêm permissions vào response
           userSub: sortedUserSubs.length > 0 ? sortedUserSubs[0] : null,
         },
-      });
+      };
+      sendDetailResponse(res, userData, "Đăng nhập thành công");
     } else {
       // Tài khoản chưa xác thực - tạo OTP mới và gửi
       const otp = generateOtp();
@@ -1001,7 +1001,7 @@ router.post("/forgot-password", async (req, res) => {
     // Gửi email chứa mã OTP
     await sendOtpEmail(email, otp);
 
-    res.json({ message: "Yêu cầu đặt lại mật khẩu đã được gửi" });
+    sendDetailResponse(res, null, "Yêu cầu đặt lại mật khẩu đã được gửi");
   } catch (error) {
     sendInternalErrorResponse(res, error.message);
   }

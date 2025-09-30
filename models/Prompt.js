@@ -14,7 +14,11 @@ const Prompt = sequelize.define(
       type: DataTypes.INTEGER,
       references: { model: Category, key: "id" },
     },
-    is_type: { type: DataTypes.INTEGER, defaultValue: 1 },
+    is_type: {
+      type: DataTypes.INTEGER,
+      defaultValue: 1,
+      comment: "Prompt type: 1 = Free, 2 = Premium, 3 = Plus",
+    },
     sub_type: { type: DataTypes.INTEGER, defaultValue: 1 },
     what: { type: DataTypes.TEXT, allowNull: true },
     tips: { type: DataTypes.TEXT, allowNull: true },

@@ -133,7 +133,11 @@ router.post("/create_payment_url", async function (req, res, next) {
     let signed = hmac.update(new Buffer(signData, "utf-8")).digest("hex");
     vnp_Params["vnp_SecureHash"] = signed;
     vnpUrl += "?" + querystring.stringify(vnp_Params, { encode: false });
-    res.json({ paymentUrl: vnpUrl });
+    sendCreateResponse(
+      res,
+      { paymentUrl: vnpUrl },
+      "Payment URL created successfully"
+    );
   } catch (error) {
     sendInternalErrorResponse(res, "Failed to create payment URL");
   }
@@ -160,9 +164,9 @@ router.get("/vnpay_return", async function (req, res, next) {
       result = { code: vnp_Params["vnp_ResponseCode"] };
     }
 
-    res.json(result);
+    sendDetailResponse(res, result);
   } catch (error) {
-    res.status(500).json({ code: "99", message: "Server error" });
+    sendInternalErrorResponse(res, "Server error");
   }
 });
 
@@ -184,14 +188,12 @@ router.get("/vnpay_ipn", async function (req, res, next) {
     let signed = hmac.update(new Buffer(signData, "utf-8")).digest("hex");
 
     if (secureHash !== signed) {
-      return res.status(200).json({
-        RspCode: "97",
-        Message: "Invalid Checksum",
-        TerminalId: null,
-        OrderId: null,
-        Localdate: null,
-        Signature: null,
-      });
+      return sendErrorResponse(
+        res,
+        "Invalid Checksum",
+        "INVALID_CHECKSUM",
+        200
+      );
     }
 
     // 3. Kiểm tra checkOrderId (tìm orderId trong bảng Payment)

@@ -20,11 +20,11 @@ const {
 // Lấy tất cả industries với pagination và search
 router.get("/", async (req, res) => {
   try {
-    const { page = 1, pageSize = 10, searchTxt } = req.query;
+    const { page = 1, pageSize = 10, limit: queryLimit, searchTxt } = req.query;
 
     // Parse pagination parameters
     const pageNumber = parseInt(page);
-    const limit = parseInt(pageSize);
+    const limit = parseInt(queryLimit) || parseInt(pageSize) || 10;
     const offset = (pageNumber - 1) * limit;
 
     // Build where condition for search

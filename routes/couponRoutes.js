@@ -55,18 +55,8 @@ router.get("/", authMiddleware, adminMiddleware, async (req, res) => {
         order: [["created_at", "DESC"]],
       });
 
-      return res.json({
-        success: true,
-        data: {
-          list: coupons,
-          pagination: {
-            total: count,
-            page: parseInt(page),
-            limit: parseInt(limit),
-            totalPages: Math.ceil(count / limit),
-          },
-        },
-      });
+      const pagination = calculatePagination(count, page, limit);
+      sendListResponse(res, coupons, pagination);
     }
 
     // Nếu cần thống kê, lấy thông tin chi tiết
@@ -124,18 +114,8 @@ router.get("/", authMiddleware, adminMiddleware, async (req, res) => {
     // 5. Lấy tổng số coupons cho phân trang
     const total = await Coupon.count({ where });
 
-    res.json({
-      success: true,
-      data: {
-        list: formattedStats,
-        pagination: {
-          total,
-          page: parseInt(page),
-          limit: parseInt(limit),
-          totalPages: Math.ceil(total / limit),
-        },
-      },
-    });
+    const pagination = calculatePagination(total, page, limit);
+    sendListResponse(res, formattedStats, pagination);
   } catch (error) {
     sendInternalErrorResponse(
       res,
@@ -175,21 +155,23 @@ router.post("/", authMiddleware, adminMiddleware, async (req, res) => {
       !couponData.type
     ) {
       await t.rollback();
-      return res.status(400).json({
-        success: false,
-        message: "Thiếu thông tin bắt buộc",
-        error: "INVALID_DATA",
-      });
+      return sendErrorResponse(
+        res,
+        "Thiếu thông tin bắt buộc",
+        "INVALID_DATA",
+        400
+      );
     }
 
     // Kiểm tra discount không âm
     if (couponData.discount < 0) {
       await t.rollback();
-      return res.status(400).json({
-        success: false,
-        message: "Giá trị discount không được âm",
-        error: "INVALID_DISCOUNT",
-      });
+      return sendErrorResponse(
+        res,
+        "Giá trị discount không được âm",
+        "INVALID_DISCOUNT",
+        400
+      );
     }
 
     // Kiểm tra code đã tồn tại chưa
@@ -218,11 +200,7 @@ router.post("/", authMiddleware, adminMiddleware, async (req, res) => {
   } catch (error) {
     await t.rollback();
 
-    res.status(500).json({
-      success: false,
-      message: "Lỗi khi tạo coupon",
-      error: error.message,
-    });
+    sendInternalErrorResponse(res, "Lỗi khi tạo coupon: " + error.message);
   }
 });
 

@@ -70,10 +70,10 @@ router.use("/uploads", express.static(uploadDir)); // Cho phép truy cập ảnh
 // GET: Lấy tất cả Product theo trang
 router.get("/", async (req, res) => {
   try {
-    const { page = 1, pageSize = 10 } = req.query;
+    const { page = 1, pageSize = 10, limit: queryLimit } = req.query;
 
-    const offset = (page - 1) * pageSize;
-    const limit = parseInt(pageSize);
+    const limit = parseInt(queryLimit) || parseInt(pageSize) || 10;
+    const offset = (page - 1) * limit;
 
     const { count, rows } = await Product.findAndCountAll({
       offset,

@@ -138,16 +138,19 @@ router.put("/:id", async (req, res) => {
 
     const referral = await Referral.findByPk(id);
     if (!referral) {
-      return res.status(404).json({ message: "Referral not found" });
+      return sendNotFoundResponse(res, "Referral not found");
     }
 
     // Check if the new code already exists (and isn't the current code)
     if (code && code !== referral.code) {
       const existingReferral = await Referral.findOne({ where: { code } });
       if (existingReferral) {
-        return res
-          .status(400)
-          .json({ message: "Referral code already exists" });
+        return sendErrorResponse(
+          res,
+          "Referral code already exists",
+          "DUPLICATE_CODE",
+          400
+        );
       }
     }
 
@@ -170,9 +173,7 @@ router.put("/:id", async (req, res) => {
       .status(200)
       .json({ message: "Referral updated successfully", referral });
   } catch (error) {
-    return res
-      .status(500)
-      .json({ message: "Server error", error: error.message });
+    sendInternalErrorResponse(res, "Server error: " + error.message);
   }
 });
 
@@ -183,7 +184,7 @@ router.delete("/:id", async (req, res) => {
     const referral = await Referral.findByPk(id);
 
     if (!referral) {
-      return res.status(404).json({ message: "Referral not found" });
+      return sendNotFoundResponse(res, "Referral not found");
     }
 
     await referral.destroy();
@@ -194,11 +195,9 @@ router.delete("/:id", async (req, res) => {
       cache.invalidateCache("all_referrals"),
     ]);
 
-    return res.status(200).json({ message: "Referral deleted successfully" });
+    sendDeleteResponse(res, "Referral deleted successfully");
   } catch (error) {
-    return res
-      .status(500)
-      .json({ message: "Server error", error: error.message });
+    sendInternalErrorResponse(res, "Server error: " + error.message);
   }
 });
 
@@ -209,7 +208,7 @@ router.patch("/:id/increment-count", async (req, res) => {
 
     const referral = await Referral.findByPk(id);
     if (!referral) {
-      return res.status(404).json({ message: "Referral not found" });
+      return sendNotFoundResponse(res, "Referral not found");
     }
 
     // Increment the count
@@ -228,9 +227,7 @@ router.patch("/:id/increment-count", async (req, res) => {
       .status(200)
       .json({ message: "Referral count incremented successfully", referral });
   } catch (error) {
-    return res
-      .status(500)
-      .json({ message: "Server error", error: error.message });
+    sendInternalErrorResponse(res, "Server error: " + error.message);
   }
 });
 
@@ -243,7 +240,7 @@ router.get("/get-discount/:code", async (req, res) => {
     const cachedDiscount = await cache.getCache(`discount_${code}`);
 
     if (cachedDiscount) {
-      return res.status(200).json(JSON.parse(cachedDiscount));
+      sendDetailResponse(res, JSON.parse(cachedDiscount));
     }
 
     const referral = await Referral.findOne({ where: { code } });
@@ -275,11 +272,9 @@ router.get("/get-discount/:code", async (req, res) => {
     // Cache discount for 5 minutes (300 seconds)
     await cache.setCache(`discount_${code}`, JSON.stringify(response), 300);
 
-    return res.status(200).json(response);
+    sendDetailResponse(res, response);
   } catch (error) {
-    return res
-      .status(500)
-      .json({ message: "Server error", error: error.message });
+    sendInternalErrorResponse(res, "Server error: " + error.message);
   }
 });
 

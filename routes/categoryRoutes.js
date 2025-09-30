@@ -79,7 +79,12 @@ router.post(
   (req, res) => {
     try {
       if (!req.files || (!req.files["image"] && !req.files["image_card"])) {
-        return res.status(400).json({ message: "No files uploaded" });
+        return sendErrorResponse(
+          res,
+          "No files uploaded",
+          "VALIDATION_ERROR",
+          400
+        );
       }
 
       // Lấy base URL của server
@@ -95,14 +100,9 @@ router.post(
           : null,
       };
 
-      res.status(200).json({
-        message: "Files uploaded successfully",
-        imageUrls: imageUrls,
-      });
+      sendCreateResponse(res, { imageUrls }, "Files uploaded successfully");
     } catch (error) {
-      res
-        .status(500)
-        .json({ message: "Error uploading files", error: error.message });
+      sendInternalErrorResponse(res, "Error uploading files: " + error.message);
     }
   }
 );
@@ -111,7 +111,8 @@ router.post(
 router.get("/", async (req, res) => {
   try {
     const page = parseInt(req.query.page) || 1;
-    const pageSize = parseInt(req.query.pageSize) || 10;
+    const pageSize =
+      parseInt(req.query.limit) || parseInt(req.query.pageSize) || 10;
     const type = req.query.type;
     const sectionId = req.query.sectionId;
     const isCommingSoon = req.query.isCommingSoon;
@@ -205,12 +206,14 @@ router.get("/", async (req, res) => {
       });
     }
 
+    // Get count and data with proper handling of includes
     const { count, rows } = await Category.findAndCountAll({
       where: whereCondition,
       include: includeOptions,
       limit: pageSize,
       offset: offset,
       order: [["created_at", "DESC"]],
+      distinct: true,
     });
 
     const pagination = calculatePagination(count, page, pageSize);
@@ -498,7 +501,8 @@ router.get("/by-type/:type", async (req, res) => {
   try {
     const { type } = req.params;
     const page = parseInt(req.query.page) || 1;
-    const pageSize = parseInt(req.query.pageSize) || 10;
+    const pageSize =
+      parseInt(req.query.limit) || parseInt(req.query.pageSize) || 10;
 
     // Validate type parameter
     if (!["free", "premium"].includes(type)) {

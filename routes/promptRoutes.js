@@ -140,10 +140,11 @@ router.get("/test-cors", (req, res) => {
   res.header("Access-Control-Allow-Origin", "*");
   res.header("Access-Control-Allow-Methods", "GET, OPTIONS");
   res.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
-  res.json({
-    message: "CORS test successful",
-    timestamp: new Date().toISOString(),
-  });
+  sendDetailResponse(
+    res,
+    { timestamp: new Date().toISOString() },
+    "CORS test successful"
+  );
 });
 
 // API Upload ảnh (tên field nào cũng được)
@@ -189,15 +190,14 @@ router.post("/upload", authMiddleware, upload.any(), async (req, res) => {
         (file) => `${baseUrl}/api/prompts/upload/${file.filename}`
       );
 
-      res.status(200).json({
-        message: "Files uploaded successfully (without optimization)",
-        imageUrls: imageUrls,
-      });
+      sendCreateResponse(
+        res,
+        { imageUrls },
+        "Files uploaded successfully (without optimization)"
+      );
     }
   } catch (error) {
-    res
-      .status(500)
-      .json({ message: "Error uploading files", error: error.message });
+    sendInternalErrorResponse(res, "Error uploading files: " + error.message);
   }
 });
 
@@ -216,10 +216,12 @@ router.get(
         });
 
         if (!result.success) {
-          return res.status(400).json({
-            success: false,
-            message: result.error || "Failed to create Excel template",
-          });
+          return sendErrorResponse(
+            res,
+            result.error || "Failed to create Excel template",
+            "VALIDATION_ERROR",
+            400
+          );
         }
 
         // Set headers for file download
@@ -240,18 +242,16 @@ router.get(
           res.send(Buffer.from(result.data));
         }
       } catch (error) {
-        res.status(500).json({
-          success: false,
-          message: "Error creating Excel template",
-          error: error.message,
-        });
+        sendInternalErrorResponse(
+          res,
+          "Error creating Excel template: " + error.message
+        );
       }
     } catch (error) {
-      res.status(500).json({
-        success: false,
-        message: "Error creating Excel template",
-        error: error.message,
-      });
+      sendInternalErrorResponse(
+        res,
+        "Error creating Excel template: " + error.message
+      );
     }
   }
 );
@@ -565,7 +565,12 @@ router.post(
   async (req, res) => {
     try {
       if (!req.file) {
-        return res.status(400).json({ message: "No file uploaded" });
+        return sendErrorResponse(
+          res,
+          "No file uploaded",
+          "VALIDATION_ERROR",
+          400
+        );
       }
 
       // Kiểm tra file extension
@@ -573,10 +578,12 @@ router.post(
       const fileExtension = path.extname(req.file.originalname).toLowerCase();
 
       if (!allowedExtensions.includes(fileExtension)) {
-        return res.status(400).json({
-          message:
-            "Invalid file type. Only Excel files (.xlsx, .xls) are allowed.",
-        });
+        return sendErrorResponse(
+          res,
+          "Invalid file type. Only Excel files (.xlsx, .xls) are allowed.",
+          "VALIDATION_ERROR",
+          400
+        );
       }
 
       const { runTask } = require("../utils/worker");
@@ -609,7 +616,12 @@ router.post(
             },
           };
 
-          return res.status(400).json(errorResponse);
+          return sendErrorResponse(
+            res,
+            errorResponse.message,
+            "VALIDATION_ERROR",
+            400
+          );
         }
 
         // Nếu có ít nhất 1 record được xử lý thành công
@@ -630,18 +642,22 @@ router.post(
           },
         };
 
-        res.status(200).json(responseData);
+        sendCreateResponse(
+          res,
+          responseData,
+          "Excel file processed successfully"
+        );
       } catch (error) {
-        res.status(500).json({
-          message: "Error processing Excel file",
-          error: error.message,
-        });
+        sendInternalErrorResponse(
+          res,
+          "Error processing Excel file: " + error.message
+        );
       }
     } catch (error) {
-      res.status(500).json({
-        message: "Error importing Excel file",
-        error: error.message,
-      });
+      sendInternalErrorResponse(
+        res,
+        "Error importing Excel file: " + error.message
+      );
     }
   }
 );
@@ -650,16 +666,49 @@ router.post(
 router.get("/", authMiddleware, checkSubTypeAccess, async (req, res) => {
   try {
     const page = parseInt(req.query.page) || 1;
-    const pageSize = parseInt(req.query.pageSize) || 10;
+    const pageSize =
+      parseInt(req.query.limit) || parseInt(req.query.pageSize) || 10;
     const offset = (page - 1) * pageSize;
 
     const where = {};
-    if (req.query.category_id) {
-      where.category_id = req.query.category_id;
+
+    // Handle category filtering - support multiple categoryIds
+    if (req.query.categoryIds || req.query.category_id) {
+      const categoryIds = req.query.categoryIds || req.query.category_id;
+      const categoryArray = Array.isArray(categoryIds)
+        ? categoryIds
+        : [categoryIds];
+
+      // Convert to numbers and filter out invalid values
+      const validCategoryIds = categoryArray
+        .map((id) => parseInt(id))
+        .filter((id) => !isNaN(id) && id > 0);
+
+      if (validCategoryIds.length > 0) {
+        where.category_id =
+          validCategoryIds.length === 1
+            ? validCategoryIds[0]
+            : { [Op.in]: validCategoryIds };
+      }
     }
 
-    if (req.query.is_type) {
-      where.is_type = req.query.is_type;
+    // Handle is_type filtering - support multiple values
+    if (req.query.isTypeIds || req.query.isType || req.query.is_type) {
+      const isTypes =
+        req.query.isTypeIds || req.query.isType || req.query.is_type;
+      const isTypeArray = Array.isArray(isTypes) ? isTypes : [isTypes];
+
+      // Convert to numbers and filter out invalid values
+      const validIsTypes = isTypeArray
+        .map((type) => parseInt(type))
+        .filter((type) => !isNaN(type) && type > 0);
+
+      if (validIsTypes.length > 0) {
+        where.is_type =
+          validIsTypes.length === 1
+            ? validIsTypes[0]
+            : { [Op.in]: validIsTypes };
+      }
     }
 
     if (!!req.query.sub_type && Number(req.query.sub_type) !== 0) {
@@ -670,27 +719,65 @@ router.get("/", authMiddleware, checkSubTypeAccess, async (req, res) => {
       where.topic_id = req.query.topic_id;
     }
 
-    // Handle industry filter - need to find categories that belong to this industry
+    // Handle industry filtering - support multiple industryIds
     let industryFilter = null;
-    if (req.query.industry_id) {
-      industryFilter = {
-        model: Category,
-        attributes: ["id", "name", "image", "image_card", "section_id"],
-        include: [
-          {
-            model: Section,
-            attributes: ["id", "name", "description"],
-          },
-          {
-            model: Industry,
-            as: "industries",
-            where: { id: req.query.industry_id },
-            attributes: ["id", "name", "description"],
-            through: { attributes: [] },
-          },
-        ],
-        required: true,
-      };
+    if (req.query.industryIds || req.query.industry_id) {
+      const industryIds = req.query.industryIds || req.query.industry_id;
+      const industryArray = Array.isArray(industryIds)
+        ? industryIds
+        : [industryIds];
+
+      // Convert to numbers and filter out invalid values
+      const validIndustryIds = industryArray
+        .map((id) => parseInt(id))
+        .filter((id) => !isNaN(id) && id > 0);
+
+      if (validIndustryIds.length > 0) {
+        industryFilter = {
+          model: Category,
+          attributes: ["id", "name", "image", "image_card", "section_id"],
+          include: [
+            {
+              model: Section,
+              attributes: ["id", "name", "description"],
+            },
+            {
+              model: Industry,
+              as: "industries",
+              where:
+                validIndustryIds.length === 1
+                  ? { id: validIndustryIds[0] }
+                  : { id: { [Op.in]: validIndustryIds } },
+              attributes: ["id", "name", "description"],
+              through: { attributes: [] },
+            },
+          ],
+          required: true,
+        };
+      }
+    }
+
+    // Handle date filtering - support dateFrom and dateTo
+    if (req.query.dateFrom || req.query.dateTo) {
+      where.created_at = {};
+
+      if (req.query.dateFrom) {
+        const dateFrom = new Date(req.query.dateFrom);
+        if (!isNaN(dateFrom.getTime())) {
+          // Set to start of day
+          dateFrom.setHours(0, 0, 0, 0);
+          where.created_at[Op.gte] = dateFrom;
+        }
+      }
+
+      if (req.query.dateTo) {
+        const dateTo = new Date(req.query.dateTo);
+        if (!isNaN(dateTo.getTime())) {
+          // Set to end of day
+          dateTo.setHours(23, 59, 59, 999);
+          where.created_at[Op.lte] = dateTo;
+        }
+      }
     }
 
     if (req.query.search) {
@@ -780,14 +867,8 @@ router.get("/", authMiddleware, checkSubTypeAccess, async (req, res) => {
       order: order,
     });
 
-    const result = {
-      total: count,
-      page,
-      pageSize,
-      data: rows,
-    };
-
-    res.status(200).json(result);
+    const pagination = calculatePagination(count, page, pageSize);
+    sendListResponse(res, rows, pagination);
   } catch (error) {
     res
       .status(500)
@@ -800,13 +881,19 @@ router.get("/by-category", checkSubTypeAccess, async (req, res) => {
   try {
     const category_id = req.query.category_id;
     if (!category_id) {
-      return res.status(400).json({ message: "category_id is required" });
+      return sendErrorResponse(
+        res,
+        "category_id is required",
+        "VALIDATION_ERROR",
+        400
+      );
     }
     const is_type = req.query.is_type || 1;
     const topic_id = req.query.topic_id;
     const searchText = req.query.search_text;
     const page = parseInt(req.query.page) || 1;
-    const pageSize = parseInt(req.query.pageSize) || 12;
+    const pageSize =
+      parseInt(req.query.limit) || parseInt(req.query.pageSize) || 12;
 
     const offset = (page - 1) * pageSize;
     let whereCondition = {
@@ -865,7 +952,7 @@ router.get("/by-category", checkSubTypeAccess, async (req, res) => {
       data: rows,
     };
 
-    res.status(200).json(result);
+    sendDetailResponse(res, result);
   } catch (error) {
     res
       .status(500)
@@ -877,7 +964,12 @@ router.get("/topics/by-category", checkSubTypeAccess, async (req, res) => {
   try {
     const { category_id } = req.query;
     if (!category_id) {
-      return res.status(400).json({ message: "category_id is required" });
+      return sendErrorResponse(
+        res,
+        "category_id is required",
+        "VALIDATION_ERROR",
+        400
+      );
     }
 
     let whereCondition = {
@@ -912,7 +1004,7 @@ router.get("/topics/by-category", checkSubTypeAccess, async (req, res) => {
       topics,
     };
 
-    res.status(200).json(result);
+    sendDetailResponse(res, result);
   } catch (error) {
     res
       .status(500)
@@ -925,7 +1017,12 @@ router.get("/newest", checkSubTypeAccess, async (req, res) => {
   try {
     const category_id = req.query.category_id;
     if (!category_id) {
-      return res.status(400).json({ message: "category_id is required" });
+      return sendErrorResponse(
+        res,
+        "category_id is required",
+        "VALIDATION_ERROR",
+        400
+      );
     }
 
     const thirtyDaysAgo = new Date();
@@ -971,7 +1068,7 @@ router.get("/newest", checkSubTypeAccess, async (req, res) => {
       data: newest_prompts,
     };
 
-    res.status(200).json(result);
+    sendDetailResponse(res, result);
   } catch (error) {
     res
       .status(500)
@@ -1026,7 +1123,7 @@ router.get("/:id", authMiddleware, checkSubTypeAccess, async (req, res) => {
       limit: 5,
     });
 
-    res.status(200).json(prompt);
+    sendDetailResponse(res, prompt);
   } catch (error) {
     res
       .status(500)

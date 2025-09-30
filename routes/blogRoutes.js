@@ -65,18 +65,17 @@ const handleUpload = (req, res, next) => {
     if (err instanceof multer.MulterError) {
       // Lỗi từ multer
       if (err.code === "LIMIT_FILE_SIZE") {
-        return res.status(400).json({
-          error: "File size too large. Max size is 5MB",
-        });
+        return sendErrorResponse(
+          res,
+          "File size too large. Max size is 5MB",
+          "VALIDATION_ERROR",
+          400
+        );
       }
-      return res.status(400).json({
-        error: err.message,
-      });
+      return sendErrorResponse(res, err.message, "VALIDATION_ERROR", 400);
     } else if (err) {
       // Lỗi khác
-      return res.status(400).json({
-        error: err.message,
-      });
+      return sendErrorResponse(res, err.message, "VALIDATION_ERROR", 400);
     }
     // Không có lỗi
     next();
@@ -132,13 +131,8 @@ router.get("/list", async (req, res) => {
       order: [["published_at", "DESC"]],
     });
 
-    res.json({
-      totalItems: count,
-      totalPages: Math.ceil(count / pageSize),
-      currentPage: page,
-      pageSize,
-      blogs: rows,
-    });
+    const pagination = calculatePagination(count, page, pageSize);
+    sendListResponse(res, rows, pagination);
   } catch (error) {
     sendInternalErrorResponse(res, error.message);
   }
@@ -212,17 +206,12 @@ router.post("/", handleUpload, validateBlogData, async (req, res) => {
         const dateValue = new Date(req.body.published_at);
 
         if (isNaN(dateValue.getTime())) {
-          return res.status(400).json({
-            error: "Invalid date format for published_at",
-            receivedValue: req.body.published_at,
-            expectedFormats: [
-              "null",
-              "now",
-              "current",
-              "2024-01-01",
-              "2024-01-01T00:00:00.000Z",
-            ],
-          });
+          return sendErrorResponse(
+            res,
+            "Invalid date format for published_at",
+            "VALIDATION_ERROR",
+            400
+          );
         }
         blogData.published_at = dateValue;
       }
@@ -290,24 +279,19 @@ router.put("/:id", handleUpload, validateBlogData, async (req, res) => {
         const dateValue = new Date(req.body.published_at);
 
         if (isNaN(dateValue.getTime())) {
-          return res.status(400).json({
-            error: "Invalid date format for published_at",
-            receivedValue: req.body.published_at,
-            expectedFormats: [
-              "null",
-              "now",
-              "current",
-              "2024-01-01",
-              "2024-01-01T00:00:00.000Z",
-            ],
-          });
+          return sendErrorResponse(
+            res,
+            "Invalid date format for published_at",
+            "VALIDATION_ERROR",
+            400
+          );
         }
         blogData.published_at = dateValue;
       }
     }
 
     await blog.update(blogData);
-    res.json(blog);
+    sendUpdateResponse(res, blog, "Blog updated successfully");
   } catch (error) {
     // Xóa file mới nếu có lỗi khi cập nhật
     if (req.file) {
@@ -321,7 +305,7 @@ router.put("/:id", handleUpload, validateBlogData, async (req, res) => {
 router.delete("/:id", async (req, res) => {
   try {
     const blog = await Blog.findByPk(req.params.id);
-    if (!blog) return res.status(404).json({ message: "Blog not found" });
+    if (!blog) return sendNotFoundResponse(res, "Blog not found");
 
     if (blog.featured_image) {
       // Extract filename from the full URL path
