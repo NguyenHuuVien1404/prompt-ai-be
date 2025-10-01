@@ -32,20 +32,31 @@ const toCamelCase = (str) => {
 };
 
 // Utility function to transform object fields from snake_case to camelCase
-const transformToCamelCase = (obj) => {
+const transformToCamelCase = (obj, seen = new WeakSet()) => {
   if (!obj || typeof obj !== "object") return obj;
 
+  // Check for circular reference
+  if (seen.has(obj)) return obj;
+  seen.add(obj);
+
   if (Array.isArray(obj)) {
-    return obj.map(transformToCamelCase);
+    return obj.map((item) => transformToCamelCase(item, seen));
+  }
+
+  // Handle Sequelize instances - convert to plain object first
+  if (obj.toJSON && typeof obj.toJSON === "function") {
+    obj = obj.toJSON();
   }
 
   const transformed = {};
   for (const [key, value] of Object.entries(obj)) {
     const camelKey = toCamelCase(key);
     if (value && typeof value === "object" && !Array.isArray(value)) {
-      transformed[camelKey] = transformToCamelCase(value);
+      transformed[camelKey] = transformToCamelCase(value, seen);
     } else if (Array.isArray(value)) {
-      transformed[camelKey] = value.map(transformToCamelCase);
+      transformed[camelKey] = value.map((item) =>
+        transformToCamelCase(item, seen)
+      );
     } else {
       transformed[camelKey] = value;
     }
@@ -141,7 +152,7 @@ router.post(
 // Get all categories with pagination and filters
 router.get("/", async (req, res) => {
   try {
-    const page = parseInt(req.query.page) || 1;
+    const page = parseInt(req.query.pageIndex || req.query.page) || 1;
     const pageSize =
       parseInt(req.query.limit) || parseInt(req.query.pageSize) || 10;
     const type = req.query.type;
@@ -215,7 +226,7 @@ router.get("/", async (req, res) => {
 
     // Build include options
     const includeOptions = [
-      { model: Section, attributes: ["id", "name"] },
+      { model: Section, as: "section", attributes: ["id", "name"] },
       {
         model: Industry,
         as: "industries",
@@ -237,17 +248,19 @@ router.get("/", async (req, res) => {
       });
     }
 
-    // Get count and data with proper handling of includes
-    const { count, rows } = await Category.findAndCountAll({
+    // Get total count without includes to avoid JOIN counting issues
+    const totalCount = await Category.count({ where: whereCondition });
+
+    // Get actual data with includes
+    const rows = await Category.findAll({
       where: whereCondition,
       include: includeOptions,
       limit: pageSize,
       offset: offset,
       order: [["created_at", "DESC"]],
-      distinct: true,
     });
 
-    const pagination = calculatePagination(count, page, pageSize);
+    const pagination = calculatePagination(totalCount, page, pageSize);
 
     sendListResponse(res, transformToCamelCase(rows), pagination);
   } catch (error) {
@@ -266,7 +279,7 @@ router.get("/:id", async (req, res) => {
 
     const category = await Category.findByPk(categoryId, {
       include: [
-        { model: Section, attributes: ["id", "name"] },
+        { model: Section, as: "section", attributes: ["id", "name"] },
         {
           model: Industry,
           as: "industries",
@@ -482,7 +495,7 @@ router.put(
       // Get updated category with industries
       const updatedCategory = await Category.findByPk(categoryId, {
         include: [
-          { model: Section, attributes: ["id", "name"] },
+          { model: Section, as: "section", attributes: ["id", "name"] },
           {
             model: Industry,
             as: "industries",
@@ -539,7 +552,7 @@ router.delete("/:id", async (req, res) => {
 router.get("/by-type/:type", async (req, res) => {
   try {
     const { type } = req.params;
-    const page = parseInt(req.query.page) || 1;
+    const page = parseInt(req.query.pageIndex || req.query.page) || 1;
     const pageSize =
       parseInt(req.query.limit) || parseInt(req.query.pageSize) || 10;
 
@@ -555,15 +568,19 @@ router.get("/by-type/:type", async (req, res) => {
 
     const offset = (page - 1) * pageSize;
 
-    const { count, rows } = await Category.findAndCountAll({
+    // Get total count without includes
+    const totalCount = await Category.count({ where: { type } });
+
+    // Get actual data with includes
+    const rows = await Category.findAll({
       where: { type },
-      include: [{ model: Section, attributes: ["id", "name"] }],
+      include: [{ model: Section, as: "section", attributes: ["id", "name"] }],
       limit: pageSize,
       offset: offset,
       order: [["created_at", "DESC"]],
     });
 
-    const pagination = calculatePagination(count, page, pageSize);
+    const pagination = calculatePagination(totalCount, page, pageSize);
 
     sendListResponse(res, transformToCamelCase(rows), pagination);
   } catch (error) {

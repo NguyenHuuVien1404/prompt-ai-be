@@ -17,42 +17,20 @@ const {
   calculatePagination,
 } = require("../utils/responseUtils");
 
-// Utility function to convert snake_case to camelCase
-const toCamelCase = (str) => {
-  return str.replace(/_([a-z])/g, (match, letter) => letter.toUpperCase());
-};
-
-// Utility function to transform object fields from snake_case to camelCase
-const transformToCamelCase = (obj) => {
-  if (!obj || typeof obj !== "object") return obj;
-
-  if (Array.isArray(obj)) {
-    return obj.map(transformToCamelCase);
-  }
-
-  const transformed = {};
-  for (const [key, value] of Object.entries(obj)) {
-    const camelKey = toCamelCase(key);
-    if (value && typeof value === "object" && !Array.isArray(value)) {
-      transformed[camelKey] = transformToCamelCase(value);
-    } else if (Array.isArray(value)) {
-      transformed[camelKey] = value.map(transformToCamelCase);
-    } else {
-      transformed[camelKey] = value;
-    }
-  }
-  return transformed;
-};
+// Import transform utilities
+const { transformToCamelCase } = require("../utils/transformUtils");
 
 // Lấy tất cả industries với pagination và search
 router.get("/", async (req, res) => {
   try {
-    const { page = 1, pageSize = 10, limit: queryLimit, searchTxt } = req.query;
-
-    // Parse pagination parameters
-    const pageNumber = parseInt(page);
-    const limit = parseInt(queryLimit) || parseInt(pageSize) || 10;
-    const offset = (pageNumber - 1) * limit;
+    const {
+      page,
+      pageIndex,
+      pageSize,
+      limit: queryLimit,
+      searchTxt,
+      categoryIds,
+    } = req.query;
 
     // Build where condition for search
     const whereCondition = {};
@@ -62,24 +40,75 @@ router.get("/", async (req, res) => {
       };
     }
 
-    // Get total count for pagination
-    const totalCount = await Industry.count({ where: whereCondition });
+    // Handle categoryIds filtering
+    let includeOptions = [];
+    if (categoryIds) {
+      const categoryIdArray = Array.isArray(categoryIds)
+        ? categoryIds.map((id) => parseInt(id))
+        : [parseInt(categoryIds)];
 
-    // Get paginated results
-    const industries = await Industry.findAll({
-      where: whereCondition,
-      order: [["name", "ASC"]],
-      limit: limit,
-      offset: offset,
-    });
+      const validCategoryIds = categoryIdArray.filter(
+        (id) => !isNaN(id) && id > 0
+      );
 
-    // Calculate pagination info
-    const totalPages = Math.ceil(totalCount / limit);
-    const hasNextPage = pageNumber < totalPages;
-    const hasPrevPage = pageNumber > 1;
+      if (validCategoryIds.length > 0) {
+        includeOptions.push({
+          model: Category,
+          as: "categories",
+          where: { id: validCategoryIds },
+          through: { attributes: [] },
+        });
+      }
+    }
 
-    const pagination = calculatePagination(totalCount, pageNumber, limit);
-    sendListResponse(res, transformToCamelCase(industries), pagination);
+    // Check if pagination is explicitly requested
+    // Only apply pagination if user explicitly provides these params
+    const hasPagination =
+      page !== undefined ||
+      pageIndex !== undefined ||
+      pageSize !== undefined ||
+      queryLimit !== undefined;
+
+    if (hasPagination) {
+      // Parse pagination parameters
+      const pageNumber = parseInt(page || pageIndex) || 1;
+      const limit = parseInt(queryLimit) || parseInt(pageSize) || 10;
+      const offset = (pageNumber - 1) * limit;
+
+      // Get total count for pagination
+      const totalCount = await Industry.count({
+        where: whereCondition,
+        include: includeOptions,
+        distinct: true,
+      });
+
+      // Get paginated results
+      const industries = await Industry.findAll({
+        where: whereCondition,
+        include: includeOptions,
+        order: [["name", "ASC"]],
+        limit: limit,
+        offset: offset,
+      });
+
+      const pagination = calculatePagination(totalCount, pageNumber, limit);
+      sendListResponse(res, transformToCamelCase(industries), pagination);
+    } else {
+      // No pagination - return all results
+      const industries = await Industry.findAll({
+        where: whereCondition,
+        include: includeOptions,
+        order: [["name", "ASC"]],
+      });
+
+      const pagination = {
+        totalCount: industries.length,
+        currentPage: 1,
+        pageSize: industries.length,
+        totalPages: 1,
+      };
+      sendListResponse(res, transformToCamelCase(industries), pagination);
+    }
   } catch (error) {
     console.error("Error fetching industries:", error);
     sendInternalErrorResponse(res, "Lỗi máy chủ nội bộ");
@@ -103,28 +132,66 @@ router.get("/:id", async (req, res) => {
   }
 });
 
-// Lấy industries theo category_id
-router.get("/by-category/:categoryId", async (req, res) => {
+// Lấy industries theo category_id (hỗ trợ multiple IDs qua query)
+router.get("/by-category/:categoryId?", async (req, res) => {
   try {
     const { categoryId } = req.params;
+    const { categoryIds } = req.query;
+
+    // Xử lý categoryIds - ưu tiên query parameter
+    let categoryIdArray = [];
+
+    if (categoryIds) {
+      categoryIdArray = Array.isArray(categoryIds)
+        ? categoryIds.map((id) => parseInt(id))
+        : [parseInt(categoryIds)];
+    } else if (categoryId) {
+      categoryIdArray = [parseInt(categoryId)];
+    } else {
+      return sendErrorResponse(
+        res,
+        "Category ID is required",
+        "VALIDATION_ERROR",
+        400
+      );
+    }
+
+    // Lọc bỏ các giá trị không hợp lệ
+    categoryIdArray = categoryIdArray.filter((id) => !isNaN(id) && id > 0);
+
+    if (categoryIdArray.length === 0) {
+      return sendErrorResponse(
+        res,
+        "Valid category ID(s) required",
+        "VALIDATION_ERROR",
+        400
+      );
+    }
 
     const industries = await Industry.findAll({
       include: [
         {
           model: Category,
           as: "categories",
-          where: { id: categoryId },
+          where: { id: categoryIdArray },
           through: { attributes: [] },
         },
       ],
       order: [["name", "ASC"]],
     });
 
-    sendListResponse(
-      res,
-      transformToCamelCase(industries),
-      calculatePagination(industries.length, 1, industries.length)
-    );
+    if (industries.length === 0) {
+      return sendNotFoundResponse(res, "Không tìm thấy ngành nghề");
+    }
+
+    const pagination = {
+      totalCount: industries.length,
+      currentPage: 1,
+      pageSize: industries.length,
+      totalPages: 1,
+    };
+
+    sendListResponse(res, transformToCamelCase(industries), pagination);
   } catch (error) {
     console.error("Error fetching industries by category:", error);
     sendInternalErrorResponse(res, "Lỗi máy chủ nội bộ");

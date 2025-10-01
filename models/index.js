@@ -57,6 +57,7 @@ Category.hasMany(Prompt, {
 });
 Prompt.belongsTo(Category, {
   foreignKey: "category_id",
+  as: "category",
   constraints: true,
   foreignKeyConstraint: true,
   name: "fk_prompt_category_id",
@@ -72,6 +73,7 @@ Topic.hasMany(Prompt, {
 });
 Prompt.belongsTo(Topic, {
   foreignKey: "topic_id",
+  as: "topic",
   constraints: true,
   foreignKeyConstraint: true,
   name: "fk_prompt_topic_id",
@@ -182,6 +184,7 @@ Section.hasMany(Category, {
 });
 Category.belongsTo(Section, {
   foreignKey: "section_id",
+  as: "section",
   constraints: true,
   foreignKeyConstraint: true,
   name: "fk_category_section_id",

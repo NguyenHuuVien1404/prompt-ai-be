@@ -17,32 +17,8 @@ const {
   calculatePagination,
 } = require("../utils/responseUtils");
 
-// Utility function to convert snake_case to camelCase
-const toCamelCase = (str) => {
-  return str.replace(/_([a-z])/g, (match, letter) => letter.toUpperCase());
-};
-
-// Utility function to transform object fields from snake_case to camelCase
-const transformToCamelCase = (obj) => {
-  if (!obj || typeof obj !== "object") return obj;
-
-  if (Array.isArray(obj)) {
-    return obj.map(transformToCamelCase);
-  }
-
-  const transformed = {};
-  for (const [key, value] of Object.entries(obj)) {
-    const camelKey = toCamelCase(key);
-    if (value && typeof value === "object" && !Array.isArray(value)) {
-      transformed[camelKey] = transformToCamelCase(value);
-    } else if (Array.isArray(value)) {
-      transformed[camelKey] = value.map(transformToCamelCase);
-    } else {
-      transformed[camelKey] = value;
-    }
-  }
-  return transformed;
-};
+// Import transform utilities
+const { transformToCamelCase } = require("../utils/transformUtils");
 // Lấy tất cả danh mục
 router.get("/", async (req, res) => {
   try {
@@ -59,8 +35,8 @@ router.get("/", async (req, res) => {
 // Lấy danh sách danh mục có phân trang
 router.get("/list", async (req, res) => {
   try {
-    const { page = 1, pageSize = 10 } = req.query;
-    const offset = (page - 1) * pageSize;
+    const { page, pageIndex, pageSize = 10 } = req.query;
+    const offset = (currentPage - 1) * pageSize;
     const pageNum = parseInt(page);
     const pageSizeNum = parseInt(pageSize);
 

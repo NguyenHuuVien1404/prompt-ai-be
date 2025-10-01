@@ -7,69 +7,49 @@ const {
   Topic,
   Industry,
   CategoryIndustry,
+  Section,
 } = require("../models");
+const {
+  buildPromptWhereClause,
+  buildIndustryFilterIds,
+  buildPromptIncludeArray,
+} = require("../utils/prompt-query-builder");
 
 // Function to export prompts to Excel
 async function exportPromptsToExcel(filters = {}) {
   try {
-    // Build query options
-    const queryOptions = {
-      include: [
-        {
-          model: Category,
-          attributes: ["id", "name"],
-          include: [
-            {
-              model: Industry,
-              as: "industries",
-              attributes: ["id", "name", "description"],
-              through: { attributes: [] },
-            },
-          ],
-        },
-        {
-          model: Topic,
-          as: "topic",
-          attributes: ["id", "name"],
-          required: false, // LEFT JOIN để không bị mất prompt khi không có topic
-        },
-      ],
-      order: [["created_at", "DESC"]],
+    // Convert filters format to match query format
+    const queryFormat = {
+      categoryIds: filters.categoryId,
+      topicId: filters.topicId,
+      sub_type: filters.subType,
+      is_type: filters.isType,
+      search: filters.search,
+      dateFrom: filters.dateFrom,
+      dateTo: filters.dateTo,
+      industryIds: filters.industryId,
     };
 
-    // Apply filters
-    if (filters.categoryId) {
-      queryOptions.where = { category_id: filters.categoryId };
-    }
+    // Build where clause using shared utility
+    const where = buildPromptWhereClause(queryFormat);
 
-    if (filters.industryId) {
-      queryOptions.include[0].include[0].where = { id: filters.industryId };
-      queryOptions.include[0].include[0].required = true;
-    }
+    // Build industry filter IDs
+    const industryFilterIds = buildIndustryFilterIds(queryFormat);
 
-    if (filters.topicId) {
-      queryOptions.where = { ...queryOptions.where, topic_id: filters.topicId };
-    }
+    // Build include array with industry filter
+    const includeArray = buildPromptIncludeArray(industryFilterIds, {
+      Category,
+      Section,
+      Topic,
+      Industry,
+    });
 
-    if (filters.subType) {
-      queryOptions.where = { ...queryOptions.where, sub_type: filters.subType };
-    }
-
-    if (filters.isType) {
-      queryOptions.where = { ...queryOptions.where, is_type: filters.isType };
-    }
-
-    if (filters.search) {
-      const { Op } = require("sequelize");
-      queryOptions.where = {
-        ...queryOptions.where,
-        [Op.or]: [
-          { title: { [Op.like]: `%${filters.search}%` } },
-          { content: { [Op.like]: `%${filters.search}%` } },
-          { short_description: { [Op.like]: `%${filters.search}%` } },
-        ],
-      };
-    }
+    // Build query options
+    const queryOptions = {
+      where,
+      include: includeArray,
+      order: [["created_at", "DESC"]],
+    };
 
     // Limit results if specified
     if (filters.limit) {
@@ -110,12 +90,8 @@ async function exportPromptsToExcel(filters = {}) {
     // Add data rows
     prompts.forEach((prompt) => {
       const industryNames =
-        prompt.Category &&
-        prompt.Category.industries &&
-        prompt.Category.industries.length > 0
-          ? prompt.Category.industries
-              .map((industry) => industry.name)
-              .join(", ")
+        prompt.promptIndustries && prompt.promptIndustries.length > 0
+          ? prompt.promptIndustries.map((industry) => industry.name).join(", ")
           : "";
 
       const row = [

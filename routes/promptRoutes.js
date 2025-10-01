@@ -29,33 +29,7 @@ const {
   sendInternalErrorResponse,
   calculatePagination,
 } = require("../utils/responseUtils");
-
-// Utility function to convert snake_case to camelCase
-const toCamelCase = (str) => {
-  return str.replace(/_([a-z])/g, (match, letter) => letter.toUpperCase());
-};
-
-// Utility function to transform object fields from snake_case to camelCase
-const transformToCamelCase = (obj) => {
-  if (!obj || typeof obj !== "object") return obj;
-
-  if (Array.isArray(obj)) {
-    return obj.map(transformToCamelCase);
-  }
-
-  const transformed = {};
-  for (const [key, value] of Object.entries(obj)) {
-    const camelKey = toCamelCase(key);
-    if (value && typeof value === "object" && !Array.isArray(value)) {
-      transformed[camelKey] = transformToCamelCase(value);
-    } else if (Array.isArray(value)) {
-      transformed[camelKey] = value.map(transformToCamelCase);
-    } else {
-      transformed[camelKey] = value;
-    }
-  }
-  return transformed;
-};
+const { transformToCamelCase } = require("../utils/transformUtils");
 
 // Cấu hình Multer để lưu file vào thư mục "uploads"
 const storage = multer.diskStorage({
@@ -293,23 +267,67 @@ router.get(
     try {
       const { runTask } = require("../utils/worker");
 
-      // Get filters from query parameters
-      const filters = {
-        categoryId: req.query.categoryId || req.query.category_id,
-        industryId: req.query.industryId || req.query.industry_id,
-        topicId: req.query.topicId || req.query.topic_id,
-        subType: req.query.subType || req.query.sub_type,
-        isType: req.query.isType || req.query.is_type,
-        search: req.query.search,
-        limit: req.query.limit,
-      };
+      // Get filters from query parameters - support arrays
+      const filters = {};
 
-      // Remove undefined values
-      Object.keys(filters).forEach((key) => {
-        if (filters[key] === undefined) {
-          delete filters[key];
-        }
-      });
+      // Handle categoryId/categoryIds (support array format)
+      if (
+        req.query.categoryIds ||
+        req.query.categoryId ||
+        req.query.category_id
+      ) {
+        const categoryIds =
+          req.query.categoryIds ||
+          req.query.categoryId ||
+          req.query.category_id;
+        filters.categoryId = Array.isArray(categoryIds)
+          ? categoryIds
+          : [categoryIds];
+      }
+
+      // Handle industryId/industryIds
+      if (
+        req.query.industryIds ||
+        req.query.industryId ||
+        req.query.industry_id
+      ) {
+        const industryIds =
+          req.query.industryIds ||
+          req.query.industryId ||
+          req.query.industry_id;
+        filters.industryId = Array.isArray(industryIds)
+          ? industryIds
+          : [industryIds];
+      }
+
+      // Handle topicId/topicIds
+      if (req.query.topicIds || req.query.topicId || req.query.topic_id) {
+        const topicIds =
+          req.query.topicIds || req.query.topicId || req.query.topic_id;
+        filters.topicId = Array.isArray(topicIds) ? topicIds : [topicIds];
+      }
+
+      // Handle other filters
+      if (req.query.subType || req.query.sub_type) {
+        filters.subType = req.query.subType || req.query.sub_type;
+      }
+      if (req.query.isType || req.query.is_type) {
+        filters.isType = req.query.isType || req.query.is_type;
+      }
+      // Handle search - support multiple parameter names
+      if (req.query.search || req.query.searchTerm || req.query.search_text) {
+        filters.search =
+          req.query.search || req.query.searchTerm || req.query.search_text;
+      }
+      if (req.query.limit) {
+        filters.limit = req.query.limit;
+      }
+      if (req.query.dateFrom) {
+        filters.dateFrom = req.query.dateFrom;
+      }
+      if (req.query.dateTo) {
+        filters.dateTo = req.query.dateTo;
+      }
 
       try {
         const result = await runTask("excel-export.js", {
@@ -693,7 +711,7 @@ router.post(
 // Get all prompts with pagination
 router.get("/", authMiddleware, checkSubTypeAccess, async (req, res) => {
   try {
-    const page = parseInt(req.query.page) || 1;
+    const page = parseInt(req.query.pageIndex || req.query.page) || 1;
     const pageSize =
       parseInt(req.query.limit) || parseInt(req.query.pageSize) || 10;
     const offset = (page - 1) * pageSize;
@@ -750,8 +768,8 @@ router.get("/", authMiddleware, checkSubTypeAccess, async (req, res) => {
       where.topic_id = req.query.topicId || req.query.topic_id;
     }
 
-    // Handle industry filtering - support multiple industryIds
-    let industryFilter = null;
+    // Handle industry filtering - will be added to includeArray later
+    let industryFilterIds = null;
     if (req.query.industryIds || req.query.industry_id) {
       const industryIds = req.query.industryIds || req.query.industry_id;
       const industryArray = Array.isArray(industryIds)
@@ -764,27 +782,7 @@ router.get("/", authMiddleware, checkSubTypeAccess, async (req, res) => {
         .filter((id) => !isNaN(id) && id > 0);
 
       if (validIndustryIds.length > 0) {
-        industryFilter = {
-          model: Category,
-          attributes: ["id", "name", "image", "image_card", "section_id"],
-          include: [
-            {
-              model: Section,
-              attributes: ["id", "name", "description"],
-            },
-            {
-              model: Industry,
-              as: "promptIndustries",
-              where:
-                validIndustryIds.length === 1
-                  ? { id: validIndustryIds[0] }
-                  : { id: { [Op.in]: validIndustryIds } },
-              attributes: ["id", "name", "description"],
-              through: { attributes: [] },
-            },
-          ],
-          required: true,
-        };
+        industryFilterIds = validIndustryIds;
       }
     }
 
@@ -811,8 +809,11 @@ router.get("/", authMiddleware, checkSubTypeAccess, async (req, res) => {
       }
     }
 
-    if (req.query.search) {
-      const searchTerm = `%${req.query.search}%`;
+    // Handle search - support multiple parameter names
+    const searchQuery =
+      req.query.search || req.query.searchTerm || req.query.search_text;
+    if (searchQuery) {
+      const searchTerm = `%${searchQuery}%`;
       where[Op.or] = [
         { title: { [Op.like]: searchTerm } },
         { content: { [Op.like]: searchTerm } },
@@ -882,17 +883,13 @@ router.get("/", authMiddleware, checkSubTypeAccess, async (req, res) => {
     const includeArray = [
       {
         model: Category,
+        as: "category",
         attributes: ["id", "name", "image", "image_card", "section_id"],
         include: [
           {
             model: Section,
+            as: "section",
             attributes: ["id", "name", "description"],
-          },
-          {
-            model: Industry,
-            as: "industries",
-            attributes: ["id", "name", "description"],
-            through: { attributes: [] }, // Exclude join table attributes
           },
         ],
       },
@@ -901,14 +898,47 @@ router.get("/", authMiddleware, checkSubTypeAccess, async (req, res) => {
         as: "topic",
         attributes: ["id", "name"],
       },
+      {
+        model: Industry,
+        as: "promptIndustries",
+        attributes: ["id", "name", "description"],
+        through: { attributes: [] },
+      },
     ];
 
-    // Add industry filter if specified
-    if (industryFilter) {
-      includeArray[0] = industryFilter;
+    // Apply industry filter to promptIndustries if specified
+    if (industryFilterIds) {
+      includeArray[2] = {
+        model: Industry,
+        as: "promptIndustries",
+        where:
+          industryFilterIds.length === 1
+            ? { id: industryFilterIds[0] }
+            : { id: { [Op.in]: industryFilterIds } },
+        attributes: ["id", "name", "description"],
+        through: { attributes: [] },
+        required: true,
+      };
     }
 
-    const { count, rows } = await Prompt.findAndCountAll({
+    // Get total count - handle industry filtering separately
+    let totalCount;
+    if (industryFilterIds) {
+      // Need to count with industry join
+      const countResult = await Prompt.findAndCountAll({
+        where,
+        include: [includeArray[2]], // Only include industry for count
+        distinct: true,
+        col: "id",
+      });
+      totalCount = countResult.count;
+    } else {
+      // Simple count without joins
+      totalCount = await Prompt.count({ where });
+    }
+
+    // Get actual data with includes
+    const rows = await Prompt.findAll({
       where,
       include: includeArray,
       limit: pageSize,
@@ -916,7 +946,7 @@ router.get("/", authMiddleware, checkSubTypeAccess, async (req, res) => {
       order: order,
     });
 
-    const pagination = calculatePagination(count, page, pageSize);
+    const pagination = calculatePagination(totalCount, page, pageSize);
     const transformedRows = transformToCamelCase(rows);
     sendListResponse(res, transformedRows, pagination);
   } catch (error) {
@@ -941,7 +971,7 @@ router.get("/by-category", checkSubTypeAccess, async (req, res) => {
     const is_type = req.query.isType || req.query.is_type || 1;
     const topic_id = req.query.topicId || req.query.topic_id;
     const searchText = req.query.searchText || req.query.search_text;
-    const page = parseInt(req.query.page) || 1;
+    const page = parseInt(req.query.pageIndex || req.query.page) || 1;
     const pageSize =
       parseInt(req.query.limit) || parseInt(req.query.pageSize) || 12;
 
@@ -973,33 +1003,73 @@ router.get("/by-category", checkSubTypeAccess, async (req, res) => {
       ];
     }
 
-    const { count, rows } = await Prompt.findAndCountAll({
+    // Build include array
+    const includeArray = [
+      {
+        model: Category,
+        as: "category",
+        attributes: ["id", "name", "image", "image_card"],
+        include: [
+          {
+            model: Section,
+            as: "section",
+            attributes: ["id", "name", "description"],
+          },
+        ],
+      },
+      { model: Topic, as: "topic", attributes: ["id", "name"] },
+      {
+        model: Industry,
+        as: "promptIndustries",
+        attributes: ["id", "name", "description"],
+        through: { attributes: [] },
+      },
+    ];
+
+    // Handle industry filter - modify include array after it's defined
+    if (req.query.industry_id) {
+      const industryIds = Array.isArray(req.query.industry_id)
+        ? req.query.industry_id
+        : req.query.industry_id.split(",").map((id) => parseInt(id.trim()));
+
+      includeArray[2] = {
+        model: Industry,
+        as: "promptIndustries",
+        where: { id: industryIds },
+        attributes: ["id", "name", "description"],
+        through: { attributes: [] },
+        required: true,
+      };
+    }
+
+    // Get total count - use same logic as data query for industry filtering
+    let countQuery;
+    if (req.query.industry_id) {
+      countQuery = await Prompt.findAndCountAll({
+        where: whereCondition,
+        include: [includeArray[2]], // Only include industry filter for count
+        distinct: true,
+        col: "id",
+      });
+    } else {
+      countQuery = await Prompt.findAndCountAll({
+        where: whereCondition,
+        distinct: true,
+        col: "id",
+      });
+    }
+    const totalCount = countQuery.count;
+
+    // Get actual data with includes
+    const rows = await Prompt.findAll({
       where: whereCondition,
-      include: [
-        {
-          model: Category,
-          attributes: ["id", "name", "image", "image_card"],
-          include: [
-            {
-              model: Section,
-              attributes: ["id", "name", "description"],
-            },
-            {
-              model: Industry,
-              as: "promptIndustries",
-              attributes: ["id", "name", "description"],
-              through: { attributes: [] },
-            },
-          ],
-        },
-        { model: Topic, as: "topic", attributes: ["id", "name"] },
-      ],
+      include: includeArray,
       limit: pageSize,
       offset: offset,
     });
 
     const result = {
-      total: count,
+      total: totalCount,
       page,
       pageSize,
       data: transformToCamelCase(rows),
@@ -1103,15 +1173,17 @@ router.get("/newest", checkSubTypeAccess, async (req, res) => {
       include: [
         {
           model: Category,
+          as: "category",
           attributes: ["id", "name", "image", "image_card"],
           include: [
             {
               model: Section,
+              as: "section",
               attributes: ["id", "name", "description"],
             },
             {
               model: Industry,
-              as: "promptIndustries",
+              as: "industries",
               attributes: ["id", "name", "description"],
               through: { attributes: [] },
             },
@@ -1147,21 +1219,29 @@ router.get("/:id", authMiddleware, checkSubTypeAccess, async (req, res) => {
       include: [
         {
           model: Category,
+          as: "category",
           attributes: ["id", "name"],
           include: [
             {
               model: Section,
+              as: "section",
               attributes: ["id", "name", "description"],
             },
             {
               model: Industry,
-              as: "promptIndustries",
+              as: "industries",
               attributes: ["id", "name", "description"],
               through: { attributes: [] },
             },
           ],
         },
         { model: Topic, as: "topic", attributes: ["id", "name"] },
+        {
+          model: Industry,
+          as: "promptIndustries",
+          attributes: ["id", "name", "description"],
+          through: { attributes: [] },
+        },
       ],
     });
 
@@ -1178,7 +1258,9 @@ router.get("/:id", authMiddleware, checkSubTypeAccess, async (req, res) => {
         id: { [Op.ne]: id },
       },
       attributes: ["id", "title", "short_description"],
-      include: [{ model: Category, attributes: ["id", "name"] }],
+      include: [
+        { model: Category, as: "category", attributes: ["id", "name"] },
+      ],
       limit: 5,
     });
 
@@ -1255,7 +1337,8 @@ router.post(
       }
 
       // Handle industry_id array - link industries directly to prompt
-      const industryIds = req.body.industryId || req.body.industry_id;
+      const industryIds =
+        req.body.industryId || req.body.industry_id || req.body.industry_ids;
       if (industryIds && Array.isArray(industryIds)) {
         // Validate all industry IDs exist
         const industries = await Industry.findAll({
@@ -1312,10 +1395,12 @@ router.post(
         include: [
           {
             model: Category,
+            as: "category",
             attributes: ["id", "name", "image", "image_card"],
             include: [
               {
                 model: Section,
+                as: "section",
                 attributes: ["id", "name", "description"],
               },
             ],
@@ -1376,7 +1461,8 @@ router.put(
       }
 
       // Handle industry_id array - link industries directly to prompt
-      const industryIds = req.body.industryId || req.body.industry_id;
+      const industryIds =
+        req.body.industryId || req.body.industry_id || req.body.industry_ids;
       if (industryIds && Array.isArray(industryIds)) {
         const promptId = req.params.id;
 
@@ -1442,10 +1528,12 @@ router.put(
         include: [
           {
             model: Category,
+            as: "category",
             attributes: ["id", "name", "image", "image_card"],
             include: [
               {
                 model: Section,
+                as: "section",
                 attributes: ["id", "name", "description"],
               },
             ],

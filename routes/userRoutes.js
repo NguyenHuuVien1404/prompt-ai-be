@@ -7,6 +7,7 @@ const { sendOtpEmail } = require("../utils/emailService");
 const UserSub = require("../models/UserSub");
 const Subscription = require("../models/Subscription");
 const DeviceLog = require("../models/DeviceLog");
+const Role = require("../models/Role");
 const userAgentParser = require("useragent");
 const { Sequelize } = require("sequelize");
 const multer = require("multer");
@@ -39,20 +40,31 @@ const toCamelCase = (str) => {
 };
 
 // Utility function to transform object fields from snake_case to camelCase
-const transformToCamelCase = (obj) => {
+const transformToCamelCase = (obj, seen = new WeakSet()) => {
   if (!obj || typeof obj !== "object") return obj;
 
+  // Check for circular reference
+  if (seen.has(obj)) return obj;
+  seen.add(obj);
+
   if (Array.isArray(obj)) {
-    return obj.map(transformToCamelCase);
+    return obj.map((item) => transformToCamelCase(item, seen));
+  }
+
+  // Handle Sequelize instances - convert to plain object first
+  if (obj.toJSON && typeof obj.toJSON === "function") {
+    obj = obj.toJSON();
   }
 
   const transformed = {};
   for (const [key, value] of Object.entries(obj)) {
     const camelKey = toCamelCase(key);
     if (value && typeof value === "object" && !Array.isArray(value)) {
-      transformed[camelKey] = transformToCamelCase(value);
+      transformed[camelKey] = transformToCamelCase(value, seen);
     } else if (Array.isArray(value)) {
-      transformed[camelKey] = value.map(transformToCamelCase);
+      transformed[camelKey] = value.map((item) =>
+        transformToCamelCase(item, seen)
+      );
     } else {
       transformed[camelKey] = value;
     }
@@ -113,7 +125,8 @@ router.post(
     try {
       // Lấy tham số từ request body thay vì query - support both camelCase and snake_case
       let {
-        page = 1,
+        page,
+        pageIndex,
         pageSize = 10,
         search,
         accountStatus,
@@ -130,11 +143,9 @@ router.post(
         isVerified !== undefined ? isVerified : is_verified;
 
       // Đảm bảo các tham số số nguyên không bị NaN
-      page = parseInt(page) || 1; // Mặc định là 1 nếu không phải số
-      pageSize = parseInt(pageSize) || 10; // Mặc định là 10 nếu không phải số
-
-      const offset = (page - 1) * pageSize;
-      const limit = pageSize;
+      const currentPage = parseInt(page || pageIndex) || 1;
+      const limit = parseInt(pageSize) || 10;
+      const offset = (currentPage - 1) * limit;
 
       // Xây dựng điều kiện tìm kiếm
       const whereConditions = {};
@@ -196,7 +207,11 @@ router.post(
         },
       };
 
-      const { count, rows } = await User.findAndCountAll({
+      // Get total count without includes to avoid JOIN counting issues
+      const totalCount = await User.count({ where: whereConditions });
+
+      // Get actual data with includes
+      const rows = await User.findAll({
         attributes: { exclude: ["password_hash"] },
         include: [
           userSubInclude,
@@ -245,7 +260,7 @@ router.post(
         return transformToCamelCase(transformedRow);
       });
 
-      const pagination = calculatePagination(count, page, pageSize);
+      const pagination = calculatePagination(totalCount, currentPage, limit);
       sendListResponse(res, transformedRows, pagination);
     } catch (error) {
       sendInternalErrorResponse(res, error.message);
@@ -273,9 +288,8 @@ router.get("/:id", async (req, res) => {
     const user = await User.findByPk(req.params.id, {
       include: [
         {
-          model: require("../models").Role,
+          model: Role,
           attributes: ["id", "name", "description", "permissions"],
-          as: "Role",
         },
       ],
     });
@@ -286,53 +300,84 @@ router.get("/:id", async (req, res) => {
       include: [Subscription],
     });
 
-    const sortedUserSubs = userSubs
-      .map((us) => ({
-        // id: us.id,
-        status: us.status,
-        startDate: us.start_date,
-        endDate: us.end_date,
-        // token: us.token,
-        subscription: {
-          name: us.Subscription
-            ? us.Subscription.name_sub
-            : `Subscription ${us.sub_id}`,
-          type: us.Subscription ? us.Subscription.type : us.sub_id,
-        },
-      }))
-      .sort((a, b) => b.sub_id - a.sub_id);
+    const sortedUserSubs = userSubs.sort((a, b) => {
+      const typeA = a.Subscription?.type || 0;
+      const typeB = b.Subscription?.type || 0;
+      return typeB - typeA;
+    });
 
     // ✅ Lấy permissions từ role
     let permissions = [];
     if (user.Role && user.Role.permissions) {
       try {
         // Kiểm tra nếu permissions đã là array thì dùng trực tiếp, nếu là string thì parse
-        permissions =
+        const parsedPermissions =
           typeof user.Role.permissions === "string"
             ? JSON.parse(user.Role.permissions)
             : user.Role.permissions;
+
+        // Nếu là array và có items thì dùng
+        if (Array.isArray(parsedPermissions) && parsedPermissions.length > 0) {
+          permissions = parsedPermissions;
+        }
+        // Nếu là object rỗng {} hoặc array rỗng [] thì fallback
+        else if (
+          Object.keys(parsedPermissions).length === 0 ||
+          (Array.isArray(parsedPermissions) && parsedPermissions.length === 0)
+        ) {
+          permissions = getRolePermissions(user.role_id || user.role);
+        } else {
+          permissions = parsedPermissions;
+        }
       } catch (error) {
-        permissions = [];
+        permissions = getRolePermissions(user.role_id || user.role);
       }
     } else {
       // ✅ Fallback to default role permissions using utility function
-      // Ưu tiên role_id trước, nếu không có thì dùng role cũ
       permissions = getRolePermissions(user.role_id || user.role);
     }
 
+    // Prepare userSub data
+    const userSubData =
+      sortedUserSubs.length > 0
+        ? {
+            id: sortedUserSubs[0].id,
+            status: sortedUserSubs[0].status,
+            startDate: sortedUserSubs[0].start_date,
+            endDate: sortedUserSubs[0].end_date,
+            token: sortedUserSubs[0].token,
+            subscription: sortedUserSubs[0].Subscription
+              ? {
+                  id: sortedUserSubs[0].Subscription.id,
+                  nameSub: sortedUserSubs[0].Subscription.name_sub,
+                  type: sortedUserSubs[0].Subscription.type,
+                  price: sortedUserSubs[0].Subscription.price,
+                }
+              : null,
+          }
+        : null;
+
+    // Convert user to plain object and manually construct response
+    const plainUser = user.toJSON();
+
     const userData = {
-      user: transformToCamelCase({
-        ...user.toJSON(),
-        permissions: permissions, // ✅ Thêm permissions array
-      }),
-      userSub:
-        sortedUserSubs.length > 0
-          ? transformToCamelCase(sortedUserSubs[0])
-          : null,
-      // allUserSubs: sortedUserSubs  // Thêm để debug
+      id: plainUser.id,
+      email: plainUser.email,
+      fullName: plainUser.full_name,
+      role: plainUser.role,
+      roleId: plainUser.role_id,
+      countPrompt: plainUser.count_promt,
+      accountStatus: plainUser.account_status,
+      isVerified: plainUser.is_verified,
+      profileImage: plainUser.profile_image,
+      googleId: plainUser.google_id,
+      createdAt: plainUser.created_at,
+      updatedAt: plainUser.updated_at,
+      permissions: permissions,
+      userSub: userSubData,
     };
 
-    sendDetailResponse(res, transformToCamelCase(userData));
+    sendDetailResponse(res, userData);
   } catch (error) {
     sendInternalErrorResponse(res, error.message);
   }
@@ -519,7 +564,25 @@ router.post("/resend-otp", async (req, res) => {
 router.post("/verify-otp", async (req, res) => {
   try {
     const { email, otp } = req.body;
-    const user = await User.findOne({ where: { email } });
+    const user = await User.findOne({
+      where: { email },
+      include: [
+        {
+          model: Role,
+          attributes: ["id", "name", "permissions"],
+        },
+        {
+          model: UserSub,
+          include: [
+            {
+              model: Subscription,
+              attributes: ["id", "name_sub", "type", "price"],
+            },
+          ],
+          order: [["created_at", "DESC"]],
+        },
+      ],
+    });
 
     if (
       !user ||
@@ -531,15 +594,105 @@ router.post("/verify-otp", async (req, res) => {
         .json({ error: "Mã OTP không hợp lệ hoặc đã hết hạn" });
     }
 
+    // Cập nhật trạng thái xác thực
     user.is_verified = true;
     user.otp_code = null;
+    user.otp_expires_at = null;
     await user.save();
 
-    sendDetailResponse(
-      res,
-      transformToCamelCase(null),
-      "Tài khoản đã được xác thực thành công"
+    // Lấy permissions từ role
+    let permissions = [];
+    if (user.Role && user.Role.permissions) {
+      try {
+        const parsedPermissions =
+          typeof user.Role.permissions === "string"
+            ? JSON.parse(user.Role.permissions)
+            : user.Role.permissions;
+
+        // Nếu là array và có items thì dùng
+        if (Array.isArray(parsedPermissions) && parsedPermissions.length > 0) {
+          permissions = parsedPermissions;
+        }
+        // Nếu là object rỗng {} hoặc array rỗng [] thì fallback
+        else if (
+          Object.keys(parsedPermissions).length === 0 ||
+          (Array.isArray(parsedPermissions) && parsedPermissions.length === 0)
+        ) {
+          permissions = getRolePermissions(user.role_id || user.role);
+        } else {
+          permissions = parsedPermissions;
+        }
+      } catch (error) {
+        permissions = getRolePermissions(user.role_id || user.role);
+      }
+    } else {
+      permissions = getRolePermissions(user.role_id || user.role);
+    }
+
+    // Tạo JWT token
+    const token = jwt.sign(
+      {
+        id: user.id,
+        email: user.email,
+        role: user.role,
+        role_id: user.role_id,
+        role_name: user.Role?.name || "User",
+        permissions: permissions,
+      },
+      process.env.JWT_SECRET || "your_jwt_secret_key",
+      { expiresIn: 60 * 60 * 24 * 30 * 6 }
     );
+
+    // Sắp xếp UserSubs theo type giảm dần
+    const sortedUserSubs = user.UserSubs
+      ? [...user.UserSubs].sort((a, b) => {
+          const typeA = a.Subscription?.type || 0;
+          const typeB = b.Subscription?.type || 0;
+          return typeB - typeA;
+        })
+      : [];
+
+    // Prepare userSub data
+    const userSubData =
+      sortedUserSubs.length > 0
+        ? {
+            id: sortedUserSubs[0].id,
+            status: sortedUserSubs[0].status,
+            startDate: sortedUserSubs[0].start_date,
+            endDate: sortedUserSubs[0].end_date,
+            token: sortedUserSubs[0].token,
+            subscription: sortedUserSubs[0].Subscription
+              ? {
+                  id: sortedUserSubs[0].Subscription.id,
+                  nameSub: sortedUserSubs[0].Subscription.name_sub,
+                  type: sortedUserSubs[0].Subscription.type,
+                  price: sortedUserSubs[0].Subscription.price,
+                }
+              : null,
+          }
+        : null;
+
+    const userData = {
+      token,
+      user: {
+        id: user.id,
+        fullName: user.full_name,
+        email: user.email,
+        role: user.role,
+        roleId: user.role_id,
+        countPrompt: user.count_promt,
+        accountStatus: user.account_status,
+        isVerified: user.is_verified,
+        createdAt: user.created_at,
+        updatedAt: user.updated_at,
+        profileImage: user.profile_image,
+        googleId: user.google_id,
+        permissions: permissions,
+        userSub: userSubData,
+      },
+    };
+
+    sendDetailResponse(res, userData, "Tài khoản đã được xác thực thành công");
   } catch (error) {
     sendInternalErrorResponse(res, error.message);
   }

@@ -23,32 +23,8 @@ const {
   calculatePagination,
 } = require("../utils/responseUtils");
 
-// Utility function to convert snake_case to camelCase
-const toCamelCase = (str) => {
-  return str.replace(/_([a-z])/g, (match, letter) => letter.toUpperCase());
-};
-
-// Utility function to transform object fields from snake_case to camelCase
-const transformToCamelCase = (obj) => {
-  if (!obj || typeof obj !== "object") return obj;
-
-  if (Array.isArray(obj)) {
-    return obj.map(transformToCamelCase);
-  }
-
-  const transformed = {};
-  for (const [key, value] of Object.entries(obj)) {
-    const camelKey = toCamelCase(key);
-    if (value && typeof value === "object" && !Array.isArray(value)) {
-      transformed[camelKey] = transformToCamelCase(value);
-    } else if (Array.isArray(value)) {
-      transformed[camelKey] = value.map(transformToCamelCase);
-    } else {
-      transformed[camelKey] = value;
-    }
-  }
-  return transformed;
-};
+// Import transform utilities
+const { transformToCamelCase } = require("../utils/transformUtils");
 // Cấu hình storage cho multer
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
@@ -123,42 +99,71 @@ const validateBlogData = (req, res, next) => {
   next();
 };
 
-// 📌 **Lấy tất cả bài viết**
+// 📌 **Lấy danh sách bài viết có phân trang**
 router.get("/", async (req, res) => {
   try {
-    const blogs = await Blog.findAll({
-      include: [{ model: BlogCategory, as: "category", attributes: ["name"] }],
-    });
-    const pagination = calculatePagination(blogs.length, 1, blogs.length);
-    sendListResponse(res, transformToCamelCase(blogs), pagination);
-  } catch (error) {
-    sendInternalErrorResponse(res, error.message);
-  }
-});
+    // Hỗ trợ cả page và pageIndex
+    let { page, pageIndex, pageSize = 6, search = "" } = req.query;
+    const currentPage = parseInt(page || pageIndex || 1);
+    const limit = parseInt(pageSize);
 
-// 📌 **Lấy danh sách bài viết có phân trang**
-router.get("/list", async (req, res) => {
-  try {
-    let { page = 1, pageSize = 6, search } = req.query;
-    page = parseInt(page);
-    pageSize = parseInt(pageSize);
+    const offset = (currentPage - 1) * limit;
 
-    const offset = (page - 1) * pageSize;
-    const limit = pageSize;
+    const whereCondition = {};
+    if (search && search.trim() !== "") {
+      whereCondition.title = {
+        [Op.like]: `%${search}%`,
+      };
+    }
 
-    const { count, rows } = await Blog.findAndCountAll({
-      where: {
-        title: {
-          [Op.like]: `%${search}%`, // Tìm kiếm gần đúng
-        },
-      },
+    // Get total count without includes
+    const totalCount = await Blog.count({ where: whereCondition });
+
+    // Get actual data with includes
+    const rows = await Blog.findAll({
+      where: whereCondition,
       include: [{ model: BlogCategory, as: "category", attributes: ["name"] }],
       limit,
       offset,
       order: [["published_at", "DESC"]],
     });
 
-    const pagination = calculatePagination(count, page, pageSize);
+    const pagination = calculatePagination(totalCount, currentPage, limit);
+    sendListResponse(res, transformToCamelCase(rows), pagination);
+  } catch (error) {
+    sendInternalErrorResponse(res, error.message);
+  }
+});
+
+// 📌 **Lấy danh sách bài viết có phân trang (deprecated - dùng / thay thế)**
+router.get("/list", async (req, res) => {
+  try {
+    let { page, pageIndex, pageSize = 6, search = "" } = req.query;
+    const currentPage = parseInt(page || pageIndex || 1);
+    pageSize = parseInt(pageSize);
+
+    const offset = (currentPage - 1) * pageSize;
+    const limit = pageSize;
+
+    const whereCondition = {
+      title: {
+        [Op.like]: `%${search}%`,
+      },
+    };
+
+    // Get total count without includes
+    const totalCount = await Blog.count({ where: whereCondition });
+
+    // Get actual data with includes
+    const rows = await Blog.findAll({
+      where: whereCondition,
+      include: [{ model: BlogCategory, as: "category", attributes: ["name"] }],
+      limit,
+      offset,
+      order: [["published_at", "DESC"]],
+    });
+
+    const pagination = calculatePagination(totalCount, currentPage, pageSize);
     sendListResponse(res, transformToCamelCase(rows), pagination);
   } catch (error) {
     sendInternalErrorResponse(res, error.message);

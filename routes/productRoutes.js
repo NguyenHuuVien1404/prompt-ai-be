@@ -20,32 +20,8 @@ const {
   calculatePagination,
 } = require("../utils/responseUtils");
 
-// Utility function to convert snake_case to camelCase
-const toCamelCase = (str) => {
-  return str.replace(/_([a-z])/g, (match, letter) => letter.toUpperCase());
-};
-
-// Utility function to transform object fields from snake_case to camelCase
-const transformToCamelCase = (obj) => {
-  if (!obj || typeof obj !== "object") return obj;
-
-  if (Array.isArray(obj)) {
-    return obj.map(transformToCamelCase);
-  }
-
-  const transformed = {};
-  for (const [key, value] of Object.entries(obj)) {
-    const camelKey = toCamelCase(key);
-    if (value && typeof value === "object" && !Array.isArray(value)) {
-      transformed[camelKey] = transformToCamelCase(value);
-    } else if (Array.isArray(value)) {
-      transformed[camelKey] = value.map(transformToCamelCase);
-    } else {
-      transformed[camelKey] = value;
-    }
-  }
-  return transformed;
-};
+// Import transform utilities
+const { transformToCamelCase } = require("../utils/transformUtils");
 const uploadDir = path.join(__dirname, "../uploads");
 
 const storage = multer.diskStorage({
@@ -97,19 +73,24 @@ router.use("/uploads", express.static(uploadDir)); // Cho phép truy cập ảnh
 // GET: Lấy tất cả Product theo trang
 router.get("/", async (req, res) => {
   try {
-    const { page = 1, pageSize = 10, limit: queryLimit } = req.query;
+    const { page, pageIndex, pageSize = 10, limit: queryLimit } = req.query;
 
+    const currentPage = parseInt(page || pageIndex) || 1;
     const limit = parseInt(queryLimit) || parseInt(pageSize) || 10;
-    const offset = (page - 1) * limit;
+    const offset = (currentPage - 1) * limit;
 
-    const { count, rows } = await Product.findAndCountAll({
+    // Get total count without includes
+    const totalCount = await Product.count();
+
+    // Get actual data with includes
+    const rows = await Product.findAll({
       offset,
       limit,
       include: [{ model: Section, attributes: ["id", "name", "description"] }],
       order: [["created_at", "DESC"]],
     });
 
-    const pagination = calculatePagination(count, parseInt(page), limit);
+    const pagination = calculatePagination(totalCount, currentPage, limit);
     sendListResponse(res, transformToCamelCase(rows), pagination);
   } catch (error) {
     sendInternalErrorResponse(res, "Error fetching products: " + error.message);

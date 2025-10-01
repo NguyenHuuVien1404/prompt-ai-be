@@ -22,32 +22,8 @@ const {
   calculatePagination,
 } = require("../utils/responseUtils");
 
-// Utility function to convert snake_case to camelCase
-const toCamelCase = (str) => {
-  return str.replace(/_([a-z])/g, (match, letter) => letter.toUpperCase());
-};
-
-// Utility function to transform object fields from snake_case to camelCase
-const transformToCamelCase = (obj) => {
-  if (!obj || typeof obj !== "object") return obj;
-
-  if (Array.isArray(obj)) {
-    return obj.map(transformToCamelCase);
-  }
-
-  const transformed = {};
-  for (const [key, value] of Object.entries(obj)) {
-    const camelKey = toCamelCase(key);
-    if (value && typeof value === "object" && !Array.isArray(value)) {
-      transformed[camelKey] = transformToCamelCase(value);
-    } else if (Array.isArray(value)) {
-      transformed[camelKey] = value.map(transformToCamelCase);
-    } else {
-      transformed[camelKey] = value;
-    }
-  }
-  return transformed;
-};
+// Import transform utilities
+const { transformToCamelCase } = require("../utils/transformUtils");
 // Cấu hình nodemailer
 const transporter = nodemailer.createTransport({
   service: "gmail",
@@ -75,14 +51,14 @@ router.get("/", authMiddleware, adminMiddleware, async (req, res) => {
 router.get("/list", authMiddleware, adminMiddleware, async (req, res) => {
   try {
     // Lấy page và pageSize từ query params, mặc định page = 1, pageSize = 10
-    let { page = 1, pageSize = 10, status, type } = req.query;
+    let { page, pageIndex, pageSize = 10, status, type } = req.query;
 
     // Chuyển đổi sang số nguyên
-    page = parseInt(page);
+    const currentPage = parseInt(page || pageIndex || 1);
     pageSize = parseInt(pageSize);
 
     // Tính offset để lấy dữ liệu phân trang
-    const offset = (page - 1) * pageSize;
+    const offset = (currentPage - 1) * pageSize;
     const limit = pageSize;
 
     // Build where clause based on filters
@@ -134,7 +110,7 @@ router.get("/list", authMiddleware, adminMiddleware, async (req, res) => {
     });
 
     // Trả về dữ liệu phân trang
-    const pagination = calculatePagination(count, page, pageSize);
+    const pagination = calculatePagination(count, currentPage, pageSize);
     sendListResponse(res, transformToCamelCase(rowsWithDeadline), pagination);
   } catch (error) {
     sendInternalErrorResponse(res, error.message);
