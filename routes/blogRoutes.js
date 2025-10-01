@@ -64,13 +64,21 @@ const upload = multer({
 
 // Middleware xử lý upload với xử lý lỗi
 const handleUpload = (req, res, next) => {
+  // Nếu là JSON request (không có file upload), bỏ qua multer
+  if (
+    req.headers["content-type"] &&
+    req.headers["content-type"].includes("application/json")
+  ) {
+    return next();
+  }
+
   upload(req, res, function (err) {
     if (err instanceof multer.MulterError) {
       // Lỗi từ multer
       if (err.code === "LIMIT_FILE_SIZE") {
         return sendErrorResponse(
           res,
-          "File size too large. Max size is 5MB",
+          "File size too large. Max size is 50MB",
           "VALIDATION_ERROR",
           400
         );
@@ -87,15 +95,32 @@ const handleUpload = (req, res, next) => {
 
 // Middleware kiểm tra đầu vào
 const validateBlogData = (req, res, next) => {
-  const { title, content, category_id } = req.body;
-  if (!title || !content || !category_id) {
+  const { title, content, category_id, categoryId } = req.body;
+  const categoryIdValue = category_id || categoryId;
+
+  if (!title || !content || !categoryIdValue) {
     return sendErrorResponse(
       res,
-      "Missing required fields",
+      "Missing required fields: title, content, and categoryId are required",
       "VALIDATION_ERROR",
       400
     );
   }
+
+  // Validate featuredImage URL format if provided
+  if (req.body.featuredImage && typeof req.body.featuredImage === "string") {
+    try {
+      new URL(req.body.featuredImage);
+    } catch (error) {
+      return sendErrorResponse(
+        res,
+        "Invalid featuredImage URL format",
+        "VALIDATION_ERROR",
+        400
+      );
+    }
+  }
+
   next();
 };
 
@@ -180,7 +205,7 @@ router.get("/by-category/:categoryId", async (req, res) => {
       order: [["published_at", "DESC"]],
     });
 
-    const pagination = calculatePagination(count, page, limit);
+    const pagination = calculatePagination(blogs.length, 1, blogs.length);
     sendListResponse(res, transformToCamelCase(blogs), pagination);
   } catch (error) {
     sendInternalErrorResponse(res, error.message);
@@ -191,14 +216,22 @@ router.get("/:id", async (req, res) => {
     const { id } = req.params;
     const blog = await Blog.findOne({
       where: { id },
-      include: [{ model: BlogCategory, as: "category", attributes: ["name"] }],
+      include: [
+        { model: BlogCategory, as: "category", attributes: ["id", "name"] },
+      ],
     });
 
     if (!blog) {
       return sendNotFoundResponse(res, "Blog không tồn tại");
     }
 
-    sendDetailResponse(res, transformToCamelCase(blog));
+    // Transform để đưa category_id vào category.id
+    const blogData = blog.toJSON();
+    if (blogData.category) {
+      blogData.category.id = blogData.category_id;
+    }
+
+    sendDetailResponse(res, transformToCamelCase(blogData));
   } catch (error) {
     sendInternalErrorResponse(res, error.message);
   }
@@ -209,7 +242,7 @@ router.post("/", handleUpload, validateBlogData, async (req, res) => {
     const serverUrl = `${req.protocol}://${req.get("host")}`;
     const blogData = {
       ...req.body,
-      category_id: Number(req.body.category_id),
+      category_id: Number(req.body.category_id || req.body.categoryId),
       featured_image: req.file
         ? `${serverUrl}/uploads/${req.file.filename}`
         : null,
@@ -277,6 +310,13 @@ router.put("/:id", handleUpload, validateBlogData, async (req, res) => {
     const serverUrl = `${req.protocol}://${req.get("host")}`;
     let blogData = { ...req.body };
 
+    // Xử lý categoryId thành category_id
+    if (req.body.categoryId) {
+      blogData.category_id = Number(req.body.categoryId);
+      delete blogData.categoryId;
+    }
+
+    // Xử lý featured_image từ file upload hoặc JSON body
     if (req.file) {
       // Xóa ảnh cũ nếu có
       if (blog.featured_image) {
@@ -290,6 +330,9 @@ router.put("/:id", handleUpload, validateBlogData, async (req, res) => {
         }
       }
       blogData.featured_image = `${serverUrl}/uploads/${req.file.filename}`;
+    } else if (req.body.featuredImage) {
+      // Xử lý featuredImage từ JSON body
+      blogData.featured_image = req.body.featuredImage;
     }
 
     // ✅ Xử lý published_at để tránh lỗi "Invalid date"
