@@ -61,43 +61,47 @@ router.get("/", async (req, res) => {
   }
 });
 
-// Lấy industry theo ID
-router.get("/:id", async (req, res) => {
+// Lấy industries theo category_id (hỗ trợ nhiều IDs)
+// Phải đặt trước route /:id để tránh conflict
+router.get("/by-category/:categoryId?", async (req, res) => {
   try {
-    const { id } = req.params;
+    const { categoryId } = req.params;
+    const { categoryIds } = req.query;
 
-    const industry = await Industry.findByPk(id);
-    if (!industry) {
-      return res.status(404).json({
+    // Xử lý categoryIds từ query parameter (ưu tiên hơn path parameter)
+    let categoryIdArray = [];
+
+    if (categoryIds) {
+      // Nếu có query parameter categoryIds
+      categoryIdArray = Array.isArray(categoryIds)
+        ? categoryIds.map((id) => parseInt(id))
+        : [parseInt(categoryIds)];
+    } else if (categoryId) {
+      // Nếu có path parameter categoryId (backward compatibility)
+      categoryIdArray = [parseInt(categoryId)];
+    } else {
+      return res.status(400).json({
         success: false,
-        message: "Không tìm thấy ngành nghề",
+        message: "Category ID is required",
       });
     }
 
-    res.json({
-      success: true,
-      data: industry,
-    });
-  } catch (error) {
-    console.error("Error fetching industry by ID:", error);
-    res.status(500).json({
-      success: false,
-      message: "Lỗi máy chủ nội bộ",
-    });
-  }
-});
+    // Lọc bỏ các giá trị không hợp lệ
+    categoryIdArray = categoryIdArray.filter((id) => !isNaN(id) && id > 0);
 
-// Lấy industries theo category_id
-router.get("/by-category/:categoryId", async (req, res) => {
-  try {
-    const { categoryId } = req.params;
+    if (categoryIdArray.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Valid category ID(s) required",
+      });
+    }
 
     const industries = await Industry.findAll({
       include: [
         {
           model: Category,
           as: "categories",
-          where: { id: categoryId },
+          where: { id: categoryIdArray },
           through: { attributes: [] },
         },
       ],
@@ -106,6 +110,8 @@ router.get("/by-category/:categoryId", async (req, res) => {
 
     res.json({
       success: true,
+      count: industries.length,
+      categoryIds: categoryIdArray,
       data: industries,
     });
   } catch (error) {
@@ -118,6 +124,7 @@ router.get("/by-category/:categoryId", async (req, res) => {
 });
 
 // Lấy categories theo industry_id
+// Phải đặt trước route /:id để tránh conflict
 router.get("/:industryId/categories", async (req, res) => {
   try {
     const { industryId } = req.params;
@@ -140,6 +147,32 @@ router.get("/:industryId/categories", async (req, res) => {
     });
   } catch (error) {
     console.error("Error fetching categories by industry:", error);
+    res.status(500).json({
+      success: false,
+      message: "Lỗi máy chủ nội bộ",
+    });
+  }
+});
+
+// Lấy industry theo ID
+router.get("/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const industry = await Industry.findByPk(id);
+    if (!industry) {
+      return res.status(404).json({
+        success: false,
+        message: "Không tìm thấy ngành nghề",
+      });
+    }
+
+    res.json({
+      success: true,
+      data: industry,
+    });
+  } catch (error) {
+    console.error("Error fetching industry by ID:", error);
     res.status(500).json({
       success: false,
       message: "Lỗi máy chủ nội bộ",
