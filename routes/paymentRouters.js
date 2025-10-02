@@ -16,6 +16,7 @@ const Subscription = require("../models/Subscription"); // Thêm model Subscript
 const User = require("../models/User");
 const Coupon = require("../models/Coupon"); // Implied import for Coupon model
 const { Op } = require("sequelize");
+const sequelize = require("../config/database");
 const {
   sendListResponse,
   sendDetailResponse,
@@ -31,22 +32,328 @@ const {
 // Import transform utilities
 const { transformToCamelCase } = require("../utils/transformUtils");
 
-router.get("/", function (req, res, next) {
-  res.render("orderlist", { title: "Danh sách đơn hàng" });
+router.get("/", async function (req, res, next) {
+  try {
+    const {
+      page = 1,
+      pageIndex = 1,
+      limit = 10,
+      pageSize = 10,
+      status,
+      start_date,
+      end_date,
+      dateFrom,
+      dateTo,
+      name,
+      email,
+      code,
+      subscription,
+      subscriptionIds: querySubscriptionIds,
+      searchTerm,
+    } = req.query;
+
+    const currentPage = parseInt(pageIndex || page) || 1;
+    const currentLimit = parseInt(pageSize || limit) || 10;
+    const offset = (currentPage - 1) * currentLimit;
+
+    // Xây dựng điều kiện where
+    const where = {};
+    if (status) where.payment_status = status;
+
+    // Handle subscription filtering - prioritize subscriptionIds over single subscription
+    if (querySubscriptionIds) {
+      let ids = [];
+      if (typeof querySubscriptionIds === "string") {
+        // Handle comma-separated string: "1,2,3"
+        ids = querySubscriptionIds
+          .split(",")
+          .map((id) => parseInt(id.trim()))
+          .filter((id) => !isNaN(id));
+      } else if (Array.isArray(querySubscriptionIds)) {
+        // Handle array: [1,2,3]
+        ids = querySubscriptionIds
+          .map((id) => parseInt(id))
+          .filter((id) => !isNaN(id));
+      }
+
+      if (ids.length > 0) {
+        where.subscription_id = { [Op.in]: ids };
+      }
+    } else if (subscription) {
+      where.subscription_id = parseInt(subscription);
+    }
+
+    // Support both date parameter naming conventions
+    const startDate = start_date || dateFrom;
+    const endDate = end_date || dateTo;
+
+    if (startDate || endDate) {
+      where.payment_date = {};
+      if (startDate) where.payment_date[Op.gte] = new Date(startDate);
+      if (endDate) where.payment_date[Op.lte] = new Date(endDate);
+    }
+
+    // Nếu có truyền code, tìm coupon_id
+    if (code) {
+      const coupon = await Coupon.findOne({ where: { code } });
+      if (coupon) {
+        where.coupon_id = coupon.id;
+      } else {
+        // Không tìm thấy coupon, trả về rỗng luôn
+        return sendListResponse(res, [], {
+          total: 0,
+          page: currentPage,
+          limit: currentLimit,
+          totalPages: 0,
+        });
+      }
+    }
+
+    // Join với User để filter theo tên hoặc email
+    const include = [];
+    if (name || email) {
+      const userWhere = {};
+      if (name) userWhere.full_name = { [Op.like]: `%${name}%` };
+      if (email) userWhere.email = { [Op.like]: `%${email}%` };
+      include.push({
+        model: User,
+        attributes: ["id", "full_name", "email"],
+        where: userWhere,
+      });
+    } else {
+      include.push({
+        model: User,
+        attributes: ["id", "full_name", "email"],
+      });
+    }
+
+    // If searchTerm is provided, search across multiple fields using OR
+    if (searchTerm) {
+      where[Op.or] = [
+        { transaction_id: { [Op.like]: `%${searchTerm}%` } },
+        { orderId: { [Op.like]: `%${searchTerm}%` } },
+        { notes: { [Op.like]: `%${searchTerm}%` } },
+        // Search in User fields using subquery
+        sequelize.literal(`EXISTS (
+          SELECT 1 FROM users 
+          WHERE users.id = Payment.user_id 
+          AND (users.full_name LIKE ${sequelize.escape(
+            `%${searchTerm}%`
+          )} OR users.email LIKE ${sequelize.escape(`%${searchTerm}%`)})
+        )`),
+      ];
+    }
+
+    // Get total count without includes to avoid JOIN counting issues
+    const totalCount = await Payment.count({ where });
+
+    // Get actual data with includes
+    const rows = await Payment.findAll({
+      where,
+      include,
+      limit: currentLimit,
+      offset: offset,
+      order: [["payment_date", "DESC"]],
+    });
+
+    // Lấy tất cả coupon_id duy nhất từ kết quả
+    const couponIds = [
+      ...new Set(rows.map((p) => p.coupon_id).filter(Boolean)),
+    ];
+    // Lấy thông tin coupon cho các coupon_id này
+    const coupons = await Coupon.findAll({
+      where: { id: couponIds },
+    });
+    // Map coupon_id -> coupon data (ép key về string)
+    const couponMap = {};
+    coupons.forEach((c) => {
+      couponMap[String(c.id)] = c;
+    });
+
+    // Lấy tất cả subscription_id duy nhất từ kết quả
+    const subscriptionIds = [
+      ...new Set(rows.map((p) => p.subscription_id).filter(Boolean)),
+    ];
+    const subscriptions = await Subscription.findAll({
+      where: { id: subscriptionIds },
+    });
+    const subscriptionMap = {};
+    subscriptions.forEach((s) => {
+      subscriptionMap[String(s.id)] = s;
+    });
+
+    // Gắn data coupon và price vào từng payment và chỉ trả về các trường cần thiết
+    const result = rows.map((payment) => {
+      const p = payment.toJSON();
+      const coupon = p.coupon_id
+        ? couponMap[String(p.coupon_id)]
+          ? couponMap[String(p.coupon_id)].toJSON()
+          : null
+        : null;
+      const subscription = p.subscription_id
+        ? subscriptionMap[String(p.subscription_id)]
+        : null;
+      return {
+        id: p.id,
+        subscriptionId: p.subscription_id,
+        price: subscription ? subscription.price : null,
+        amount: p.amount,
+        paymentMethod: p.payment_method,
+        transactionId: p.transaction_id,
+        paymentStatus: p.payment_status,
+        paymentDate: p.payment_date,
+        user: p.User
+          ? {
+              id: p.User.id,
+              fullName: p.User.full_name,
+              email: p.User.email,
+            }
+          : null,
+        coupon: coupon
+          ? {
+              id: coupon.id,
+              code: coupon.code,
+              discount: coupon.discount,
+              type: coupon.type,
+              expiryDate: coupon.expiry_date,
+              isActive: coupon.is_active,
+              createdAt: coupon.created_at,
+            }
+          : null,
+      };
+    });
+
+    const pagination = calculatePagination(
+      totalCount,
+      currentPage,
+      currentLimit
+    );
+    sendListResponse(res, transformToCamelCase(result), pagination);
+  } catch (error) {
+    sendInternalErrorResponse(
+      res,
+      "Lỗi khi lấy danh sách payments: " + error.message
+    );
+  }
+});
+
+router.get("/:id", async function (req, res, next) {
+  try {
+    const { id } = req.params;
+
+    if (!id || isNaN(id)) {
+      return sendErrorResponse(
+        res,
+        "Invalid payment ID",
+        "VALIDATION_ERROR",
+        400
+      );
+    }
+
+    const payment = await Payment.findByPk(id, {
+      include: [
+        {
+          model: User,
+          attributes: ["id", "full_name", "email"],
+        },
+        {
+          model: Coupon,
+          attributes: [
+            "id",
+            "code",
+            "discount",
+            "type",
+            "expiry_date",
+            "is_active",
+            "created_at",
+          ],
+        },
+        {
+          model: Subscription,
+          attributes: ["id", "name_sub", "price", "duration", "billing_cycle"],
+        },
+      ],
+    });
+
+    if (!payment) {
+      return sendNotFoundResponse(res, "Payment not found");
+    }
+
+    const result = {
+      id: payment.id,
+      subscriptionId: payment.subscription_id,
+      amount: payment.amount,
+      paymentMethod: payment.payment_method,
+      transactionId: payment.transaction_id,
+      paymentStatus: payment.payment_status,
+      paymentDate: payment.payment_date,
+      duration: payment.duration,
+      orderId: payment.order_id,
+      notes: payment.notes,
+      createdAt: payment.created_at,
+      updatedAt: payment.updated_at,
+      user: payment.User
+        ? {
+            id: payment.User.id,
+            fullName: payment.User.full_name,
+            email: payment.User.email,
+          }
+        : null,
+      coupon: payment.Coupon
+        ? {
+            id: payment.Coupon.id,
+            code: payment.Coupon.code,
+            discount: payment.Coupon.discount,
+            type: payment.Coupon.type,
+            expiryDate: payment.Coupon.expiry_date,
+            isActive: payment.Coupon.is_active,
+            createdAt: payment.Coupon.created_at,
+          }
+        : null,
+      subscription: payment.Subscription
+        ? {
+            id: payment.Subscription.id,
+            nameSub: payment.Subscription.name_sub,
+            price: payment.Subscription.price,
+            duration: payment.Subscription.duration,
+            billingCycle: payment.Subscription.billing_cycle,
+          }
+        : null,
+    };
+
+    sendDetailResponse(res, transformToCamelCase(result));
+  } catch (error) {
+    sendInternalErrorResponse(
+      res,
+      "Error retrieving payment details: " + error.message
+    );
+  }
 });
 
 router.get("/create_payment_url", function (req, res, next) {
-  res.render("order", { title: "Tạo mới đơn hàng", amount: 10000 });
+  sendDetailResponse(res, {
+    message: "Create payment URL endpoint",
+    title: "Tạo mới đơn hàng",
+    amount: 10000,
+  });
 });
 
 router.get("/querydr", function (req, res, next) {
   let desc = "truy van ket qua thanh toan";
-  res.render("querydr", { title: "Truy vấn kết quả thanh toán" });
+  sendDetailResponse(res, {
+    message: "Query transaction endpoint",
+    title: "Truy vấn kết quả thanh toán",
+    description: desc,
+  });
 });
 
 router.get("/refund", function (req, res, next) {
   let desc = "Hoan tien GD thanh toan";
-  res.render("refund", { title: "Hoàn tiền giao dịch thanh toán" });
+  sendDetailResponse(res, {
+    message: "Refund endpoint",
+    title: "Hoàn tiền giao dịch thanh toán",
+    description: desc,
+  });
 });
 
 router.post("/create_payment_url", async function (req, res, next) {
@@ -500,9 +807,9 @@ router.post("/querydr", async function (req, res, next) {
       body: dataObj,
     });
 
-    res.json(result);
+    sendDetailResponse(res, result);
   } catch (error) {
-    res.status(500).json({ error: "Failed to query transaction" });
+    sendInternalErrorResponse(res, "Failed to query transaction");
   }
 });
 
@@ -590,9 +897,9 @@ router.post("/refund", async function (req, res, next) {
       body: dataObj,
     });
 
-    res.json(result);
+    sendDetailResponse(res, result);
   } catch (error) {
-    res.status(500).json({ error: "Failed to process refund" });
+    sendInternalErrorResponse(res, "Failed to process refund");
   }
 });
 // GET /api/payment/filter
@@ -602,23 +909,54 @@ router.get("/filter", async (req, res) => {
       status,
       start_date,
       end_date,
+      dateFrom,
+      dateTo,
       name,
       email,
       page = 1,
       limit = 10,
       code,
       subscription,
+      subscriptionIds: querySubscriptionIds,
+      searchTerm,
     } = req.query;
     const offset = (page - 1) * limit;
 
     // Xây dựng điều kiện where
     const where = {};
     if (status) where.payment_status = status;
-    if (subscription) where.subscription_id = parseInt(subscription);
-    if (start_date || end_date) {
+
+    // Handle subscription filtering - prioritize subscriptionIds over single subscription
+    if (querySubscriptionIds) {
+      let ids = [];
+      if (typeof querySubscriptionIds === "string") {
+        // Handle comma-separated string: "1,2,3"
+        ids = querySubscriptionIds
+          .split(",")
+          .map((id) => parseInt(id.trim()))
+          .filter((id) => !isNaN(id));
+      } else if (Array.isArray(querySubscriptionIds)) {
+        // Handle array: [1,2,3]
+        ids = querySubscriptionIds
+          .map((id) => parseInt(id))
+          .filter((id) => !isNaN(id));
+      }
+
+      if (ids.length > 0) {
+        where.subscription_id = { [Op.in]: ids };
+      }
+    } else if (subscription) {
+      where.subscription_id = parseInt(subscription);
+    }
+
+    // Support both date parameter naming conventions
+    const startDate = start_date || dateFrom;
+    const endDate = end_date || dateTo;
+
+    if (startDate || endDate) {
       where.payment_date = {};
-      if (start_date) where.payment_date[Op.gte] = new Date(start_date);
-      if (end_date) where.payment_date[Op.lte] = new Date(end_date);
+      if (startDate) where.payment_date[Op.gte] = new Date(startDate);
+      if (endDate) where.payment_date[Op.lte] = new Date(endDate);
     }
 
     // Nếu có truyền code, tìm coupon_id
@@ -628,17 +966,11 @@ router.get("/filter", async (req, res) => {
         where.coupon_id = coupon.id;
       } else {
         // Không tìm thấy coupon, trả về rỗng luôn
-        return res.json({
-          success: true,
-          data: {
-            list: [],
-            pagination: {
-              total: 0,
-              page: parseInt(page),
-              limit: parseInt(limit),
-              totalPages: 0,
-            },
-          },
+        return sendListResponse(res, [], {
+          total: 0,
+          page: parseInt(page),
+          limit: parseInt(limit),
+          totalPages: 0,
         });
       }
     }
@@ -659,6 +991,23 @@ router.get("/filter", async (req, res) => {
         model: User,
         attributes: ["id", "full_name", "email"],
       });
+    }
+
+    // If searchTerm is provided, search across multiple fields using OR
+    if (searchTerm) {
+      where[Op.or] = [
+        { transaction_id: { [Op.like]: `%${searchTerm}%` } },
+        { orderId: { [Op.like]: `%${searchTerm}%` } },
+        { notes: { [Op.like]: `%${searchTerm}%` } },
+        // Search in User fields using subquery
+        sequelize.literal(`EXISTS (
+          SELECT 1 FROM users 
+          WHERE users.id = Payment.user_id 
+          AND (users.full_name LIKE ${sequelize.escape(
+            `%${searchTerm}%`
+          )} OR users.email LIKE ${sequelize.escape(`%${searchTerm}%`)})
+        )`),
+      ];
     }
 
     // Get total count without includes to avoid JOIN counting issues
@@ -711,69 +1060,97 @@ router.get("/filter", async (req, res) => {
         : null;
       return {
         id: p.id,
-        subscription_id: p.subscription_id,
+        subscriptionId: p.subscription_id,
         price: subscription ? subscription.price : null,
         amount: p.amount,
-        payment_method: p.payment_method,
-        transaction_id: p.transaction_id,
-        payment_status: p.payment_status,
-        payment_date: p.payment_date,
-        User: p.User
+        paymentMethod: p.payment_method,
+        transactionId: p.transaction_id,
+        paymentStatus: p.payment_status,
+        paymentDate: p.payment_date,
+        user: p.User
           ? {
               id: p.User.id,
-              full_name: p.User.full_name,
+              fullName: p.User.full_name,
               email: p.User.email,
             }
           : null,
-        Coupon: coupon
+        coupon: coupon
           ? {
               id: coupon.id,
               code: coupon.code,
               discount: coupon.discount,
               type: coupon.type,
-              expiry_date: coupon.expiry_date,
-              is_active: coupon.is_active,
-              created_at: coupon.created_at,
+              expiryDate: coupon.expiry_date,
+              isActive: coupon.is_active,
+              createdAt: coupon.created_at,
             }
           : null,
       };
     });
 
-    res.json({
-      success: true,
-      data: {
-        list: result,
-        pagination: {
-          total: totalCount,
-          page: parseInt(page),
-          limit: parseInt(limit),
-          totalPages: Math.ceil(totalCount / limit),
-        },
-      },
+    sendListResponse(res, transformToCamelCase(result), {
+      total: totalCount,
+      page: parseInt(page),
+      limit: parseInt(limit),
+      totalPages: Math.ceil(totalCount / limit),
     });
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: "Lỗi khi filter payment",
-      error: error.message,
-    });
+    sendInternalErrorResponse(res, "Lỗi khi filter payment: " + error.message);
   }
 });
 
 // GET /api/payment/export
 router.get("/export", async (req, res) => {
   try {
-    const { status, start_date, end_date, name, email, code, subscription } =
-      req.query;
+    const {
+      status,
+      start_date,
+      end_date,
+      dateFrom,
+      dateTo,
+      name,
+      email,
+      code,
+      subscription,
+      subscriptionIds: querySubscriptionIds,
+      searchTerm,
+    } = req.query;
 
     // Xây dựng điều kiện where (tương tự như API filter)
     const where = {};
     if (status) where.payment_status = status;
-    if (subscription) where.subscription_id = parseInt(subscription);
-    if (start_date || end_date) {
+
+    // Handle subscription filtering - prioritize subscriptionIds over single subscription
+    if (querySubscriptionIds) {
+      let ids = [];
+      if (typeof querySubscriptionIds === "string") {
+        // Handle comma-separated string: "1,2,3"
+        ids = querySubscriptionIds
+          .split(",")
+          .map((id) => parseInt(id.trim()))
+          .filter((id) => !isNaN(id));
+      } else if (Array.isArray(querySubscriptionIds)) {
+        // Handle array: [1,2,3]
+        ids = querySubscriptionIds
+          .map((id) => parseInt(id))
+          .filter((id) => !isNaN(id));
+      }
+
+      if (ids.length > 0) {
+        where.subscription_id = { [Op.in]: ids };
+      }
+    } else if (subscription) {
+      where.subscription_id = parseInt(subscription);
+    }
+
+    // Support both date parameter naming conventions
+    const startDate = start_date || dateFrom;
+    const endDate = end_date || dateTo;
+
+    if (startDate || endDate) {
       where.payment_date = {};
-      if (start_date) where.payment_date[Op.gte] = new Date(start_date);
-      if (end_date) where.payment_date[Op.lte] = new Date(end_date);
+      if (startDate) where.payment_date[Op.gte] = new Date(startDate);
+      if (endDate) where.payment_date[Op.lte] = new Date(endDate);
     }
 
     // Nếu có truyền code, tìm coupon_id
@@ -820,6 +1197,23 @@ router.get("/export", async (req, res) => {
         model: User,
         attributes: ["id", "full_name", "email"],
       });
+    }
+
+    // If searchTerm is provided, search across multiple fields using OR
+    if (searchTerm) {
+      where[Op.or] = [
+        { transaction_id: { [Op.like]: `%${searchTerm}%` } },
+        { orderId: { [Op.like]: `%${searchTerm}%` } },
+        { notes: { [Op.like]: `%${searchTerm}%` } },
+        // Search in User fields using subquery
+        sequelize.literal(`EXISTS (
+          SELECT 1 FROM users 
+          WHERE users.id = Payment.user_id 
+          AND (users.full_name LIKE ${sequelize.escape(
+            `%${searchTerm}%`
+          )} OR users.email LIKE ${sequelize.escape(`%${searchTerm}%`)})
+        )`),
+      ];
     }
 
     // Lấy tất cả dữ liệu (không phân trang)

@@ -26,7 +26,7 @@ const contactRoutes = require("./routes/contactRoutes");
 const sectionRoutes = require("./routes/sectionRoutes");
 const blogCategoryRoutes = require("./routes/blogCategoryRoutes");
 const blogRoutes = require("./routes/blogRoutes");
-const subscriptionRotues = require("./routes/subscriptionRotues");
+const subscriptionRoutes = require("./routes/subscriptionRoutes");
 const topicRoutes = require("./routes/topicRoutes");
 const promptFavorite = require("./routes/promptFavoriteRoutes.js");
 const productRoutes = require("./routes/productRoutes.js");
@@ -71,7 +71,7 @@ app.use(
   cors({
     // origin: ["https://www.prom.vn", "https://prom.vn"],
     origin: "*",
-    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
     allowedHeaders: [
       "Content-Type",
       "Authorization",
@@ -128,7 +128,7 @@ app.use("/api/contact", contactRoutes);
 app.use("/api/sections", sectionRoutes);
 app.use("/api/blogcategory", blogCategoryRoutes);
 app.use("/api/blog", blogRoutes);
-app.use("/api/subscriptions", subscriptionRotues);
+app.use("/api/subscriptions", subscriptionRoutes);
 app.use("/api/topic", topicRoutes);
 app.use("/api/promptfavorite", promptFavorite);
 app.use("/api/products", productRoutes);

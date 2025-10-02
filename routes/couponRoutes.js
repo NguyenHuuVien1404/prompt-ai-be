@@ -59,7 +59,7 @@ router.get("/", authMiddleware, adminMiddleware, async (req, res) => {
       });
 
       const pagination = calculatePagination(count, page, limit);
-      sendListResponse(res, transformToCamelCase(coupons), pagination);
+      return sendListResponse(res, transformToCamelCase(coupons), pagination);
     }
 
     // Nếu cần thống kê, lấy thông tin chi tiết
@@ -184,22 +184,23 @@ router.post("/", authMiddleware, adminMiddleware, async (req, res) => {
 
     if (existingCoupon) {
       await t.rollback();
-      return res.status(400).json({
-        success: false,
-        message: "Mã coupon đã tồn tại",
-        error: "DUPLICATE_CODE",
-      });
+      return sendErrorResponse(
+        res,
+        "Mã coupon đã tồn tại",
+        "DUPLICATE_CODE",
+        400
+      );
     }
 
     // Tạo coupon mới
     const coupon = await Coupon.create(couponData, { transaction: t });
     await t.commit();
 
-    res.status(201).json({
-      success: true,
-      message: "Tạo coupon thành công",
-      data: coupon,
-    });
+    sendCreateResponse(
+      res,
+      transformToCamelCase(coupon),
+      "Tạo coupon thành công"
+    );
   } catch (error) {
     await t.rollback();
 
@@ -218,11 +219,7 @@ router.put("/:id", authMiddleware, adminMiddleware, async (req, res) => {
 
     if (!coupon) {
       await t.rollback();
-      return res.status(404).json({
-        success: false,
-        message: "Không tìm thấy coupon",
-        error: "NOT_FOUND",
-      });
+      return sendNotFoundResponse(res, "Không tìm thấy coupon");
     }
 
     // Lưu thông tin cũ
@@ -251,11 +248,7 @@ router.put("/:id", authMiddleware, adminMiddleware, async (req, res) => {
   } catch (error) {
     await t.rollback();
 
-    res.status(500).json({
-      success: false,
-      message: "Lỗi khi cập nhật coupon",
-      error: error.message,
-    });
+    sendInternalErrorResponse(res, "Lỗi khi cập nhật coupon: " + error.message);
   }
 });
 
@@ -270,11 +263,7 @@ router.delete("/:id", authMiddleware, adminMiddleware, async (req, res) => {
 
     if (!coupon) {
       await t.rollback();
-      return res.status(404).json({
-        success: false,
-        message: "Không tìm thấy coupon",
-        error: "NOT_FOUND",
-      });
+      return sendNotFoundResponse(res, "Không tìm thấy coupon");
     }
 
     const deletedCoupon = { ...coupon.toJSON() };
@@ -293,11 +282,7 @@ router.delete("/:id", authMiddleware, adminMiddleware, async (req, res) => {
   } catch (error) {
     await t.rollback();
 
-    res.status(500).json({
-      success: false,
-      message: "Lỗi khi xóa coupon",
-      error: error.message,
-    });
+    sendInternalErrorResponse(res, "Lỗi khi xóa coupon: " + error.message);
   }
 });
 
@@ -307,11 +292,12 @@ router.post("/validate", async (req, res) => {
     const { code, total } = req.body;
 
     if (!code) {
-      return res.status(400).json({
-        success: false,
-        message: "Vui lòng nhập mã coupon",
-        error: "MISSING_CODE",
-      });
+      return sendErrorResponse(
+        res,
+        "Vui lòng nhập mã coupon",
+        "MISSING_CODE",
+        400
+      );
     }
 
     // Tìm coupon theo code
@@ -321,20 +307,22 @@ router.post("/validate", async (req, res) => {
 
     // Kiểm tra coupon có tồn tại
     if (!coupon) {
-      return res.status(404).json({
-        success: false,
-        message: "Mã coupon không tồn tại",
-        error: "INVALID_CODE",
-      });
+      return sendErrorResponse(
+        res,
+        "Mã coupon không tồn tại",
+        "INVALID_CODE",
+        404
+      );
     }
 
     // Kiểm tra coupon có active không
     if (!coupon.is_active) {
-      return res.status(400).json({
-        success: false,
-        message: "Mã coupon đã bị vô hiệu hóa",
-        error: "INACTIVE_COUPON",
-      });
+      return sendErrorResponse(
+        res,
+        "Mã coupon đã bị vô hiệu hóa",
+        "INACTIVE_COUPON",
+        400
+      );
     }
 
     // Kiểm tra hạn sử dụng
@@ -351,21 +339,23 @@ router.post("/validate", async (req, res) => {
 
       // Kiểm tra nếu ngày hiện tại nằm trong khoảng từ ngày tạo đến ngày hết hạn
       if (today < startDate || today > expiryDate) {
-        return res.status(400).json({
-          success: false,
-          message: "Mã coupon chưa đến thời gian sử dụng hoặc đã hết hạn",
-          error: "EXPIRED_COUPON",
-        });
+        return sendErrorResponse(
+          res,
+          "Mã coupon chưa đến thời gian sử dụng hoặc đã hết hạn",
+          "EXPIRED_COUPON",
+          400
+        );
       }
     }
 
     // Kiểm tra số lần sử dụng
     if (coupon.max_usage && coupon.usage_count >= coupon.max_usage) {
-      return res.status(400).json({
-        success: false,
-        message: "Mã coupon đã hết lượt sử dụng",
-        error: "MAX_USAGE_REACHED",
-      });
+      return sendErrorResponse(
+        res,
+        "Mã coupon đã hết lượt sử dụng",
+        "MAX_USAGE_REACHED",
+        400
+      );
     }
 
     // Tính discount_amount và final_price nếu có total
@@ -396,11 +386,7 @@ router.post("/validate", async (req, res) => {
       },
     });
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: "Lỗi khi kiểm tra coupon",
-      error: error.message,
-    });
+    sendInternalErrorResponse(res, "Lỗi khi kiểm tra coupon: " + error.message);
   }
 });
 
@@ -473,11 +459,10 @@ router.get("/:id/users", authMiddleware, adminMiddleware, async (req, res) => {
       },
     });
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: "Lỗi khi lấy danh sách user sử dụng coupon",
-      error: error.message,
-    });
+    sendInternalErrorResponse(
+      res,
+      "Lỗi khi lấy danh sách user sử dụng coupon: " + error.message
+    );
   }
 });
 

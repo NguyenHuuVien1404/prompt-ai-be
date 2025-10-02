@@ -13,6 +13,7 @@ const {
   authMiddleware,
   adminMiddleware,
 } = require("../middleware/authMiddleware");
+const { adminOrMarketerMiddleware } = require("../middleware/roleMiddleware");
 const cache = require("../utils/cache");
 const {
   sendListResponse,
@@ -189,7 +190,7 @@ router.post(
 );
 
 // Get all categories with pagination and filters
-router.get("/", async (req, res) => {
+router.get("/", authMiddleware, adminOrMarketerMiddleware, async (req, res) => {
   try {
     const page = parseInt(req.query.pageIndex || req.query.page) || 1;
     const pageSize =
@@ -312,32 +313,40 @@ router.get("/", async (req, res) => {
 });
 
 // Get category by id
-router.get("/:id", async (req, res) => {
-  try {
-    const categoryId = req.params.id;
+router.get(
+  "/:id",
+  authMiddleware,
+  adminOrMarketerMiddleware,
+  async (req, res) => {
+    try {
+      const categoryId = req.params.id;
 
-    const category = await Category.findByPk(categoryId, {
-      include: [
-        { model: Section, as: "section", attributes: ["id", "name"] },
-        {
-          model: Industry,
-          as: "industries",
-          attributes: ["id", "name", "description"],
-          through: { attributes: [] },
-        },
-      ],
-    });
+      const category = await Category.findByPk(categoryId, {
+        include: [
+          { model: Section, as: "section", attributes: ["id", "name"] },
+          {
+            model: Industry,
+            as: "industries",
+            attributes: ["id", "name", "description"],
+            through: { attributes: [] },
+          },
+        ],
+      });
 
-    if (!category) {
-      return sendNotFoundResponse(res, "Category not found");
+      if (!category) {
+        return sendNotFoundResponse(res, "Category not found");
+      }
+
+      sendDetailResponse(res, transformToCamelCase(category));
+    } catch (error) {
+      console.error("Error in GET /api/categories/:id:", error);
+      sendInternalErrorResponse(
+        res,
+        "Error fetching category: " + error.message
+      );
     }
-
-    sendDetailResponse(res, transformToCamelCase(category));
-  } catch (error) {
-    console.error("Error in GET /api/categories/:id:", error);
-    sendInternalErrorResponse(res, "Error fetching category: " + error.message);
   }
-});
+);
 
 // Create new category
 router.post(
@@ -414,166 +423,179 @@ router.post(
 );
 
 // Update category
-router.put("/:id", handleUpload, async (req, res) => {
-  try {
-    const categoryId = req.params.id;
+router.put(
+  "/:id",
+  authMiddleware,
+  adminMiddleware,
+  handleUpload,
+  async (req, res) => {
+    try {
+      const categoryId = req.params.id;
 
-    // Extract form data from req.body
-    const formData = req.body;
+      // Extract form data from req.body
+      const formData = req.body;
 
-    // Parse boolean values properly
-    const parseBoolean = (value) => {
-      if (value === "true") return true;
-      if (value === "false") return false;
-      return value;
-    };
+      // Parse boolean values properly
+      const parseBoolean = (value) => {
+        if (value === "true") return true;
+        if (value === "false") return false;
+        return value;
+      };
 
-    // Ensure we have the form data, fallback to empty object if not
-    if (!formData || Object.keys(formData).length === 0) {
-      // Warning: req.body is empty, this might cause issues
-    }
+      // Ensure we have the form data, fallback to empty object if not
+      if (!formData || Object.keys(formData).length === 0) {
+        // Warning: req.body is empty, this might cause issues
+      }
 
-    const {
-      name,
-      description,
-      section_id,
-      sectionId, // Support camelCase
-      is_comming_soon,
-      isCommingSoon, // Support camelCase
-      category_type,
-      categoryType, // Support camelCase
-      industry_ids,
-      industryIds, // Support camelCase
-    } = formData;
+      const {
+        name,
+        description,
+        section_id,
+        sectionId, // Support camelCase
+        is_comming_soon,
+        isCommingSoon, // Support camelCase
+        category_type,
+        categoryType, // Support camelCase
+        industry_ids,
+        industryIds, // Support camelCase
+      } = formData;
 
-    // Use camelCase values if provided, fallback to snake_case
-    const sectionIdValue = sectionId || section_id;
-    const isCommingSoonValue =
-      isCommingSoon !== undefined ? isCommingSoon : is_comming_soon;
-    const categoryTypeValue = categoryType || category_type;
-    const industryIdsValue = industryIds || industry_ids;
+      // Use camelCase values if provided, fallback to snake_case
+      const sectionIdValue = sectionId || section_id;
+      const isCommingSoonValue =
+        isCommingSoon !== undefined ? isCommingSoon : is_comming_soon;
+      const categoryTypeValue = categoryType || category_type;
+      const industryIdsValue = industryIds || industry_ids;
 
-    const category = await Category.findByPk(categoryId);
+      const category = await Category.findByPk(categoryId);
 
-    if (!category) {
-      return sendNotFoundResponse(res, "Category not found");
-    }
+      if (!category) {
+        return sendNotFoundResponse(res, "Category not found");
+      }
 
-    // Validate type field if provided
-    if (categoryTypeValue && !["free", "premium"].includes(categoryTypeValue)) {
-      return sendErrorResponse(
+      // Validate type field if provided
+      if (
+        categoryTypeValue &&
+        !["free", "premium"].includes(categoryTypeValue)
+      ) {
+        return sendErrorResponse(
+          res,
+          "Type must be either 'free' or 'premium'",
+          "VALIDATION_ERROR",
+          400
+        );
+      }
+
+      const oldSectionId = category.section_id;
+      const newSectionId = sectionIdValue || oldSectionId;
+
+      // Lấy URL của ảnh từ req.files (nếu có) hoặc từ JSON body
+      const baseUrl = `${req.protocol}://${req.get("host")}`;
+      let image = category.image;
+      let image_card = category.image_card;
+
+      // Handle file uploads
+      if (req.files && req.files["image"]) {
+        image = `${baseUrl}/uploads/${req.files["image"][0].filename}`;
+      } else if (formData.image) {
+        // Handle image URL from JSON body
+        image = formData.image;
+      }
+
+      if (req.files && req.files["image_card"]) {
+        image_card = `${baseUrl}/uploads/${req.files["image_card"][0].filename}`;
+      } else if (formData.imageCard) {
+        // Handle imageCard URL from JSON body
+        image_card = formData.imageCard;
+      }
+
+      // Prepare update data
+      const updateData = {
+        name: name !== undefined ? name : category.name,
+        image,
+        description:
+          description !== undefined ? description : category.description,
+        image_card,
+        section_id: !isNaN(parseInt(newSectionId))
+          ? parseInt(newSectionId)
+          : oldSectionId,
+        is_comming_soon:
+          isCommingSoonValue !== undefined
+            ? parseBoolean(isCommingSoonValue)
+            : category.is_comming_soon,
+        type:
+          categoryTypeValue !== undefined ? categoryTypeValue : category.type,
+      };
+
+      await category.update(updateData);
+
+      // Handle industry_ids update if provided
+      if (industryIdsValue !== undefined) {
+        // Parse industry_ids (comma-separated string or array)
+        let industryIdsArray = [];
+        if (
+          typeof industryIdsValue === "string" &&
+          industryIdsValue.trim() !== ""
+        ) {
+          industryIdsArray = industryIdsValue
+            .split(",")
+            .map((id) => parseInt(id.trim()))
+            .filter((id) => !isNaN(id));
+        } else if (Array.isArray(industryIdsValue)) {
+          industryIdsArray = industryIdsValue
+            .map((id) => parseInt(id))
+            .filter((id) => !isNaN(id));
+        }
+
+        // Update category-industry relationships
+        if (industryIdsArray.length > 0) {
+          // Remove existing relationships
+          await CategoryIndustry.destroy({
+            where: { category_id: categoryId },
+          });
+
+          // Create new relationships
+          const industryRelations = industryIdsArray.map((industryId) => ({
+            category_id: categoryId,
+            industry_id: industryId,
+          }));
+
+          await CategoryIndustry.bulkCreate(industryRelations);
+        } else {
+          // If empty industry_ids, remove all relationships
+          await CategoryIndustry.destroy({
+            where: { category_id: categoryId },
+          });
+        }
+      }
+
+      // Get updated category with industries
+      const updatedCategory = await Category.findByPk(categoryId, {
+        include: [
+          { model: Section, as: "section", attributes: ["id", "name"] },
+          {
+            model: Industry,
+            as: "industries",
+            attributes: ["id", "name", "description"],
+            through: { attributes: [] },
+          },
+        ],
+      });
+
+      sendUpdateResponse(
         res,
-        "Type must be either 'free' or 'premium'",
-        "VALIDATION_ERROR",
-        400
+        transformToCamelCase(updatedCategory),
+        "Category updated successfully"
+      );
+    } catch (error) {
+      console.error("Error in PUT /api/categories/:id:", error);
+      sendInternalErrorResponse(
+        res,
+        "Error updating category: " + error.message
       );
     }
-
-    const oldSectionId = category.section_id;
-    const newSectionId = sectionIdValue || oldSectionId;
-
-    // Lấy URL của ảnh từ req.files (nếu có) hoặc từ JSON body
-    const baseUrl = `${req.protocol}://${req.get("host")}`;
-    let image = category.image;
-    let image_card = category.image_card;
-
-    // Handle file uploads
-    if (req.files && req.files["image"]) {
-      image = `${baseUrl}/uploads/${req.files["image"][0].filename}`;
-    } else if (formData.image) {
-      // Handle image URL from JSON body
-      image = formData.image;
-    }
-
-    if (req.files && req.files["image_card"]) {
-      image_card = `${baseUrl}/uploads/${req.files["image_card"][0].filename}`;
-    } else if (formData.imageCard) {
-      // Handle imageCard URL from JSON body
-      image_card = formData.imageCard;
-    }
-
-    // Prepare update data
-    const updateData = {
-      name: name !== undefined ? name : category.name,
-      image,
-      description:
-        description !== undefined ? description : category.description,
-      image_card,
-      section_id: !isNaN(parseInt(newSectionId))
-        ? parseInt(newSectionId)
-        : oldSectionId,
-      is_comming_soon:
-        isCommingSoonValue !== undefined
-          ? parseBoolean(isCommingSoonValue)
-          : category.is_comming_soon,
-      type: categoryTypeValue !== undefined ? categoryTypeValue : category.type,
-    };
-
-    await category.update(updateData);
-
-    // Handle industry_ids update if provided
-    if (industryIdsValue !== undefined) {
-      // Parse industry_ids (comma-separated string or array)
-      let industryIdsArray = [];
-      if (
-        typeof industryIdsValue === "string" &&
-        industryIdsValue.trim() !== ""
-      ) {
-        industryIdsArray = industryIdsValue
-          .split(",")
-          .map((id) => parseInt(id.trim()))
-          .filter((id) => !isNaN(id));
-      } else if (Array.isArray(industryIdsValue)) {
-        industryIdsArray = industryIdsValue
-          .map((id) => parseInt(id))
-          .filter((id) => !isNaN(id));
-      }
-
-      // Update category-industry relationships
-      if (industryIdsArray.length > 0) {
-        // Remove existing relationships
-        await CategoryIndustry.destroy({
-          where: { category_id: categoryId },
-        });
-
-        // Create new relationships
-        const industryRelations = industryIdsArray.map((industryId) => ({
-          category_id: categoryId,
-          industry_id: industryId,
-        }));
-
-        await CategoryIndustry.bulkCreate(industryRelations);
-      } else {
-        // If empty industry_ids, remove all relationships
-        await CategoryIndustry.destroy({
-          where: { category_id: categoryId },
-        });
-      }
-    }
-
-    // Get updated category with industries
-    const updatedCategory = await Category.findByPk(categoryId, {
-      include: [
-        { model: Section, as: "section", attributes: ["id", "name"] },
-        {
-          model: Industry,
-          as: "industries",
-          attributes: ["id", "name", "description"],
-          through: { attributes: [] },
-        },
-      ],
-    });
-
-    sendUpdateResponse(
-      res,
-      transformToCamelCase(updatedCategory),
-      "Category updated successfully"
-    );
-  } catch (error) {
-    console.error("Error in PUT /api/categories/:id:", error);
-    sendInternalErrorResponse(res, "Error updating category: " + error.message);
   }
-});
+);
 
 // Delete category
 router.delete("/:id", async (req, res) => {

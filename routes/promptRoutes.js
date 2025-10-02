@@ -1337,23 +1337,54 @@ router.post(
       }
 
       // Handle industry_id array - link industries directly to prompt
-      const industryIds =
-        req.body.industryId || req.body.industry_id || req.body.industry_ids;
-      if (industryIds && Array.isArray(industryIds)) {
+      let industryIds =
+        req.body.industryId ||
+        req.body.industry_id ||
+        req.body.industry_ids ||
+        req.body.industryIds;
+
+      // Convert to array if it's a single value or string
+      if (industryIds && !Array.isArray(industryIds)) {
+        if (typeof industryIds === "string") {
+          // Handle comma-separated string
+          industryIds = industryIds
+            .split(",")
+            .map((id) => id.trim())
+            .filter((id) => id);
+        } else {
+          // Convert single value to array
+          industryIds = [industryIds];
+        }
+      }
+
+      if (industryIds && Array.isArray(industryIds) && industryIds.length > 0) {
+        // Convert to numbers and filter out invalid values
+        const validIndustryIds = industryIds
+          .map((id) => parseInt(id))
+          .filter((id) => !isNaN(id) && id > 0);
+
+        if (validIndustryIds.length === 0) {
+          return res.status(400).json({
+            message: "No valid industry IDs provided",
+          });
+        }
+
         // Validate all industry IDs exist
         const industries = await Industry.findAll({
-          where: { id: industryIds },
+          where: { id: validIndustryIds },
         });
 
-        if (industries.length !== industryIds.length) {
+        if (industries.length !== validIndustryIds.length) {
           return res.status(400).json({
             message: "Some industry IDs are invalid",
+            provided: validIndustryIds,
+            found: industries.map((i) => i.id),
           });
         }
 
         // Note: We'll create prompt-industry relationships after creating the prompt
         // Store industryIds for later use
-        req.industryIds = industryIds;
+        req.industryIds = validIndustryIds;
       }
 
       // Set default values for optional fields - normalize to snake_case
@@ -1461,19 +1492,50 @@ router.put(
       }
 
       // Handle industry_id array - link industries directly to prompt
-      const industryIds =
-        req.body.industryId || req.body.industry_id || req.body.industry_ids;
-      if (industryIds && Array.isArray(industryIds)) {
+      let industryIds =
+        req.body.industryId ||
+        req.body.industry_id ||
+        req.body.industry_ids ||
+        req.body.industryIds;
+
+      // Convert to array if it's a single value or string
+      if (industryIds && !Array.isArray(industryIds)) {
+        if (typeof industryIds === "string") {
+          // Handle comma-separated string
+          industryIds = industryIds
+            .split(",")
+            .map((id) => id.trim())
+            .filter((id) => id);
+        } else {
+          // Convert single value to array
+          industryIds = [industryIds];
+        }
+      }
+
+      if (industryIds && Array.isArray(industryIds) && industryIds.length > 0) {
         const promptId = req.params.id;
+
+        // Convert to numbers and filter out invalid values
+        const validIndustryIds = industryIds
+          .map((id) => parseInt(id))
+          .filter((id) => !isNaN(id) && id > 0);
+
+        if (validIndustryIds.length === 0) {
+          return res.status(400).json({
+            message: "No valid industry IDs provided",
+          });
+        }
 
         // Validate all industry IDs exist
         const industries = await Industry.findAll({
-          where: { id: industryIds },
+          where: { id: validIndustryIds },
         });
 
-        if (industries.length !== industryIds.length) {
+        if (industries.length !== validIndustryIds.length) {
           return res.status(400).json({
             message: "Some industry IDs are invalid",
+            provided: validIndustryIds,
+            found: industries.map((i) => i.id),
           });
         }
 
@@ -1483,7 +1545,7 @@ router.put(
         });
 
         // Create new prompt-industry relationships
-        const promptIndustryData = industryIds.map((industryId) => ({
+        const promptIndustryData = validIndustryIds.map((industryId) => ({
           prompt_id: promptId,
           industry_id: industryId,
           created_at: new Date(),

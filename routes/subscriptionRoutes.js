@@ -22,6 +22,37 @@ const { Op } = require("sequelize");
 
 // Import transform utilities
 const { transformToCamelCase } = require("../utils/transformUtils");
+
+// Custom transform function for subscription data
+const transformSubscriptionData = (data) => {
+  // First apply camelCase transformation
+  const camelCaseData = transformToCamelCase(data);
+
+  // Then apply custom field renaming
+  if (Array.isArray(camelCaseData)) {
+    return camelCaseData.map((item) => transformSubscriptionData(item));
+  }
+
+  if (camelCaseData && typeof camelCaseData === "object") {
+    const transformed = { ...camelCaseData };
+
+    // Rename nameSub to name
+    if (transformed.nameSub !== undefined) {
+      transformed.name = transformed.nameSub;
+      delete transformed.nameSub;
+    }
+
+    // Rename ContentSubscriptions to contentSubscriptions
+    if (transformed.ContentSubscriptions !== undefined) {
+      transformed.contentSubscriptions = transformed.ContentSubscriptions;
+      delete transformed.ContentSubscriptions;
+    }
+
+    return transformed;
+  }
+
+  return camelCaseData;
+};
 // Lấy danh sách Subscription (GET route for RESTful API)
 router.get("/", authMiddleware, adminOrMarketerMiddleware, async (req, res) => {
   try {
@@ -124,7 +155,7 @@ router.get("/", authMiddleware, adminOrMarketerMiddleware, async (req, res) => {
     });
 
     const pagination = calculatePagination(totalCount, currentPage, limit);
-    sendListResponse(res, transformToCamelCase(rows), pagination);
+    sendListResponse(res, transformSubscriptionData(rows), pagination);
   } catch (error) {
     sendInternalErrorResponse(res, error.message);
   }
@@ -165,7 +196,7 @@ router.post(
       });
 
       const pagination = calculatePagination(count, page, limit);
-      sendListResponse(res, transformToCamelCase(rows), pagination);
+      sendListResponse(res, transformSubscriptionData(rows), pagination);
     } catch (error) {
       sendInternalErrorResponse(res, error.message);
     }
@@ -203,7 +234,7 @@ router.get(
 
       sendListResponse(
         res,
-        transformToCamelCase(subscriptions),
+        transformSubscriptionData(subscriptions),
         calculatePagination(subscriptions.length, 1, subscriptions.length)
       );
     } catch (error) {
@@ -253,7 +284,7 @@ router.get(
       if (!subscriptions) {
         return sendNotFoundResponse(res, "Không tìm thấy Subscription!");
       }
-      sendDetailResponse(res, transformToCamelCase(subscriptions));
+      sendDetailResponse(res, transformSubscriptionData(subscriptions));
     } catch (error) {
       sendInternalErrorResponse(
         res,
@@ -269,11 +300,24 @@ router.get(
   adminOrMarketerMiddleware,
   async (req, res) => {
     try {
-      const subscription = await Subscription.findByPk(req.params.id);
+      const subscription = await Subscription.findByPk(req.params.id, {
+        include: [
+          {
+            model: ContentSubscription,
+            attributes: [
+              "id",
+              "content",
+              "included",
+              "created_at",
+              "updated_at",
+            ],
+          },
+        ],
+      });
       if (!subscription) {
         return sendNotFoundResponse(res, "Không tìm thấy Subscription!");
       }
-      sendDetailResponse(res, transformToCamelCase(subscription));
+      sendDetailResponse(res, transformSubscriptionData(subscription));
     } catch (error) {
       sendInternalErrorResponse(res, "Lỗi khi lấy Subscription!");
     }
@@ -315,7 +359,7 @@ router.post("/", authMiddleware, adminMiddleware, async (req, res) => {
 
     sendCreateResponse(
       res,
-      transformToCamelCase(newSubscription),
+      transformSubscriptionData(newSubscription),
       "Subscription created successfully"
     );
   } catch (error) {
@@ -339,6 +383,7 @@ router.put("/:id", authMiddleware, adminMiddleware, async (req, res) => {
       description_per_year,
       imageDiscount,
       is_popular,
+      contentSubscriptions, // Array of content subscription objects
     } = req.body;
 
     const subscription = await Subscription.findByPk(req.params.id);
@@ -346,6 +391,7 @@ router.put("/:id", authMiddleware, adminMiddleware, async (req, res) => {
       return sendNotFoundResponse(res, "Không tìm thấy Subscription!");
     }
 
+    // Update basic subscription fields
     await subscription.update({
       name_sub,
       type,
@@ -361,15 +407,151 @@ router.put("/:id", authMiddleware, adminMiddleware, async (req, res) => {
       is_popular,
     });
 
+    // Update contentSubscriptions if provided
+    if (contentSubscriptions && Array.isArray(contentSubscriptions)) {
+      // Clear existing content subscriptions
+      await ContentSubscription.destroy({
+        where: { subscription_id: subscription.id },
+      });
+
+      // Create new content subscriptions
+      const contentSubData = contentSubscriptions.map((content) => ({
+        subscription_id: subscription.id,
+        content: content.content,
+        included: content.included !== undefined ? content.included : true,
+      }));
+
+      await ContentSubscription.bulkCreate(contentSubData);
+    }
+
+    // Fetch updated subscription with contentSubscriptions
+    const updatedSubscription = await Subscription.findByPk(req.params.id, {
+      include: [
+        {
+          model: ContentSubscription,
+          attributes: ["id", "content", "included", "created_at", "updated_at"],
+        },
+      ],
+    });
+
     sendUpdateResponse(
       res,
-      transformToCamelCase(subscription),
+      transformSubscriptionData(updatedSubscription),
       "Subscription updated successfully"
     );
   } catch (error) {
+    console.error("Error updating subscription:", error);
     sendInternalErrorResponse(res, "Lỗi khi cập nhật Subscription!");
   }
 });
+
+// Thêm ContentSubscription vào Subscription
+router.post(
+  "/:id/content-subscriptions",
+  authMiddleware,
+  adminMiddleware,
+  async (req, res) => {
+    try {
+      const { content, included = true } = req.body;
+
+      if (!content) {
+        return sendErrorResponse(
+          res,
+          "Content is required",
+          "VALIDATION_ERROR",
+          400
+        );
+      }
+
+      const subscription = await Subscription.findByPk(req.params.id);
+      if (!subscription) {
+        return sendNotFoundResponse(res, "Không tìm thấy Subscription!");
+      }
+
+      const newContentSub = await ContentSubscription.create({
+        subscription_id: subscription.id,
+        content,
+        included,
+      });
+
+      sendCreateResponse(
+        res,
+        transformSubscriptionData(newContentSub),
+        "Content subscription added successfully"
+      );
+    } catch (error) {
+      console.error("Error adding content subscription:", error);
+      sendInternalErrorResponse(res, "Lỗi khi thêm ContentSubscription!");
+    }
+  }
+);
+
+// Cập nhật ContentSubscription
+router.put(
+  "/:id/content-subscriptions/:contentId",
+  authMiddleware,
+  adminMiddleware,
+  async (req, res) => {
+    try {
+      const { content, included } = req.body;
+      const { contentId } = req.params;
+
+      const contentSub = await ContentSubscription.findOne({
+        where: {
+          id: contentId,
+          subscription_id: req.params.id,
+        },
+      });
+
+      if (!contentSub) {
+        return sendNotFoundResponse(res, "Không tìm thấy ContentSubscription!");
+      }
+
+      await contentSub.update({
+        content: content || contentSub.content,
+        included: included !== undefined ? included : contentSub.included,
+      });
+
+      sendUpdateResponse(
+        res,
+        transformSubscriptionData(contentSub),
+        "Content subscription updated successfully"
+      );
+    } catch (error) {
+      console.error("Error updating content subscription:", error);
+      sendInternalErrorResponse(res, "Lỗi khi cập nhật ContentSubscription!");
+    }
+  }
+);
+
+// Xóa ContentSubscription
+router.delete(
+  "/:id/content-subscriptions/:contentId",
+  authMiddleware,
+  adminMiddleware,
+  async (req, res) => {
+    try {
+      const { contentId } = req.params;
+
+      const contentSub = await ContentSubscription.findOne({
+        where: {
+          id: contentId,
+          subscription_id: req.params.id,
+        },
+      });
+
+      if (!contentSub) {
+        return sendNotFoundResponse(res, "Không tìm thấy ContentSubscription!");
+      }
+
+      await contentSub.destroy();
+      sendDeleteResponse(res, "Xóa ContentSubscription thành công!");
+    } catch (error) {
+      console.error("Error deleting content subscription:", error);
+      sendInternalErrorResponse(res, "Lỗi khi xóa ContentSubscription!");
+    }
+  }
+);
 
 // Xóa Subscription
 router.delete("/:id", authMiddleware, adminMiddleware, async (req, res) => {

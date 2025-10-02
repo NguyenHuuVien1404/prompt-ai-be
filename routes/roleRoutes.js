@@ -24,6 +24,52 @@ const {
 // Import transform utilities
 const { transformToCamelCase } = require("../utils/transformUtils");
 
+// Utility function to ensure permissions is always an array
+const ensurePermissionsArray = (permissions) => {
+  if (!permissions) return [];
+
+  try {
+    let parsedPermissions;
+    if (typeof permissions === "string") {
+      parsedPermissions = JSON.parse(permissions);
+    } else {
+      parsedPermissions = permissions;
+    }
+
+    // Đảm bảo permissions luôn là array
+    if (Array.isArray(parsedPermissions)) {
+      return parsedPermissions;
+    } else if (
+      typeof parsedPermissions === "object" &&
+      parsedPermissions !== null
+    ) {
+      // Nếu là object, chuyển thành array của keys
+      return Object.keys(parsedPermissions);
+    } else {
+      return [];
+    }
+  } catch (error) {
+    return [];
+  }
+};
+
+// Utility function to process permissions for storage (convert array to object)
+const processPermissionsForStorage = (permissions) => {
+  if (!permissions) return {};
+
+  if (Array.isArray(permissions)) {
+    // Nếu là array, chuyển thành object với value true
+    return permissions.reduce((acc, perm) => {
+      acc[perm] = true;
+      return acc;
+    }, {});
+  } else if (typeof permissions === "object" && permissions !== null) {
+    return permissions;
+  } else {
+    return {};
+  }
+};
+
 // Lấy danh sách tất cả roles
 router.get("/", authMiddleware, adminOrMarketerMiddleware, async (req, res) => {
   try {
@@ -32,9 +78,16 @@ router.get("/", authMiddleware, adminOrMarketerMiddleware, async (req, res) => {
       order: [["id", "ASC"]],
     });
 
+    // Đảm bảo permissions luôn là array trong response
+    const rolesWithArrayPermissions = roles.map((role) => {
+      const roleData = role.toJSON();
+      roleData.permissions = ensurePermissionsArray(roleData.permissions);
+      return roleData;
+    });
+
     sendListResponse(
       res,
-      transformToCamelCase(roles),
+      transformToCamelCase(rolesWithArrayPermissions),
       calculatePagination(roles.length, 1, roles.length)
     );
   } catch (error) {
@@ -55,7 +108,11 @@ router.get(
         return sendNotFoundResponse(res, "Role không tồn tại");
       }
 
-      sendDetailResponse(res, transformToCamelCase(role));
+      // Đảm bảo permissions luôn là array trong response
+      const roleData = role.toJSON();
+      roleData.permissions = ensurePermissionsArray(roleData.permissions);
+
+      sendDetailResponse(res, transformToCamelCase(roleData));
     } catch (error) {
       sendInternalErrorResponse(res, error.message);
     }
@@ -81,7 +138,7 @@ router.post("/", authMiddleware, adminMiddleware, async (req, res) => {
     const newRole = await Role.create({
       name,
       description,
-      permissions: permissions || {},
+      permissions: processPermissionsForStorage(permissions),
       is_active: true,
     });
 
@@ -123,7 +180,10 @@ router.put("/:id", authMiddleware, adminMiddleware, async (req, res) => {
     await role.update({
       name: name || role.name,
       description: description !== undefined ? description : role.description,
-      permissions: permissions || role.permissions,
+      permissions:
+        permissions !== undefined
+          ? processPermissionsForStorage(permissions)
+          : role.permissions,
       is_active: is_active !== undefined ? is_active : role.is_active,
     });
 
@@ -231,7 +291,10 @@ router.get(
   async (req, res) => {
     try {
       const roleId = req.params.roleId;
-      const { page = 1, limit = 10, search = "" } = req.query;
+      const { page = 1, limit = 10, search = "", searchTerm = "" } = req.query;
+
+      // Normalize search parameters
+      const search_normalized = search || searchTerm;
 
       // Kiểm tra role có tồn tại không
       const role = await Role.findByPk(roleId);
@@ -240,18 +303,25 @@ router.get(
       }
 
       // Tạo điều kiện tìm kiếm
-      const whereConditions = {
+      const whereConditions = {};
+
+      // Filter theo role
+      whereConditions[Op.and] = whereConditions[Op.and] || [];
+      whereConditions[Op.and].push({
         [Op.or]: [
           { role_id: roleId },
           { role: roleId }, // Hỗ trợ cả role cũ
         ],
-      };
+      });
 
-      if (search) {
-        whereConditions[Op.or] = [
-          { full_name: { [Op.like]: `%${search}%` } },
-          { email: { [Op.like]: `%${search}%` } },
-        ];
+      // Filter theo search
+      if (search_normalized) {
+        whereConditions[Op.and].push({
+          [Op.or]: [
+            { full_name: { [Op.like]: `%${search_normalized}%` } },
+            { email: { [Op.like]: `%${search_normalized}%` } },
+          ],
+        });
       }
 
       // Đếm tổng số users
@@ -288,14 +358,7 @@ router.get(
         // Parse permissions từ Role.permissions hoặc fallback về default
         let permissions = [];
         if (user.Role && user.Role.permissions) {
-          try {
-            permissions =
-              typeof user.Role.permissions === "string"
-                ? JSON.parse(user.Role.permissions)
-                : user.Role.permissions;
-          } catch (error) {
-            permissions = [];
-          }
+          permissions = ensurePermissionsArray(user.Role.permissions);
         } else {
           // Fallback to default role permissions
           permissions = getRolePermissions(user.role_id || user.role);

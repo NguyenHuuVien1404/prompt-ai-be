@@ -5,6 +5,7 @@ const {
   authMiddleware,
   adminMiddleware,
 } = require("../middleware/authMiddleware");
+const { adminOrMarketerMiddleware } = require("../middleware/roleMiddleware");
 const {
   sendListResponse,
   sendDetailResponse,
@@ -21,7 +22,7 @@ const {
 const { transformToCamelCase } = require("../utils/transformUtils");
 
 // Lấy tất cả industries với pagination và search
-router.get("/", async (req, res) => {
+router.get("/", authMiddleware, adminOrMarketerMiddleware, async (req, res) => {
   try {
     const {
       page,
@@ -29,14 +30,19 @@ router.get("/", async (req, res) => {
       pageSize,
       limit: queryLimit,
       searchTxt,
+      search,
+      searchTerm,
       categoryIds,
     } = req.query;
 
+    // Normalize search parameters
+    const search_normalized = searchTxt || search || searchTerm;
+
     // Build where condition for search
     const whereCondition = {};
-    if (searchTxt && searchTxt.trim()) {
+    if (search_normalized && search_normalized.trim()) {
       whereCondition.name = {
-        [require("sequelize").Op.like]: `%${searchTxt.trim()}%`,
+        [require("sequelize").Op.like]: `%${search_normalized.trim()}%`,
       };
     }
 
@@ -57,6 +63,7 @@ router.get("/", async (req, res) => {
           as: "categories",
           where: { id: validCategoryIds },
           through: { attributes: [] },
+          required: true, // INNER JOIN để filter
         });
       }
     }
@@ -116,115 +123,130 @@ router.get("/", async (req, res) => {
 });
 
 // Lấy industry theo ID
-router.get("/:id", async (req, res) => {
-  try {
-    const { id } = req.params;
+router.get(
+  "/:id",
+  authMiddleware,
+  adminOrMarketerMiddleware,
+  async (req, res) => {
+    try {
+      const { id } = req.params;
 
-    const industry = await Industry.findByPk(id);
-    if (!industry) {
-      return sendNotFoundResponse(res, "Không tìm thấy ngành nghề");
+      const industry = await Industry.findByPk(id);
+      if (!industry) {
+        return sendNotFoundResponse(res, "Không tìm thấy ngành nghề");
+      }
+
+      sendDetailResponse(res, transformToCamelCase(industry));
+    } catch (error) {
+      console.error("Error fetching industry by ID:", error);
+      sendInternalErrorResponse(res, "Lỗi máy chủ nội bộ");
     }
-
-    sendDetailResponse(res, transformToCamelCase(industry));
-  } catch (error) {
-    console.error("Error fetching industry by ID:", error);
-    sendInternalErrorResponse(res, "Lỗi máy chủ nội bộ");
   }
-});
+);
 
 // Lấy industries theo category_id (hỗ trợ multiple IDs qua query)
-router.get("/by-category/:categoryId?", async (req, res) => {
-  try {
-    const { categoryId } = req.params;
-    const { categoryIds } = req.query;
+router.get(
+  "/by-category/:categoryId?",
+  authMiddleware,
+  adminOrMarketerMiddleware,
+  async (req, res) => {
+    try {
+      const { categoryId } = req.params;
+      const { categoryIds } = req.query;
 
-    // Xử lý categoryIds - ưu tiên query parameter
-    let categoryIdArray = [];
+      // Xử lý categoryIds - ưu tiên query parameter
+      let categoryIdArray = [];
 
-    if (categoryIds) {
-      categoryIdArray = Array.isArray(categoryIds)
-        ? categoryIds.map((id) => parseInt(id))
-        : [parseInt(categoryIds)];
-    } else if (categoryId) {
-      categoryIdArray = [parseInt(categoryId)];
-    } else {
-      return sendErrorResponse(
-        res,
-        "Category ID is required",
-        "VALIDATION_ERROR",
-        400
-      );
+      if (categoryIds) {
+        categoryIdArray = Array.isArray(categoryIds)
+          ? categoryIds.map((id) => parseInt(id))
+          : [parseInt(categoryIds)];
+      } else if (categoryId) {
+        categoryIdArray = [parseInt(categoryId)];
+      } else {
+        return sendErrorResponse(
+          res,
+          "Category ID is required",
+          "VALIDATION_ERROR",
+          400
+        );
+      }
+
+      // Lọc bỏ các giá trị không hợp lệ
+      categoryIdArray = categoryIdArray.filter((id) => !isNaN(id) && id > 0);
+
+      if (categoryIdArray.length === 0) {
+        return sendErrorResponse(
+          res,
+          "Valid category ID(s) required",
+          "VALIDATION_ERROR",
+          400
+        );
+      }
+
+      const industries = await Industry.findAll({
+        include: [
+          {
+            model: Category,
+            as: "categories",
+            where: { id: categoryIdArray },
+            through: { attributes: [] },
+          },
+        ],
+        order: [["name", "ASC"]],
+      });
+
+      if (industries.length === 0) {
+        return sendNotFoundResponse(res, "Không tìm thấy ngành nghề");
+      }
+
+      const pagination = {
+        totalCount: industries.length,
+        currentPage: 1,
+        pageSize: industries.length,
+        totalPages: 1,
+      };
+
+      sendListResponse(res, transformToCamelCase(industries), pagination);
+    } catch (error) {
+      console.error("Error fetching industries by category:", error);
+      sendInternalErrorResponse(res, "Lỗi máy chủ nội bộ");
     }
-
-    // Lọc bỏ các giá trị không hợp lệ
-    categoryIdArray = categoryIdArray.filter((id) => !isNaN(id) && id > 0);
-
-    if (categoryIdArray.length === 0) {
-      return sendErrorResponse(
-        res,
-        "Valid category ID(s) required",
-        "VALIDATION_ERROR",
-        400
-      );
-    }
-
-    const industries = await Industry.findAll({
-      include: [
-        {
-          model: Category,
-          as: "categories",
-          where: { id: categoryIdArray },
-          through: { attributes: [] },
-        },
-      ],
-      order: [["name", "ASC"]],
-    });
-
-    if (industries.length === 0) {
-      return sendNotFoundResponse(res, "Không tìm thấy ngành nghề");
-    }
-
-    const pagination = {
-      totalCount: industries.length,
-      currentPage: 1,
-      pageSize: industries.length,
-      totalPages: 1,
-    };
-
-    sendListResponse(res, transformToCamelCase(industries), pagination);
-  } catch (error) {
-    console.error("Error fetching industries by category:", error);
-    sendInternalErrorResponse(res, "Lỗi máy chủ nội bộ");
   }
-});
+);
 
 // Lấy categories theo industry_id
-router.get("/:industryId/categories", async (req, res) => {
-  try {
-    const { industryId } = req.params;
+router.get(
+  "/:industryId/categories",
+  authMiddleware,
+  adminOrMarketerMiddleware,
+  async (req, res) => {
+    try {
+      const { industryId } = req.params;
 
-    const categories = await Category.findAll({
-      include: [
-        {
-          model: Industry,
-          as: "industries",
-          where: { id: industryId },
-          through: { attributes: [] },
-        },
-      ],
-      order: [["name", "ASC"]],
-    });
+      const categories = await Category.findAll({
+        include: [
+          {
+            model: Industry,
+            as: "industries",
+            where: { id: industryId },
+            through: { attributes: [] },
+          },
+        ],
+        order: [["name", "ASC"]],
+      });
 
-    sendListResponse(
-      res,
-      transformToCamelCase(categories),
-      calculatePagination(categories.length, 1, categories.length)
-    );
-  } catch (error) {
-    console.error("Error fetching categories by industry:", error);
-    sendInternalErrorResponse(res, "Lỗi máy chủ nội bộ");
+      sendListResponse(
+        res,
+        transformToCamelCase(categories),
+        calculatePagination(categories.length, 1, categories.length)
+      );
+    } catch (error) {
+      console.error("Error fetching categories by industry:", error);
+      sendInternalErrorResponse(res, "Lỗi máy chủ nội bộ");
+    }
   }
-});
+);
 
 // Tạo industry mới (chỉ admin)
 router.post("/", authMiddleware, adminMiddleware, async (req, res) => {
@@ -283,6 +305,7 @@ router.put("/:id", authMiddleware, adminMiddleware, async (req, res) => {
 router.delete("/:id", authMiddleware, adminMiddleware, async (req, res) => {
   try {
     const { id } = req.params;
+    const { force } = req.query; // Thêm option force delete
 
     const industry = await Industry.findByPk(id);
     if (!industry) {
@@ -294,13 +317,20 @@ router.delete("/:id", authMiddleware, adminMiddleware, async (req, res) => {
       where: { industry_id: id },
     });
 
-    if (categoryIndustries > 0) {
+    if (categoryIndustries > 0 && !force) {
       return sendErrorResponse(
         res,
-        `Không thể xóa ngành nghề. Hiện tại đang được liên kết với ${categoryIndustries} danh mục. Vui lòng xóa các liên kết danh mục-ngành nghề trước.`,
+        `Không thể xóa ngành nghề. Hiện tại đang được liên kết với ${categoryIndustries} danh mục. Vui lòng xóa các liên kết danh mục-ngành nghề trước hoặc sử dụng ?force=true để xóa tất cả liên kết.`,
         "INDUSTRY_IN_USE",
         409
       );
+    }
+
+    // Nếu force=true, xóa tất cả liên kết trước
+    if (force && categoryIndustries > 0) {
+      await CategoryIndustry.destroy({
+        where: { industry_id: id },
+      });
     }
 
     await industry.destroy();

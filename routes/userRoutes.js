@@ -1,18 +1,19 @@
 const express = require("express");
 const jwt = require("jsonwebtoken");
-const { User } = require("../models");
+const { User, Role } = require("../models");
 const router = express.Router();
 const bcrypt = require("bcryptjs");
 const { sendOtpEmail } = require("../utils/emailService");
 const UserSub = require("../models/UserSub");
 const Subscription = require("../models/Subscription");
 const DeviceLog = require("../models/DeviceLog");
-const Role = require("../models/Role");
 const userAgentParser = require("useragent");
 const { Sequelize } = require("sequelize");
 const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
+const csv = require("csv-parser");
+const csvWriter = require("csv-writer");
 const {
   authMiddleware,
   adminMiddleware,
@@ -51,6 +52,11 @@ const transformToCamelCase = (obj, seen = new WeakSet()) => {
     return obj.map((item) => transformToCamelCase(item, seen));
   }
 
+  // Handle Date objects - return as ISO string
+  if (obj instanceof Date) {
+    return obj.toISOString();
+  }
+
   // Handle Sequelize instances - convert to plain object first
   if (obj.toJSON && typeof obj.toJSON === "function") {
     obj = obj.toJSON();
@@ -59,7 +65,11 @@ const transformToCamelCase = (obj, seen = new WeakSet()) => {
   const transformed = {};
   for (const [key, value] of Object.entries(obj)) {
     const camelKey = toCamelCase(key);
-    if (value && typeof value === "object" && !Array.isArray(value)) {
+
+    // Handle Date objects
+    if (value instanceof Date) {
+      transformed[camelKey] = value.toISOString();
+    } else if (value && typeof value === "object" && !Array.isArray(value)) {
       transformed[camelKey] = transformToCamelCase(value, seen);
     } else if (Array.isArray(value)) {
       transformed[camelKey] = value.map((item) =>
@@ -70,6 +80,78 @@ const transformToCamelCase = (obj, seen = new WeakSet()) => {
     }
   }
   return transformed;
+};
+
+// Cache for role mapping to avoid repeated database queries
+let roleMappingCache = null;
+let roleMappingCacheTime = 0;
+const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+
+// Utility function to get role mapping from database
+const getRoleMapping = async () => {
+  const now = Date.now();
+
+  // Return cached data if still valid
+  if (roleMappingCache && now - roleMappingCacheTime < CACHE_DURATION) {
+    return roleMappingCache;
+  }
+
+  try {
+    const roles = await Role.findAll({
+      where: { is_active: true },
+      attributes: ["id", "name"],
+      order: [["id", "ASC"]],
+    });
+
+    // Build mapping object
+    const mapping = {};
+    roles.forEach((role) => {
+      // Add both lowercase and uppercase versions
+      mapping[role.name.toLowerCase()] = role.id;
+      mapping[role.name] = role.id;
+    });
+
+    // Cache the result
+    roleMappingCache = mapping;
+    roleMappingCacheTime = now;
+
+    return mapping;
+  } catch (error) {
+    console.error("Error fetching role mapping:", error);
+    // Fallback to hardcoded mapping if database fails
+    return {
+      user: 1,
+      admin: 2,
+      marketer: 3,
+      User: 1,
+      Admin: 2,
+      Marketer: 3,
+    };
+  }
+};
+
+// Utility function to add role filter to whereConditions
+const addRoleFilter = async (whereConditions, role) => {
+  if (role !== undefined && role !== null) {
+    let parsedRole;
+
+    // Handle string role names
+    if (typeof role === "string") {
+      const roleMap = await getRoleMapping();
+      parsedRole = roleMap[role] || parseInt(role);
+    } else {
+      parsedRole = parseInt(role);
+    }
+
+    // Chỉ thêm nếu là số hợp lệ
+    if (!isNaN(parsedRole)) {
+      // ✅ Hỗ trợ cả role cũ và role_id mới - sử dụng Op.and để kết hợp với các filter khác
+      whereConditions[Op.and] = whereConditions[Op.and] || [];
+      whereConditions[Op.and].push({
+        [Op.or]: [{ role_id: parsedRole }, { role: parsedRole }],
+      });
+    }
+  }
 };
 
 // Cấu hình Multer để lưu file vào thư mục "uploads"
@@ -116,7 +198,200 @@ const upload = multer({
 });
 router.use("/upload", express.static("uploads")); // Cho phép truy cập ảnh đã upload
 
-// Lấy tất cả users (chuyển từ GET thành POST)
+// Lấy tất cả users (GET route for RESTful API)
+router.get("/", authMiddleware, adminOrMarketerMiddleware, async (req, res) => {
+  try {
+    // Lấy tham số từ query parameters - support both camelCase and snake_case
+    let {
+      page,
+      pageIndex,
+      pageSize = 10,
+      search,
+      searchTerm, // Support new format
+      accountStatus,
+      account_status,
+      status, // Support new format
+      isVerified,
+      is_verified,
+      role,
+      dateRange,
+      dateFrom, // Support new format
+      dateTo, // Support new format
+    } = req.query;
+
+    // Normalize parameters - support both old and new formats
+    const search_normalized = search || searchTerm;
+    const account_status_normalized =
+      accountStatus !== undefined
+        ? accountStatus
+        : account_status !== undefined
+        ? account_status
+        : status === "active"
+        ? 1
+        : status === "inactive"
+        ? 0
+        : status;
+    const is_verified_normalized =
+      isVerified !== undefined ? isVerified : is_verified;
+
+    // Đảm bảo các tham số số nguyên không bị NaN
+    const currentPage = parseInt(page || pageIndex) || 1;
+    const limit = parseInt(pageSize) || 10;
+    const offset = (currentPage - 1) * limit;
+
+    // Xây dựng điều kiện tìm kiếm
+    const whereConditions = {};
+
+    // Tìm kiếm theo tên hoặc email
+    if (search_normalized) {
+      whereConditions[Op.and] = whereConditions[Op.and] || [];
+      whereConditions[Op.and].push({
+        [Op.or]: [
+          { full_name: { [Op.like]: `%${search_normalized}%` } },
+          { email: { [Op.like]: `%${search_normalized}%` } },
+        ],
+      });
+    }
+
+    // Lọc theo trạng thái
+    if (
+      account_status_normalized !== undefined &&
+      account_status_normalized !== null
+    ) {
+      const parsedStatus = parseInt(account_status_normalized);
+      // Chỉ thêm nếu là số hợp lệ
+      if (!isNaN(parsedStatus)) {
+        whereConditions.account_status = parsedStatus;
+      }
+    }
+
+    // Lọc theo tình trạng xác thực
+    if (
+      is_verified_normalized !== undefined &&
+      is_verified_normalized !== null
+    ) {
+      if (typeof is_verified_normalized === "string") {
+        whereConditions.is_verified = is_verified_normalized === "true";
+      } else {
+        whereConditions.is_verified = !!is_verified_normalized;
+      }
+    }
+
+    // ✅ Lọc theo vai trò - sử dụng function chung
+    await addRoleFilter(whereConditions, role);
+
+    // Lọc theo dateRange nếu có (từ query parameters)
+    // Hỗ trợ cả dateRange[from]/dateRange[to] và dateFrom/dateTo
+    const dateFromValue =
+      req.query.dateRange?.from ||
+      req.query["dateRange[from]"] ||
+      req.query.dateFrom ||
+      dateFrom;
+    const dateToValue =
+      req.query.dateRange?.to ||
+      req.query["dateRange[to]"] ||
+      req.query.dateTo ||
+      dateTo;
+
+    if (dateFromValue || dateToValue) {
+      whereConditions.created_at = {};
+      if (dateFromValue) {
+        // Nếu chỉ có ngày (YYYY-MM-DD), thêm thời gian 00:00:00
+        const fromDate = new Date(dateFromValue);
+        if (dateFromValue.length === 10) {
+          // YYYY-MM-DD format
+          fromDate.setHours(0, 0, 0, 0);
+        }
+        whereConditions.created_at[Op.gte] = fromDate;
+      }
+      if (dateToValue) {
+        // Nếu chỉ có ngày (YYYY-MM-DD), thêm thời gian 23:59:59
+        const toDate = new Date(dateToValue);
+        if (dateToValue.length === 10) {
+          // YYYY-MM-DD format
+          toDate.setHours(23, 59, 59, 999);
+        }
+        whereConditions.created_at[Op.lte] = toDate;
+      }
+    }
+
+    // Log để debug (có thể xóa sau khi test xong)
+    // console.log('Query params:', req.query);
+    // console.log('DateRange:', req.query.dateRange);
+    // console.log('DateFrom:', dateFrom, 'DateTo:', dateTo);
+    // console.log('Where conditions:', JSON.stringify(whereConditions, null, 2));
+
+    const userSubInclude = {
+      model: UserSub,
+      attributes: ["sub_id"],
+      required: !!req.query.sub_id, // Nếu có truyền sub_id thì required: true, ngược lại false
+      where: {
+        status: 1,
+        ...(req.query.sub_id ? { sub_id: req.query.sub_id } : {}),
+      },
+    };
+
+    // Get total count without includes to avoid JOIN counting issues
+    const totalCount = await User.count({ where: whereConditions });
+
+    // Get actual data with includes
+    const rows = await User.findAll({
+      attributes: { exclude: ["password_hash"] },
+      include: [
+        userSubInclude,
+        {
+          model: require("../models").Role,
+          attributes: ["id", "name", "description"],
+          as: "Role",
+        },
+      ],
+      where: whereConditions,
+      offset,
+      limit,
+      order: [["created_at", "DESC"]],
+    });
+
+    // ✅ Transform the data to flatten the structure - hỗ trợ cả role cũ và role_id mới
+    const transformedRows = rows.map((row) => {
+      const plainRow = row.get({ plain: true });
+
+      // ✅ Hỗ trợ cả role cũ và role_id mới
+      let roleName = "Unknown";
+      if (plainRow.Role) {
+        roleName = plainRow.Role.name;
+      } else {
+        // Fallback cho role cũ
+        const roleMap = {
+          1: "User",
+          2: "Admin",
+          3: "Marketer",
+        };
+        roleName = roleMap[plainRow.role] || "Unknown";
+      }
+
+      const transformedRow = {
+        ...plainRow,
+        subId: plainRow.UserSubs?.[0]?.sub_id || null,
+        UserSubs: undefined, // Remove the UserSubs array
+        roleName: roleName,
+        Role: undefined, // Remove the Role object
+      };
+
+      // Remove snake_case fields that have camelCase equivalents
+      delete transformedRow.sub_id;
+      delete transformedRow.role_name;
+
+      return transformToCamelCase(transformedRow);
+    });
+
+    const pagination = calculatePagination(totalCount, currentPage, limit);
+    sendListResponse(res, transformedRows, pagination);
+  } catch (error) {
+    sendInternalErrorResponse(res, error.message);
+  }
+});
+
+// Lấy tất cả users (POST route for backward compatibility)
 router.post(
   "/list",
   authMiddleware,
@@ -182,18 +457,8 @@ router.post(
         }
       }
 
-      // ✅ Lọc theo vai trò - hỗ trợ cả role cũ và role_id mới
-      if (role !== undefined && role !== null) {
-        const parsedRole = parseInt(role);
-        // Chỉ thêm nếu là số hợp lệ
-        if (!isNaN(parsedRole)) {
-          // ✅ Hỗ trợ cả role cũ và role_id mới
-          whereConditions[Op.or] = [
-            { role_id: parsedRole },
-            { role: parsedRole },
-          ];
-        }
-      }
+      // ✅ Lọc theo vai trò - sử dụng function chung
+      await addRoleFilter(whereConditions, role);
 
       // Log để debug
 
@@ -389,12 +654,46 @@ router.put("/:id", async (req, res) => {
     const user = await User.findByPk(req.params.id);
     if (!user) return sendNotFoundResponse(res, "User not found");
 
-    // Update user information
-    await user.update(req.body);
+    // Extract userSub data from request body
+    const { userSub, ...userData } = req.body;
 
-    // Update subscription if subId or sub_id is provided
+    // Update user information (exclude userSub data)
+    await user.update(userData);
+
+    // Update subscription if userSub data is provided
+    if (userSub) {
+      const { subscriptionId, startDate, endDate, token, status } = userSub;
+
+      // Find active user subscription
+      const existingUserSub = await UserSub.findOne({
+        where: { user_id: req.params.id, status: 1 },
+      });
+
+      if (existingUserSub) {
+        // Update existing subscription
+        await existingUserSub.update({
+          sub_id: subscriptionId || existingUserSub.sub_id,
+          start_date: startDate || existingUserSub.start_date,
+          end_date: endDate || existingUserSub.end_date,
+          token: token !== undefined ? token : existingUserSub.token,
+          status: status !== undefined ? status : existingUserSub.status,
+        });
+      } else if (subscriptionId) {
+        // Create new subscription if none exists
+        await UserSub.create({
+          user_id: req.params.id,
+          sub_id: subscriptionId,
+          status: status || 1,
+          start_date: startDate || new Date(),
+          end_date: endDate || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+          token: token || 0,
+        });
+      }
+    }
+
+    // Handle legacy subId or sub_id for backward compatibility
     const subId = req.body.subId || req.body.sub_id;
-    if (subId) {
+    if (subId && !userSub) {
       const userSub = await UserSub.findOne({
         where: { user_id: req.params.id, status: 1 },
       });
@@ -1274,7 +1573,7 @@ router.put(
   adminMiddleware,
   async (req, res) => {
     try {
-      const { new_sub_id, status, start_date, end_date } = req.body;
+      const { new_sub_id, status, start_date, end_date, token } = req.body;
       const userSub = await UserSub.findOne({
         where: { user_id: req.params.id, id: req.params.subId },
       });
@@ -1299,6 +1598,7 @@ router.put(
         status: status !== undefined ? status : userSub.status,
         start_date: start_date || userSub.start_date,
         end_date: end_date || userSub.end_date,
+        token: token !== undefined ? token : userSub.token,
       });
       await userSub.reload();
       res.json({
@@ -1598,17 +1898,8 @@ router.post(
         }
       }
 
-      // ✅ Lọc theo vai trò - hỗ trợ cả role cũ và role_id mới
-      if (role !== undefined && role !== null) {
-        const parsedRole = parseInt(role);
-        if (!isNaN(parsedRole)) {
-          // ✅ Hỗ trợ cả role cũ và role_id mới
-          whereConditions[Op.or] = [
-            { role_id: parsedRole },
-            { role: parsedRole },
-          ];
-        }
-      }
+      // ✅ Lọc theo vai trò - sử dụng function chung
+      await addRoleFilter(whereConditions, role);
 
       // Lấy tất cả users với thông tin subscription
       const users = await User.findAll({
@@ -1735,6 +2026,390 @@ router.post(
 
       // Gửi file
       res.send(excelBuffer);
+    } catch (error) {
+      sendInternalErrorResponse(res, error.message);
+    }
+  }
+);
+
+// API Test Import với dữ liệu JSON
+router.post(
+  "/test-import",
+  authMiddleware,
+  adminMiddleware,
+  async (req, res) => {
+    try {
+      const { users } = req.body;
+
+      if (!users || !Array.isArray(users)) {
+        return sendErrorResponse(
+          res,
+          "Vui lòng cung cấp danh sách users",
+          "INVALID_DATA",
+          400
+        );
+      }
+
+      const results = [];
+      const errors = [];
+
+      // Xử lý từng user
+      for (let i = 0; i < users.length; i++) {
+        const userData = users[i];
+        const rowNumber = i + 1;
+
+        try {
+          // Validate dữ liệu bắt buộc
+          if (!userData.firstName || !userData.lastName || !userData.email) {
+            errors.push({
+              row: rowNumber,
+              error: "Thiếu thông tin bắt buộc: firstName, lastName, email",
+              data: userData,
+            });
+            continue;
+          }
+
+          // Tạo full name
+          const fullName = `${userData.firstName} ${userData.lastName}`.trim();
+          const email = userData.email.trim();
+
+          // Parse JoinedDate
+          let joinedDate = new Date();
+          if (userData.joinedDate) {
+            joinedDate = new Date(userData.joinedDate);
+            if (isNaN(joinedDate.getTime())) {
+              errors.push({
+                row: rowNumber,
+                error: "Ngày tham gia không hợp lệ",
+                data: userData,
+              });
+              continue;
+            }
+          }
+
+          // Tính otp_expires_at (JoinedDate + 1 tháng)
+          const otpExpiresAt = new Date(joinedDate);
+          otpExpiresAt.setMonth(otpExpiresAt.getMonth() + 1);
+
+          // Tìm user theo email hoặc firstName + lastName
+          let existingUser = await User.findOne({
+            where: {
+              [Op.or]: [
+                { email: email },
+                {
+                  [Op.and]: [
+                    { full_name: { [Op.like]: `%${userData.firstName}%` } },
+                    { full_name: { [Op.like]: `%${userData.lastName}%` } },
+                  ],
+                },
+              ],
+            },
+          });
+
+          if (existingUser) {
+            // Cập nhật user hiện có (chỉ cập nhật các trường an toàn)
+            const updateData = {
+              full_name: fullName,
+              otp_expires_at: otpExpiresAt,
+            };
+
+            // Chỉ cập nhật email nếu khác với email hiện tại và không có roleId
+            if (existingUser.email !== email && !existingUser.role_id) {
+              updateData.email = email;
+            }
+
+            // Chỉ cập nhật role nếu user hiện tại có role = 1 (User) và không có roleId
+            if (existingUser.role === 1 && !existingUser.role_id) {
+              updateData.role = 1; // Giữ nguyên role User
+            }
+
+            // Chỉ cập nhật account_status và is_verified nếu cần thiết
+            if (existingUser.account_status !== 1) {
+              updateData.account_status = 1;
+            }
+            if (!existingUser.is_verified) {
+              updateData.is_verified = true;
+            }
+
+            try {
+              await existingUser.update(updateData);
+            } catch (updateError) {
+              console.error(`Update error for ${email}:`, updateError);
+              throw updateError;
+            }
+
+            results.push({
+              action: "updated",
+              email: email,
+              fullName: fullName,
+              joinedDate: joinedDate,
+              otpExpiresAt: otpExpiresAt,
+              currentRole: existingUser.role,
+            });
+
+            console.log(`Updated user: ${email}`);
+          } else {
+            // Tạo user mới
+            const newUser = await User.create({
+              full_name: fullName,
+              email: email,
+              password_hash: await bcrypt.hash("default123", 10), // Mật khẩu mặc định
+              account_status: 1,
+              role: 1, // User role
+              is_verified: true,
+              count_promt: 15,
+              otp_expires_at: otpExpiresAt,
+            });
+
+            // Tạo subscription miễn phí cho user mới
+            const freeSub = await Subscription.findOne({
+              where: { type: 4 },
+              attributes: ["id"],
+            });
+
+            if (freeSub) {
+              await UserSub.create({
+                user_id: newUser.id,
+                sub_id: freeSub.id,
+                status: 1,
+                start_date: joinedDate,
+                end_date: otpExpiresAt,
+              });
+            }
+
+            results.push({
+              action: "created",
+              email: email,
+              fullName: fullName,
+              joinedDate: joinedDate,
+              otpExpiresAt: otpExpiresAt,
+            });
+
+            console.log(`Created new user: ${email}`);
+          }
+        } catch (error) {
+          console.error(`Error processing row ${rowNumber}:`, error);
+          errors.push({
+            row: rowNumber,
+            error: error.message,
+            data: userData,
+          });
+        }
+      }
+
+      sendDetailResponse(
+        res,
+        {
+          totalProcessed: users.length,
+          successCount: results.length,
+          errorCount: errors.length,
+          results: results,
+          errors: errors,
+        },
+        "Import hoàn thành"
+      );
+    } catch (error) {
+      sendInternalErrorResponse(res, error.message);
+    }
+  }
+);
+
+// API Import CSV Users
+router.post(
+  "/import-csv",
+  authMiddleware,
+  adminMiddleware,
+  upload.single("csvFile"),
+  async (req, res) => {
+    try {
+      if (!req.file) {
+        return sendErrorResponse(
+          res,
+          "Vui lòng upload file CSV",
+          "MISSING_FILE",
+          400
+        );
+      }
+
+      const results = [];
+      const errors = [];
+      const filePath = req.file.path;
+
+      // Đọc và xử lý file CSV
+      await new Promise((resolve, reject) => {
+        fs.createReadStream(filePath)
+          .pipe(csv())
+          .on("data", (data) => {
+            results.push(data);
+          })
+          .on("end", resolve)
+          .on("error", reject);
+      });
+
+      // Xử lý từng dòng CSV
+      for (let i = 0; i < results.length; i++) {
+        const row = results[i];
+        const rowNumber = i + 2; // +2 vì bắt đầu từ dòng 2 (có header)
+
+        try {
+          // Validate dữ liệu bắt buộc
+          if (!row.FirstName || !row.LastName || !row.Email) {
+            errors.push({
+              row: rowNumber,
+              error: "Thiếu thông tin bắt buộc: FirstName, LastName, Email",
+              data: row,
+            });
+            continue;
+          }
+
+          // Tạo full name
+          const fullName = `${row.FirstName} ${row.LastName}`.trim();
+          const email = row.Email.trim();
+
+          // Parse JoinedDate
+          let joinedDate = new Date();
+          if (row.JoinedDate) {
+            joinedDate = new Date(row.JoinedDate);
+            if (isNaN(joinedDate.getTime())) {
+              errors.push({
+                row: rowNumber,
+                error: "Ngày tham gia không hợp lệ",
+                data: row,
+              });
+              continue;
+            }
+          }
+
+          // Tính otp_expires_at (JoinedDate + 1 tháng)
+          const otpExpiresAt = new Date(joinedDate);
+          otpExpiresAt.setMonth(otpExpiresAt.getMonth() + 1);
+
+          // Tìm user theo email hoặc firstName + lastName
+          let existingUser = await User.findOne({
+            where: {
+              [Op.or]: [
+                { email: email },
+                {
+                  [Op.and]: [
+                    { full_name: { [Op.like]: `%${row.FirstName}%` } },
+                    { full_name: { [Op.like]: `%${row.LastName}%` } },
+                  ],
+                },
+              ],
+            },
+          });
+
+          if (existingUser) {
+            // Cập nhật user hiện có (chỉ cập nhật các trường an toàn)
+            const updateData = {
+              full_name: fullName,
+              otp_expires_at: otpExpiresAt,
+            };
+
+            // Chỉ cập nhật email nếu khác với email hiện tại và không có roleId
+            if (existingUser.email !== email && !existingUser.role_id) {
+              updateData.email = email;
+            }
+
+            // Chỉ cập nhật role nếu user hiện tại có role = 1 (User) và không có roleId
+            if (existingUser.role === 1 && !existingUser.role_id) {
+              updateData.role = 1; // Giữ nguyên role User
+            }
+
+            // Chỉ cập nhật account_status và is_verified nếu cần thiết
+            if (existingUser.account_status !== 1) {
+              updateData.account_status = 1;
+            }
+            if (!existingUser.is_verified) {
+              updateData.is_verified = true;
+            }
+
+            try {
+              await existingUser.update(updateData);
+            } catch (updateError) {
+              console.error(`Update error for ${email}:`, updateError);
+              throw updateError;
+            }
+
+            console.log(`Updated user: ${email}`);
+          } else {
+            // Tạo user mới
+            const newUser = await User.create({
+              full_name: fullName,
+              email: email,
+              password_hash: await bcrypt.hash("default123", 10), // Mật khẩu mặc định
+              account_status: 1,
+              role: 1, // User role
+              is_verified: true,
+              count_promt: 15,
+              otp_expires_at: otpExpiresAt,
+            });
+
+            // Tạo subscription miễn phí cho user mới
+            const freeSub = await Subscription.findOne({
+              where: { type: 4 },
+              attributes: ["id"],
+            });
+
+            if (freeSub) {
+              await UserSub.create({
+                user_id: newUser.id,
+                sub_id: freeSub.id,
+                status: 1,
+                start_date: joinedDate,
+                end_date: otpExpiresAt,
+              });
+            }
+
+            console.log(`Created new user: ${email}`);
+          }
+        } catch (error) {
+          errors.push({
+            row: rowNumber,
+            error: error.message,
+            data: row,
+          });
+        }
+      }
+
+      // Xóa file tạm
+      fs.unlinkSync(filePath);
+
+      // Tạo file báo cáo lỗi nếu có
+      let errorReportPath = null;
+      if (errors.length > 0) {
+        const errorReportPath = path.join(
+          __dirname,
+          "../uploads",
+          `import-errors-${Date.now()}.csv`
+        );
+
+        const writer = csvWriter.createObjectCsvWriter({
+          path: errorReportPath,
+          header: [
+            { id: "row", title: "Row" },
+            { id: "error", title: "Error" },
+            { id: "FirstName", title: "FirstName" },
+            { id: "LastName", title: "LastName" },
+            { id: "Email", title: "Email" },
+            { id: "JoinedDate", title: "JoinedDate" },
+          ],
+        });
+
+        await writer.writeRecords(errors);
+      }
+
+      sendDetailResponse(
+        res,
+        {
+          totalProcessed: results.length,
+          successCount: results.length - errors.length,
+          errorCount: errors.length,
+          errors: errors,
+          errorReportPath: errorReportPath,
+        },
+        "Import hoàn thành"
+      );
     } catch (error) {
       sendInternalErrorResponse(res, error.message);
     }
