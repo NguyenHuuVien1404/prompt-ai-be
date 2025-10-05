@@ -97,7 +97,7 @@ const upload = multer({
 router.use("/uploads", express.static(uploadDir)); // Cho phép truy cập ảnh đã upload
 
 // GET: Lấy tất cả Product theo trang
-router.get("/", authMiddleware, adminOrMarketerMiddleware, async (req, res) => {
+router.get("/", async (req, res) => {
   try {
     const { page, pageIndex, pageSize = 10, limit: queryLimit } = req.query;
 
@@ -124,30 +124,22 @@ router.get("/", authMiddleware, adminOrMarketerMiddleware, async (req, res) => {
 });
 
 // GET: Lấy Product theo ID
-router.get(
-  "/:id",
-  authMiddleware,
-  adminOrMarketerMiddleware,
-  async (req, res) => {
-    try {
-      const productId = req.params.id;
-      const product = await Product.findByPk(productId, {
-        include: [{ model: Section, attributes: ["id", "name"] }],
-      });
+router.get("/:id", async (req, res) => {
+  try {
+    const productId = req.params.id;
+    const product = await Product.findByPk(productId, {
+      include: [{ model: Section, attributes: ["id", "name"] }],
+    });
 
-      if (!product) {
-        return sendNotFoundResponse(res, "Product not found");
-      }
-
-      sendDetailResponse(res, transformProductData(product));
-    } catch (error) {
-      sendInternalErrorResponse(
-        res,
-        "Error fetching product: " + error.message
-      );
+    if (!product) {
+      return sendNotFoundResponse(res, "Product not found");
     }
+
+    sendDetailResponse(res, transformProductData(product));
+  } catch (error) {
+    sendInternalErrorResponse(res, "Error fetching product: " + error.message);
   }
-);
+});
 
 // POST: Tạo mới Product với upload ảnh
 router.post(

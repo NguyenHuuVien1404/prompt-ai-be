@@ -22,7 +22,7 @@ const {
 // Import transform utilities
 const { transformToCamelCase } = require("../utils/transformUtils");
 // Lấy danh sách chủ đề
-router.get("/", authMiddleware, adminOrMarketerMiddleware, async (req, res) => {
+router.get("/", async (req, res) => {
   try {
     let {
       page,
@@ -101,20 +101,15 @@ router.get("/", authMiddleware, adminOrMarketerMiddleware, async (req, res) => {
 });
 
 // Lấy chủ đề theo ID
-router.get(
-  "/:id",
-  authMiddleware,
-  adminOrMarketerMiddleware,
-  async (req, res) => {
-    try {
-      const topic = await Topic.findByPk(req.params.id);
-      if (!topic) return sendNotFoundResponse(res, "Không tìm thấy chủ đề");
-      sendDetailResponse(res, transformToCamelCase(topic));
-    } catch (error) {
-      sendInternalErrorResponse(res, error.message);
-    }
+router.get("/:id", async (req, res) => {
+  try {
+    const topic = await Topic.findByPk(req.params.id);
+    if (!topic) return sendNotFoundResponse(res, "Không tìm thấy chủ đề");
+    sendDetailResponse(res, transformToCamelCase(topic));
+  } catch (error) {
+    sendInternalErrorResponse(res, error.message);
   }
-);
+});
 
 // Thêm chủ đề mới
 router.post("/", authMiddleware, adminMiddleware, async (req, res) => {

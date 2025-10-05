@@ -709,7 +709,7 @@ router.post(
 );
 
 // Get all prompts with pagination
-router.get("/", authMiddleware, checkSubTypeAccess, async (req, res) => {
+router.get("/", async (req, res) => {
   try {
     const page = parseInt(req.query.pageIndex || req.query.page) || 1;
     const pageSize =
@@ -1208,7 +1208,7 @@ router.get("/newest", checkSubTypeAccess, async (req, res) => {
 });
 
 // Get a single prompt by ID with detailed info
-router.get("/:id", authMiddleware, checkSubTypeAccess, async (req, res) => {
+router.get("/:id", async (req, res) => {
   try {
     const { id } = req.params;
 

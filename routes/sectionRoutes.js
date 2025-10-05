@@ -22,7 +22,7 @@ const {
 // Import transform utilities
 const { transformToCamelCase } = require("../utils/transformUtils");
 // Lấy danh sách section
-router.get("/", authMiddleware, adminOrMarketerMiddleware, async (req, res) => {
+router.get("/", async (req, res) => {
   try {
     let { page, pageIndex, pageSize = 10, searchTerm } = req.query;
     const currentPage = parseInt(page || pageIndex || 1);
@@ -60,20 +60,15 @@ router.get("/", authMiddleware, adminOrMarketerMiddleware, async (req, res) => {
 });
 
 // Lấy section theo ID
-router.get(
-  "/:id",
-  authMiddleware,
-  adminOrMarketerMiddleware,
-  async (req, res) => {
-    try {
-      const section = await Section.findByPk(req.params.id);
-      if (!section) return sendNotFoundResponse(res, "Không tìm thấy section");
-      sendDetailResponse(res, transformToCamelCase(section));
-    } catch (error) {
-      sendInternalErrorResponse(res, error.message);
-    }
+router.get("/:id", async (req, res) => {
+  try {
+    const section = await Section.findByPk(req.params.id);
+    if (!section) return sendNotFoundResponse(res, "Không tìm thấy section");
+    sendDetailResponse(res, transformToCamelCase(section));
+  } catch (error) {
+    sendInternalErrorResponse(res, error.message);
   }
-);
+});
 
 // Thêm section mới
 router.post("/", authMiddleware, adminMiddleware, async (req, res) => {

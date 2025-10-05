@@ -23,7 +23,7 @@ const { Op } = require("sequelize");
 // Import transform utilities
 const { transformToCamelCase } = require("../utils/transformUtils");
 // Lấy danh sách Subscription (GET route for RESTful API)
-router.get("/", authMiddleware, adminOrMarketerMiddleware, async (req, res) => {
+router.get("/", async (req, res) => {
   try {
     // Lấy tham số từ query parameters
     let {

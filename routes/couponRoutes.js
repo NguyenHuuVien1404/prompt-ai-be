@@ -25,7 +25,7 @@ const {
 const { transformToCamelCase } = require("../utils/transformUtils");
 
 // Lấy danh sách tất cả coupons (có phân trang, tìm kiếm và thống kê)
-router.get("/", authMiddleware, adminMiddleware, async (req, res) => {
+router.get("/", async (req, res) => {
   try {
     const {
       page = 1,
@@ -128,7 +128,7 @@ router.get("/", authMiddleware, adminMiddleware, async (req, res) => {
 });
 
 // Lấy chi tiết một coupon
-router.get("/:id", authMiddleware, adminMiddleware, async (req, res) => {
+router.get("/:id", async (req, res) => {
   try {
     const coupon = await Coupon.findByPk(req.params.id);
     if (!coupon) {
@@ -391,7 +391,7 @@ router.post("/validate", async (req, res) => {
 });
 
 // Lấy danh sách user sử dụng coupon (có phân trang)
-router.get("/:id/users", authMiddleware, adminMiddleware, async (req, res) => {
+router.get("/:id/users", async (req, res) => {
   try {
     const { page = 1, limit = 10 } = req.query;
     const offset = (page - 1) * limit;

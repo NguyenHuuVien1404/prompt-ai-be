@@ -71,7 +71,7 @@ const processPermissionsForStorage = (permissions) => {
 };
 
 // Lấy danh sách tất cả roles
-router.get("/", authMiddleware, adminOrMarketerMiddleware, async (req, res) => {
+router.get("/", async (req, res) => {
   try {
     const roles = await Role.findAll({
       where: { is_active: true },
@@ -96,28 +96,23 @@ router.get("/", authMiddleware, adminOrMarketerMiddleware, async (req, res) => {
 });
 
 // Lấy role theo ID
-router.get(
-  "/:id",
-  authMiddleware,
-  adminOrMarketerMiddleware,
-  async (req, res) => {
-    try {
-      const role = await Role.findByPk(req.params.id);
+router.get("/:id", async (req, res) => {
+  try {
+    const role = await Role.findByPk(req.params.id);
 
-      if (!role) {
-        return sendNotFoundResponse(res, "Role không tồn tại");
-      }
-
-      // Đảm bảo permissions luôn là array trong response
-      const roleData = role.toJSON();
-      roleData.permissions = ensurePermissionsArray(roleData.permissions);
-
-      sendDetailResponse(res, transformToCamelCase(roleData));
-    } catch (error) {
-      sendInternalErrorResponse(res, error.message);
+    if (!role) {
+      return sendNotFoundResponse(res, "Role không tồn tại");
     }
+
+    // Đảm bảo permissions luôn là array trong response
+    const roleData = role.toJSON();
+    roleData.permissions = ensurePermissionsArray(roleData.permissions);
+
+    sendDetailResponse(res, transformToCamelCase(roleData));
+  } catch (error) {
+    sendInternalErrorResponse(res, error.message);
   }
-);
+});
 
 // Tạo role mới
 router.post("/", authMiddleware, adminMiddleware, async (req, res) => {

@@ -199,7 +199,7 @@ const upload = multer({
 router.use("/upload", express.static("uploads")); // Cho phép truy cập ảnh đã upload
 
 // Lấy tất cả users (GET route for RESTful API)
-router.get("/", authMiddleware, adminOrMarketerMiddleware, async (req, res) => {
+router.get("/", async (req, res) => {
   try {
     // Lấy tham số từ query parameters - support both camelCase and snake_case
     let {

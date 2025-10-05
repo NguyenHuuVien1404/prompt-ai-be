@@ -26,7 +26,7 @@ const {
 const { transformToCamelCase } = require("../utils/transformUtils");
 
 // Lấy tất cả liên hệ với filtering và pagination - Chỉ admin mới có quyền
-router.get("/", authMiddleware, adminMiddleware, async (req, res) => {
+router.get("/", async (req, res) => {
   try {
     // Lấy page và pageSize từ query params, mặc định page = 1, pageSize = 10
     let {
@@ -131,7 +131,7 @@ router.get("/", authMiddleware, adminMiddleware, async (req, res) => {
 });
 
 // Lấy chi tiết liên hệ theo ID - Chỉ admin mới có quyền
-router.get("/:id", authMiddleware, adminMiddleware, async (req, res) => {
+router.get("/:id", async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -156,7 +156,7 @@ router.get("/:id", authMiddleware, adminMiddleware, async (req, res) => {
 });
 
 // Lấy danh sách liên hệ có phân trang - Chỉ admin mới có quyền
-router.get("/list", authMiddleware, adminMiddleware, async (req, res) => {
+router.get("/list", async (req, res) => {
   try {
     // Lấy page và pageSize từ query params, mặc định page = 1, pageSize = 10
     let {
@@ -262,7 +262,7 @@ router.get("/list", authMiddleware, adminMiddleware, async (req, res) => {
 });
 
 // GET /api/contact/export - Export Excel cho contact
-router.get("/export", authMiddleware, adminMiddleware, async (req, res) => {
+router.get("/export", async (req, res) => {
   try {
     const { status, statusIds: queryStatusIds, type } = req.query;
 

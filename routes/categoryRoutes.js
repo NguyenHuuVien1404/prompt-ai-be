@@ -190,7 +190,7 @@ router.post(
 );
 
 // Get all categories with pagination and filters
-router.get("/", authMiddleware, adminOrMarketerMiddleware, async (req, res) => {
+router.get("/", async (req, res) => {
   try {
     const page = parseInt(req.query.pageIndex || req.query.page) || 1;
     const pageSize =
@@ -297,7 +297,10 @@ router.get("/", authMiddleware, adminOrMarketerMiddleware, async (req, res) => {
       include: includeOptions,
       limit: pageSize,
       offset: offset,
-      order: [["created_at", "DESC"]],
+      order: [
+        ["is_comming_soon", "ASC"], // isCommingSoon = false sẽ lên trước, true sẽ xuống sau
+        ["created_at", "DESC"],
+      ],
     });
 
     const pagination = calculatePagination(totalCount, page, pageSize);
@@ -313,40 +316,32 @@ router.get("/", authMiddleware, adminOrMarketerMiddleware, async (req, res) => {
 });
 
 // Get category by id
-router.get(
-  "/:id",
-  authMiddleware,
-  adminOrMarketerMiddleware,
-  async (req, res) => {
-    try {
-      const categoryId = req.params.id;
+router.get("/:id", async (req, res) => {
+  try {
+    const categoryId = req.params.id;
 
-      const category = await Category.findByPk(categoryId, {
-        include: [
-          { model: Section, as: "section", attributes: ["id", "name"] },
-          {
-            model: Industry,
-            as: "industries",
-            attributes: ["id", "name", "description"],
-            through: { attributes: [] },
-          },
-        ],
-      });
+    const category = await Category.findByPk(categoryId, {
+      include: [
+        { model: Section, as: "section", attributes: ["id", "name"] },
+        {
+          model: Industry,
+          as: "industries",
+          attributes: ["id", "name", "description"],
+          through: { attributes: [] },
+        },
+      ],
+    });
 
-      if (!category) {
-        return sendNotFoundResponse(res, "Category not found");
-      }
-
-      sendDetailResponse(res, transformToCamelCase(category));
-    } catch (error) {
-      console.error("Error in GET /api/categories/:id:", error);
-      sendInternalErrorResponse(
-        res,
-        "Error fetching category: " + error.message
-      );
+    if (!category) {
+      return sendNotFoundResponse(res, "Category not found");
     }
+
+    sendDetailResponse(res, transformToCamelCase(category));
+  } catch (error) {
+    console.error("Error in GET /api/categories/:id:", error);
+    sendInternalErrorResponse(res, "Error fetching category: " + error.message);
   }
-);
+});
 
 // Create new category
 router.post(
