@@ -3,8 +3,9 @@ const { Op } = require("sequelize");
 const buildPromptWhereClause = (query) => {
   const where = {};
 
-  if (query.categoryIds || query.category_id) {
-    const categoryIds = query.categoryIds || query.category_id;
+  if (query.categoryIds || query.categoryId || query.category_id) {
+    const categoryIds =
+      query.categoryIds || query.categoryId || query.category_id;
     const categoryArray = Array.isArray(categoryIds)
       ? categoryIds
       : [categoryIds];
@@ -60,7 +61,8 @@ const buildPromptWhereClause = (query) => {
     }
   }
 
-  const searchQuery = query.search || query.searchTerm || query.search_text;
+  const searchQuery =
+    query.search || query.searchTerm || query.searchText || query.search_text;
   if (searchQuery) {
     const searchTerm = `%${searchQuery}%`;
     where[Op.or] = [
@@ -71,7 +73,7 @@ const buildPromptWhereClause = (query) => {
       { tips: { [Op.like]: searchTerm } },
       { text: { [Op.like]: searchTerm } },
       { how: { [Op.like]: searchTerm } },
-      { OptimationGuide: { [Op.like]: searchTerm } },
+      { optimizationGuide: { [Op.like]: searchTerm } },
     ];
   }
 
@@ -79,8 +81,9 @@ const buildPromptWhereClause = (query) => {
 };
 
 const buildIndustryFilterIds = (query) => {
-  if (query.industryIds || query.industry_id) {
-    const industryIds = query.industryIds || query.industry_id;
+  if (query.industryIds || query.industryId || query.industry_id) {
+    const industryIds =
+      query.industryIds || query.industryId || query.industry_id;
     const industryArray = Array.isArray(industryIds)
       ? industryIds
       : [industryIds];

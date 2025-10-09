@@ -103,7 +103,7 @@ async function exportPromptsToExcel(filters = {}) {
         prompt.topic ? prompt.topic.name : "",
         industryNames, // Industries separated by comma
         stripHtmlTags(prompt.text) || "",
-        stripHtmlTags(prompt.OptimationGuide) || "",
+        stripHtmlTags(prompt.optimizationGuide) || "",
         prompt.is_type || 1,
         prompt.sub_type || 1,
       ];

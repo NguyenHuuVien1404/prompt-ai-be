@@ -315,9 +315,17 @@ router.get(
         filters.isType = req.query.isType || req.query.is_type;
       }
       // Handle search - support multiple parameter names
-      if (req.query.search || req.query.searchTerm || req.query.search_text) {
+      if (
+        req.query.search ||
+        req.query.searchTerm ||
+        req.query.searchText ||
+        req.query.search_text
+      ) {
         filters.search =
-          req.query.search || req.query.searchTerm || req.query.search_text;
+          req.query.search ||
+          req.query.searchTerm ||
+          req.query.searchText ||
+          req.query.search_text;
       }
       if (req.query.limit) {
         filters.limit = req.query.limit;
@@ -719,8 +727,13 @@ router.get("/", async (req, res) => {
     const where = {};
 
     // Handle category filtering - support multiple categoryIds
-    if (req.query.categoryIds || req.query.category_id) {
-      const categoryIds = req.query.categoryIds || req.query.category_id;
+    if (
+      req.query.categoryIds ||
+      req.query.categoryId ||
+      req.query.category_id
+    ) {
+      const categoryIds =
+        req.query.categoryIds || req.query.categoryId || req.query.category_id;
       const categoryArray = Array.isArray(categoryIds)
         ? categoryIds
         : [categoryIds];
@@ -770,8 +783,13 @@ router.get("/", async (req, res) => {
 
     // Handle industry filtering - will be added to includeArray later
     let industryFilterIds = null;
-    if (req.query.industryIds || req.query.industry_id) {
-      const industryIds = req.query.industryIds || req.query.industry_id;
+    if (
+      req.query.industryIds ||
+      req.query.industryId ||
+      req.query.industry_id
+    ) {
+      const industryIds =
+        req.query.industryIds || req.query.industryId || req.query.industry_id;
       const industryArray = Array.isArray(industryIds)
         ? industryIds
         : [industryIds];
@@ -811,7 +829,10 @@ router.get("/", async (req, res) => {
 
     // Handle search - support multiple parameter names
     const searchQuery =
-      req.query.search || req.query.searchTerm || req.query.search_text;
+      req.query.search ||
+      req.query.searchTerm ||
+      req.query.searchText ||
+      req.query.search_text;
     if (searchQuery) {
       const searchTerm = `%${searchQuery}%`;
       where[Op.or] = [
@@ -822,7 +843,7 @@ router.get("/", async (req, res) => {
         { tips: { [Op.like]: searchTerm } },
         { text: { [Op.like]: searchTerm } },
         { how: { [Op.like]: searchTerm } },
-        { OptimationGuide: { [Op.like]: searchTerm } },
+        { optimizationGuide: { [Op.like]: searchTerm } },
       ];
     }
 
@@ -847,9 +868,9 @@ router.get("/", async (req, res) => {
           "how",
           "input",
           "output",
-          "OptimationGuide",
-          "addtip",
-          "addinformation",
+          "optimizationGuide",
+          "addTip",
+          "addInformation",
           "isType",
           "is_type",
           "subType",
@@ -885,11 +906,13 @@ router.get("/", async (req, res) => {
         model: Category,
         as: "category",
         attributes: ["id", "name", "image", "image_card", "section_id"],
+        required: false, // LEFT JOIN - không bỏ prompts nếu category null
         include: [
           {
             model: Section,
             as: "section",
             attributes: ["id", "name", "description"],
+            required: false, // LEFT JOIN
           },
         ],
       },
@@ -897,12 +920,14 @@ router.get("/", async (req, res) => {
         model: Topic,
         as: "topic",
         attributes: ["id", "name"],
+        required: false, // LEFT JOIN - không bỏ prompts nếu topic null
       },
       {
         model: Industry,
         as: "promptIndustries",
         attributes: ["id", "name", "description"],
         through: { attributes: [] },
+        required: false, // LEFT JOIN - sẽ override thành true nếu có filter
       },
     ];
 
@@ -1009,20 +1034,28 @@ router.get("/by-category", checkSubTypeAccess, async (req, res) => {
         model: Category,
         as: "category",
         attributes: ["id", "name", "image", "image_card"],
+        required: false, // LEFT JOIN
         include: [
           {
             model: Section,
             as: "section",
             attributes: ["id", "name", "description"],
+            required: false, // LEFT JOIN
           },
         ],
       },
-      { model: Topic, as: "topic", attributes: ["id", "name"] },
+      {
+        model: Topic,
+        as: "topic",
+        attributes: ["id", "name"],
+        required: false, // LEFT JOIN
+      },
       {
         model: Industry,
         as: "promptIndustries",
         attributes: ["id", "name", "description"],
         through: { attributes: [] },
+        required: false, // LEFT JOIN - sẽ override nếu có filter
       },
     ];
 
@@ -1083,60 +1116,65 @@ router.get("/by-category", checkSubTypeAccess, async (req, res) => {
   }
 });
 
-router.get("/topics/by-category", checkSubTypeAccess, async (req, res) => {
-  try {
-    const category_id = req.query.categoryId || req.query.category_id;
-    if (!category_id) {
-      return sendErrorResponse(
-        res,
-        "categoryId is required",
-        "VALIDATION_ERROR",
-        400
-      );
+router.get(
+  "/topics/by-category/:categoryId?",
+  checkSubTypeAccess,
+  async (req, res) => {
+    try {
+      const category_id =
+        req.params.categoryId || req.query.categoryId || req.query.category_id;
+      if (!category_id) {
+        return sendErrorResponse(
+          res,
+          "categoryId is required",
+          "VALIDATION_ERROR",
+          400
+        );
+      }
+
+      let whereCondition = {
+        category_id,
+      };
+
+      if (
+        (!!req.query.subType && Number(req.query.subType) !== 0) ||
+        (!!req.query.sub_type && Number(req.query.sub_type) !== 0)
+      ) {
+        whereCondition.sub_type = req.query.subType || req.query.sub_type;
+      }
+
+      const prompts = await Prompt.findAll({
+        where: whereCondition,
+        attributes: ["topic_id"],
+        raw: true,
+      });
+
+      if (!prompts.length) {
+        return res
+          .status(404)
+          .json({ message: "No topics found for this category" });
+      }
+
+      const topicIds = [...new Set(prompts.map((p) => p.topic_id))];
+      const topics = await Topic.findAll({
+        where: { id: topicIds },
+        raw: true,
+      });
+
+      const result = {
+        categoryId: category_id,
+        total: topics.length,
+        topics: transformToCamelCase(topics),
+      };
+
+      sendDetailResponse(res, transformToCamelCase(result));
+    } catch (error) {
+      res
+        .status(500)
+        .json({ message: "Error fetching topics", error: error.message });
     }
-
-    let whereCondition = {
-      category_id,
-    };
-
-    if (
-      (!!req.query.subType && Number(req.query.subType) !== 0) ||
-      (!!req.query.sub_type && Number(req.query.sub_type) !== 0)
-    ) {
-      whereCondition.sub_type = req.query.subType || req.query.sub_type;
-    }
-
-    const prompts = await Prompt.findAll({
-      where: whereCondition,
-      attributes: ["topic_id"],
-      raw: true,
-    });
-
-    if (!prompts.length) {
-      return res
-        .status(404)
-        .json({ message: "No topics found for this category" });
-    }
-
-    const topicIds = [...new Set(prompts.map((p) => p.topic_id))];
-    const topics = await Topic.findAll({
-      where: { id: topicIds },
-      raw: true,
-    });
-
-    const result = {
-      categoryId: category_id,
-      total: topics.length,
-      topics: transformToCamelCase(topics),
-    };
-
-    sendDetailResponse(res, transformToCamelCase(result));
-  } catch (error) {
-    res
-      .status(500)
-      .json({ message: "Error fetching topics", error: error.message });
   }
-});
+);
 
 // lấy list prompts mới nhất
 router.get("/newest", checkSubTypeAccess, async (req, res) => {
@@ -1175,21 +1213,29 @@ router.get("/newest", checkSubTypeAccess, async (req, res) => {
           model: Category,
           as: "category",
           attributes: ["id", "name", "image", "image_card"],
+          required: false, // LEFT JOIN
           include: [
             {
               model: Section,
               as: "section",
               attributes: ["id", "name", "description"],
+              required: false, // LEFT JOIN
             },
             {
               model: Industry,
               as: "industries",
               attributes: ["id", "name", "description"],
               through: { attributes: [] },
+              required: false, // LEFT JOIN
             },
           ],
         },
-        { model: Topic, as: "topic", attributes: ["id", "name"] },
+        {
+          model: Topic,
+          as: "topic",
+          attributes: ["id", "name"],
+          required: false, // LEFT JOIN
+        },
       ],
       limit: 30,
       order: [["created_at", "DESC"]],
@@ -1221,26 +1267,35 @@ router.get("/:id", async (req, res) => {
           model: Category,
           as: "category",
           attributes: ["id", "name"],
+          required: false, // LEFT JOIN
           include: [
             {
               model: Section,
               as: "section",
               attributes: ["id", "name", "description"],
+              required: false, // LEFT JOIN
             },
             {
               model: Industry,
               as: "industries",
               attributes: ["id", "name", "description"],
               through: { attributes: [] },
+              required: false, // LEFT JOIN
             },
           ],
         },
-        { model: Topic, as: "topic", attributes: ["id", "name"] },
+        {
+          model: Topic,
+          as: "topic",
+          attributes: ["id", "name"],
+          required: false, // LEFT JOIN
+        },
         {
           model: Industry,
           as: "promptIndustries",
           attributes: ["id", "name", "description"],
           through: { attributes: [] },
+          required: false, // LEFT JOIN
         },
       ],
     });
@@ -1259,7 +1314,12 @@ router.get("/:id", async (req, res) => {
       },
       attributes: ["id", "title", "short_description"],
       include: [
-        { model: Category, as: "category", attributes: ["id", "name"] },
+        {
+          model: Category,
+          as: "category",
+          attributes: ["id", "name"],
+          required: false, // LEFT JOIN
+        },
       ],
       limit: 5,
     });
@@ -1387,7 +1447,7 @@ router.post(
         req.industryIds = validIndustryIds;
       }
 
-      // Set default values for optional fields - normalize to snake_case
+      // Set default values for optional fields - normalize to camelCase
       const promptData = {
         title: req.body.title,
         short_description: shortDescription,
@@ -1400,9 +1460,11 @@ router.post(
         how: req.body.how || "",
         input: req.body.input || "",
         output: req.body.output || "",
-        OptimationGuide: req.body.OptimationGuide || "",
-        addtip: req.body.addtip || "",
-        addinformation: req.body.addinformation || "",
+        optimizationGuide:
+          req.body.optimizationGuide || req.body.OptimationGuide || "",
+        addTip: req.body.addTip || req.body.addtip || "",
+        addInformation:
+          req.body.addInformation || req.body.addinformation || "",
         is_type: req.body.isType || req.body.is_type || 1,
         sub_type: req.body.subType || req.body.sub_type || 1,
       };
@@ -1428,20 +1490,28 @@ router.post(
             model: Category,
             as: "category",
             attributes: ["id", "name", "image", "image_card"],
+            required: false, // LEFT JOIN
             include: [
               {
                 model: Section,
                 as: "section",
                 attributes: ["id", "name", "description"],
+                required: false, // LEFT JOIN
               },
             ],
           },
-          { model: Topic, as: "topic", attributes: ["id", "name"] },
+          {
+            model: Topic,
+            as: "topic",
+            attributes: ["id", "name"],
+            required: false, // LEFT JOIN
+          },
           {
             model: Industry,
             as: "promptIndustries",
             attributes: ["id", "name", "description"],
             through: { attributes: [] },
+            required: false, // LEFT JOIN
           },
         ],
       });
@@ -1570,11 +1640,14 @@ router.put(
       if (req.body.how) updateData.how = req.body.how;
       if (req.body.input) updateData.input = req.body.input;
       if (req.body.output) updateData.output = req.body.output;
-      if (req.body.OptimationGuide)
-        updateData.OptimationGuide = req.body.OptimationGuide;
-      if (req.body.addtip) updateData.addtip = req.body.addtip;
-      if (req.body.addinformation)
-        updateData.addinformation = req.body.addinformation;
+      if (req.body.optimizationGuide || req.body.OptimationGuide)
+        updateData.optimizationGuide =
+          req.body.optimizationGuide || req.body.OptimationGuide;
+      if (req.body.addTip || req.body.addtip)
+        updateData.addTip = req.body.addTip || req.body.addtip;
+      if (req.body.addInformation || req.body.addinformation)
+        updateData.addInformation =
+          req.body.addInformation || req.body.addinformation;
       if (req.body.isType || req.body.is_type) {
         updateData.is_type = req.body.isType || req.body.is_type;
       }
@@ -1592,20 +1665,28 @@ router.put(
             model: Category,
             as: "category",
             attributes: ["id", "name", "image", "image_card"],
+            required: false, // LEFT JOIN
             include: [
               {
                 model: Section,
                 as: "section",
                 attributes: ["id", "name", "description"],
+                required: false, // LEFT JOIN
               },
             ],
           },
-          { model: Topic, as: "topic", attributes: ["id", "name"] },
+          {
+            model: Topic,
+            as: "topic",
+            attributes: ["id", "name"],
+            required: false, // LEFT JOIN
+          },
           {
             model: Industry,
             as: "promptIndustries",
             attributes: ["id", "name", "description"],
             through: { attributes: [] },
+            required: false, // LEFT JOIN
           },
         ],
       });

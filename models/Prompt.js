@@ -26,9 +26,21 @@ const Prompt = sequelize.define(
     how: { type: DataTypes.TEXT, allowNull: true },
     input: { type: DataTypes.TEXT, allowNull: true },
     output: { type: DataTypes.TEXT, allowNull: true },
-    OptimationGuide: { type: DataTypes.TEXT, allowNull: true },
-    addtip: { type: DataTypes.TEXT, allowNull: true },
-    addinformation: { type: DataTypes.TEXT, allowNull: true },
+    optimizationGuide: {
+      type: DataTypes.TEXT,
+      allowNull: true,
+      field: "OptimationGuide", // Map to existing database column
+    },
+    addTip: {
+      type: DataTypes.TEXT,
+      allowNull: true,
+      field: "addtip", // Map to existing database column
+    },
+    addInformation: {
+      type: DataTypes.TEXT,
+      allowNull: true,
+      field: "addinformation", // Map to existing database column
+    },
     created_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW },
     updated_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW },
     topic_id: {
