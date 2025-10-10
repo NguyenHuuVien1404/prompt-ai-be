@@ -934,7 +934,122 @@ router.get("/topics/by-category", checkSubTypeAccess, async (req, res) => {
   }
 });
 
-// lấy list prompts mới nhất
+// Get latest prompts with pagination (không yêu cầu category_id)
+router.get("/latest", checkSubTypeAccess, async (req, res) => {
+  try {
+    const page = parseInt(req.query.page) || 1;
+    const pageSize = parseInt(req.query.pageSize) || 12;
+    const offset = (page - 1) * pageSize;
+
+    const whereCondition = {};
+
+    // Optional filters
+    if (req.query.category_id) {
+      whereCondition.category_id = req.query.category_id;
+    }
+
+    if (!!req.query.sub_type && Number(req.query.sub_type) !== 0) {
+      whereCondition.sub_type = req.query.sub_type;
+    }
+
+    if (
+      req.query.topic_id &&
+      req.query.topic_id != 0 &&
+      req.query.topic_id != "undefined" &&
+      req.query.topic_id != null
+    ) {
+      whereCondition.topic_id = req.query.topic_id;
+    }
+
+    if (req.query.search_text) {
+      const searchText = req.query.search_text;
+      whereCondition[Op.or] = [
+        { title: { [Op.like]: `%${searchText}%` } },
+        { title: { [Op.like]: `%${searchText.toLowerCase()}%` } },
+        { title: { [Op.like]: `%${searchText.toUpperCase()}%` } },
+      ];
+    }
+
+    // Build include array
+    const includeArray = [
+      {
+        model: Category,
+        attributes: ["id", "name", "image", "image_card"],
+        include: [
+          {
+            model: Section,
+            attributes: ["id", "name", "description"],
+          },
+        ],
+      },
+      { model: Topic, as: "topic", attributes: ["id", "name"] },
+      {
+        model: Industry,
+        as: "promptIndustries",
+        attributes: ["id", "name", "description"],
+        through: { attributes: [] },
+      },
+    ];
+
+    // Handle industry filter
+    if (req.query.industry_id) {
+      const industryIds = Array.isArray(req.query.industry_id)
+        ? req.query.industry_id
+        : req.query.industry_id.split(",").map((id) => parseInt(id.trim()));
+
+      includeArray[2] = {
+        model: Industry,
+        as: "promptIndustries",
+        where: { id: industryIds },
+        attributes: ["id", "name", "description"],
+        through: { attributes: [] },
+        required: true,
+      };
+    }
+
+    // Get total count
+    let countQuery;
+    if (req.query.industry_id) {
+      countQuery = await Prompt.findAndCountAll({
+        where: whereCondition,
+        include: [includeArray[2]],
+        distinct: true,
+        col: "id",
+      });
+    } else {
+      countQuery = await Prompt.findAndCountAll({
+        where: whereCondition,
+        distinct: true,
+        col: "id",
+      });
+    }
+    const totalCount = countQuery.count;
+
+    // Get actual data with includes
+    const rows = await Prompt.findAll({
+      where: whereCondition,
+      include: includeArray,
+      limit: pageSize,
+      offset: offset,
+      order: [["created_at", "DESC"]],
+    });
+
+    const result = {
+      total: totalCount,
+      page,
+      pageSize,
+      data: rows,
+    };
+
+    res.status(200).json(result);
+  } catch (error) {
+    res
+      .status(500)
+      .json({ message: "Error fetching latest prompts", error: error.message });
+  }
+});
+
+// lấy list prompts mới nhất (deprecated - sử dụng /latest thay thế)
 router.get("/newest", checkSubTypeAccess, async (req, res) => {
   try {
     const category_id = req.query.category_id;
