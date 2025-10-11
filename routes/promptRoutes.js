@@ -981,6 +981,128 @@ router.get("/", async (req, res) => {
   }
 });
 
+// Get latest prompts with pagination (không yêu cầu category_id)
+router.get("/latest", checkSubTypeAccess, async (req, res) => {
+  try {
+    const page = parseInt(req.query.page) || 1;
+    const pageSize = parseInt(req.query.pageSize) || 12;
+    const offset = (page - 1) * pageSize;
+
+    const whereCondition = {};
+
+    // Optional filters
+    if (req.query.category_id) {
+      whereCondition.category_id = req.query.category_id;
+    }
+
+    if (!!req.query.sub_type && Number(req.query.sub_type) !== 0) {
+      whereCondition.sub_type = req.query.sub_type;
+    }
+
+    if (
+      req.query.topic_id &&
+      req.query.topic_id != 0 &&
+      req.query.topic_id != "undefined" &&
+      req.query.topic_id != null
+    ) {
+      whereCondition.topic_id = req.query.topic_id;
+    }
+
+    if (req.query.search_text) {
+      const searchText = req.query.search_text;
+      whereCondition[Op.or] = [
+        { title: { [Op.like]: `%${searchText}%` } },
+        { title: { [Op.like]: `%${searchText.toLowerCase()}%` } },
+        { title: { [Op.like]: `%${searchText.toUpperCase()}%` } },
+      ];
+    }
+
+    // Build include array
+    const includeArray = [
+      {
+        model: Category,
+        as: "category",
+        attributes: ["id", "name", "image", "image_card"],
+        required: false, // LEFT JOIN
+        include: [
+          {
+            model: Section,
+            as: "section",
+            attributes: ["id", "name", "description"],
+            required: false, // LEFT JOIN
+          },
+        ],
+      },
+      {
+        model: Topic,
+        as: "topic",
+        attributes: ["id", "name"],
+        required: false,
+      },
+      {
+        model: Industry,
+        as: "promptIndustries",
+        attributes: ["id", "name", "description"],
+        through: { attributes: [] },
+        required: false, // LEFT JOIN
+      },
+    ];
+
+    // Handle industry filter
+    if (req.query.industry_id) {
+      const industryIds = Array.isArray(req.query.industry_id)
+        ? req.query.industry_id
+        : req.query.industry_id.split(",").map((id) => parseInt(id.trim()));
+
+      includeArray[2] = {
+        model: Industry,
+        as: "promptIndustries",
+        where: { id: industryIds },
+        attributes: ["id", "name", "description"],
+        through: { attributes: [] },
+        required: true,
+      };
+    }
+
+    // Get total count
+    let countQuery;
+    if (req.query.industry_id) {
+      countQuery = await Prompt.findAndCountAll({
+        where: whereCondition,
+        include: [includeArray[2]],
+        distinct: true,
+        col: "id",
+      });
+    } else {
+      countQuery = await Prompt.findAndCountAll({
+        where: whereCondition,
+        distinct: true,
+        col: "id",
+      });
+    }
+    const totalCount = countQuery.count;
+
+    // Get actual data with includes
+    const rows = await Prompt.findAll({
+      where: whereCondition,
+      include: includeArray,
+      limit: pageSize,
+      offset: offset,
+      order: [["created_at", "DESC"]],
+    });
+
+    const pagination = calculatePagination(totalCount, page, pageSize);
+    const transformedRows = transformToCamelCase(rows);
+    sendListResponse(res, transformedRows, pagination);
+  } catch (error) {
+    res
+      .status(500)
+      .json({ message: "Error fetching latest prompts", error: error.message });
+  }
+});
+
+// lấy list prompts mới nhất (deprecated - sử dụng /latest thay thế)
+
 // Get all prompts for user by categoryId with pagination
 router.get("/by-category", checkSubTypeAccess, async (req, res) => {
   try {
