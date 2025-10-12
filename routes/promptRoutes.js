@@ -777,8 +777,23 @@ router.get("/", async (req, res) => {
       where.sub_type = req.query.subType || req.query.sub_type;
     }
 
-    if (req.query.topicId !== undefined || req.query.topic_id !== undefined) {
-      where.topic_id = req.query.topicId || req.query.topic_id;
+    // Handle topic filtering - support multiple topicIds
+    if (req.query.topicIds || req.query.topicId || req.query.topic_id) {
+      const topicIds =
+        req.query.topicIds || req.query.topicId || req.query.topic_id;
+      const topicArray = Array.isArray(topicIds) ? topicIds : [topicIds];
+
+      // Convert to numbers and filter out invalid values
+      const validTopicIds = topicArray
+        .map((id) => parseInt(id))
+        .filter((id) => !isNaN(id) && id > 0);
+
+      if (validTopicIds.length > 0) {
+        where.topic_id =
+          validTopicIds.length === 1
+            ? validTopicIds[0]
+            : { [Op.in]: validTopicIds };
+      }
     }
 
     // Handle industry filtering - will be added to includeArray later
