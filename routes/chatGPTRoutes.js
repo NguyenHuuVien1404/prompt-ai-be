@@ -350,9 +350,10 @@ router.post(
               case "content":
                 fullResponse += result.content;
 
+                // ✅ Gửi toàn bộ text từ đầu đến giờ (cumulative)
                 const payload = {
                   type: "content",
-                  content: result.content,
+                  content: fullResponse, // Gửi toàn bộ, không chỉ phần mới
                   chunkId: chunkCount,
                   totalLength: fullResponse.length,
                   timestamp: Date.now(),
