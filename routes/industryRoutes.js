@@ -61,7 +61,11 @@ router.get("/", async (req, res) => {
         includeOptions.push({
           model: Category,
           as: "categories",
-          where: { id: validCategoryIds },
+          where: {
+            id: {
+              [require("sequelize").Op.in]: validCategoryIds,
+            },
+          },
           through: { attributes: [] },
           required: true, // INNER JOIN để filter
         });
@@ -122,25 +126,8 @@ router.get("/", async (req, res) => {
   }
 });
 
-// Lấy industry theo ID
-router.get("/:id", async (req, res) => {
-  try {
-    const { id } = req.params;
-
-    const industry = await Industry.findByPk(id);
-    if (!industry) {
-      return sendNotFoundResponse(res, "Không tìm thấy ngành nghề");
-    }
-
-    sendDetailResponse(res, transformToCamelCase(industry));
-  } catch (error) {
-    console.error("Error fetching industry by ID:", error);
-    sendInternalErrorResponse(res, "Lỗi máy chủ nội bộ");
-  }
-});
-
 // Lấy industries theo category_id (hỗ trợ multiple IDs qua query)
-router.get("/by-category/:categoryId?", async (req, res) => {
+router.get("/by-category", async (req, res) => {
   try {
     const { categoryId } = req.params;
     const { categoryIds } = req.query;
@@ -149,9 +136,17 @@ router.get("/by-category/:categoryId?", async (req, res) => {
     let categoryIdArray = [];
 
     if (categoryIds) {
-      categoryIdArray = Array.isArray(categoryIds)
-        ? categoryIds.map((id) => parseInt(id))
-        : [parseInt(categoryIds)];
+      // Handle both single value and array of values
+      if (Array.isArray(categoryIds)) {
+        categoryIdArray = categoryIds.map((id) => parseInt(id));
+      } else {
+        // Single value - split by comma if it contains multiple IDs
+        const ids = categoryIds
+          .toString()
+          .split(",")
+          .map((id) => parseInt(id.trim()));
+        categoryIdArray = ids;
+      }
     } else if (categoryId) {
       categoryIdArray = [parseInt(categoryId)];
     } else {
@@ -180,7 +175,11 @@ router.get("/by-category/:categoryId?", async (req, res) => {
         {
           model: Category,
           as: "categories",
-          where: { id: categoryIdArray },
+          where: {
+            id: {
+              [require("sequelize").Op.in]: categoryIdArray,
+            },
+          },
           through: { attributes: [] },
         },
       ],
@@ -201,6 +200,78 @@ router.get("/by-category/:categoryId?", async (req, res) => {
     sendListResponse(res, transformToCamelCase(industries), pagination);
   } catch (error) {
     console.error("Error fetching industries by category:", error);
+    sendInternalErrorResponse(res, "Lỗi máy chủ nội bộ");
+  }
+});
+
+// Lấy industries theo category_id (single ID via path parameter)
+router.get("/by-category/:categoryId", async (req, res) => {
+  try {
+    const { categoryId } = req.params;
+
+    const categoryIdArray = [parseInt(categoryId)];
+
+    // Lọc bỏ các giá trị không hợp lệ
+    const validCategoryIds = categoryIdArray.filter(
+      (id) => !isNaN(id) && id > 0
+    );
+
+    if (validCategoryIds.length === 0) {
+      return sendErrorResponse(
+        res,
+        "Valid category ID required",
+        "VALIDATION_ERROR",
+        400
+      );
+    }
+
+    const industries = await Industry.findAll({
+      include: [
+        {
+          model: Category,
+          as: "categories",
+          where: {
+            id: {
+              [require("sequelize").Op.in]: validCategoryIds,
+            },
+          },
+          through: { attributes: [] },
+        },
+      ],
+      order: [["name", "ASC"]],
+    });
+
+    if (industries.length === 0) {
+      return sendNotFoundResponse(res, "Không tìm thấy ngành nghề");
+    }
+
+    const pagination = {
+      totalCount: industries.length,
+      currentPage: 1,
+      pageSize: industries.length,
+      totalPages: 1,
+    };
+
+    sendListResponse(res, transformToCamelCase(industries), pagination);
+  } catch (error) {
+    console.error("Error fetching industries by category:", error);
+    sendInternalErrorResponse(res, "Lỗi máy chủ nội bộ");
+  }
+});
+
+// Lấy industry theo ID
+router.get("/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const industry = await Industry.findByPk(id);
+    if (!industry) {
+      return sendNotFoundResponse(res, "Không tìm thấy ngành nghề");
+    }
+
+    sendDetailResponse(res, transformToCamelCase(industry));
+  } catch (error) {
+    console.error("Error fetching industry by ID:", error);
     sendInternalErrorResponse(res, "Lỗi máy chủ nội bộ");
   }
 });
