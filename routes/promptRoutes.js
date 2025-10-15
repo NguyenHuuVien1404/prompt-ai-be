@@ -1238,18 +1238,11 @@ router.get("/by-category", checkSubTypeAccess, async (req, res) => {
       offset: offset,
     });
 
-    const result = {
-      total: totalCount,
-      page,
-      pageSize,
-      data: transformToCamelCase(rows),
-    };
-
-    sendDetailResponse(res, transformToCamelCase(result));
+    const pagination = calculatePagination(totalCount, page, pageSize);
+    sendListResponse(res, transformToCamelCase(rows), pagination);
   } catch (error) {
-    res
-      .status(500)
-      .json({ message: "Error fetching prompts", error: error.message });
+    console.error("Error fetching prompts by category:", error);
+    sendInternalErrorResponse(res, "Lỗi máy chủ nội bộ");
   }
 });
 
@@ -1287,28 +1280,40 @@ router.get(
       });
 
       if (!prompts.length) {
-        return res
-          .status(404)
-          .json({ message: "No topics found for this category" });
+        return sendNotFoundResponse(
+          res,
+          "Không tìm thấy chủ đề cho danh mục này"
+        );
       }
 
+      // Get pagination parameters
+      let { page, pageIndex, pageSize = 10 } = req.query;
+      const currentPage = parseInt(page || pageIndex || 1);
+      pageSize = parseInt(pageSize);
+      const offset = (currentPage - 1) * pageSize;
+      const limit = pageSize;
+
       const topicIds = [...new Set(prompts.map((p) => p.topic_id))];
+
+      // Get total count for pagination
+      const totalCount = await Topic.count({
+        where: { id: topicIds },
+      });
+
+      // Get paginated topics
       const topics = await Topic.findAll({
         where: { id: topicIds },
+        limit,
+        offset,
+        order: [["name", "ASC"]],
         raw: true,
       });
 
-      const result = {
-        categoryId: category_id,
-        total: topics.length,
-        topics: transformToCamelCase(topics),
-      };
-
-      sendDetailResponse(res, transformToCamelCase(result));
+      const pagination = calculatePagination(totalCount, currentPage, pageSize);
+      sendListResponse(res, transformToCamelCase(topics), pagination);
     } catch (error) {
-      res
-        .status(500)
-        .json({ message: "Error fetching topics", error: error.message });
+      console.error("Error fetching topics by category:", error);
+      sendInternalErrorResponse(res, "Lỗi máy chủ nội bộ");
     }
   }
 );
@@ -1343,6 +1348,18 @@ router.get("/newest", checkSubTypeAccess, async (req, res) => {
       whereCondition.sub_type = req.query.subType || req.query.sub_type;
     }
 
+    // Get pagination parameters
+    let { page, pageIndex, pageSize = 10 } = req.query;
+    const currentPage = parseInt(page || pageIndex || 1);
+    pageSize = parseInt(pageSize);
+    const offset = (currentPage - 1) * pageSize;
+    const limit = pageSize;
+
+    // Get total count for pagination
+    const totalCount = await Prompt.count({
+      where: whereCondition,
+    });
+
     const newest_prompts = await Prompt.findAll({
       where: whereCondition,
       include: [
@@ -1374,19 +1391,16 @@ router.get("/newest", checkSubTypeAccess, async (req, res) => {
           required: false, // LEFT JOIN
         },
       ],
-      limit: 30,
+      limit,
+      offset,
       order: [["created_at", "DESC"]],
     });
 
-    const result = {
-      data: transformToCamelCase(newest_prompts),
-    };
-
-    sendDetailResponse(res, transformToCamelCase(result));
+    const pagination = calculatePagination(totalCount, currentPage, pageSize);
+    sendListResponse(res, transformToCamelCase(newest_prompts), pagination);
   } catch (error) {
-    res
-      .status(500)
-      .json({ message: "Error fetching newest prompts", error: error.message });
+    console.error("Error fetching newest prompts:", error);
+    sendInternalErrorResponse(res, "Lỗi máy chủ nội bộ");
   }
 });
 
