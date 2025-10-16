@@ -1404,6 +1404,113 @@ router.get("/newest", checkSubTypeAccess, async (req, res) => {
   }
 });
 
+// Get prompts by IDs array
+router.get("/by-ids", async (req, res) => {
+  try {
+    const { ids, promptIds, prompt_ids } = req.query;
+
+    // Support multiple parameter names
+    const promptIdsParam = ids || promptIds || prompt_ids;
+
+    if (!promptIdsParam) {
+      return sendErrorResponse(
+        res,
+        "ids parameter is required",
+        "VALIDATION_ERROR",
+        400
+      );
+    }
+
+    // Convert to array if it's a single value or string
+    let promptIdsArray;
+    if (Array.isArray(promptIdsParam)) {
+      promptIdsArray = promptIdsParam;
+    } else if (typeof promptIdsParam === "string") {
+      // Handle comma-separated string
+      promptIdsArray = promptIdsParam
+        .split(",")
+        .map((id) => id.trim())
+        .filter((id) => id);
+    } else {
+      // Convert single value to array
+      promptIdsArray = [promptIdsParam];
+    }
+
+    // Convert to numbers and filter out invalid values
+    const validPromptIds = promptIdsArray
+      .map((id) => parseInt(id))
+      .filter((id) => !isNaN(id) && id > 0);
+
+    if (validPromptIds.length === 0) {
+      return sendErrorResponse(
+        res,
+        "No valid prompt IDs provided",
+        "VALIDATION_ERROR",
+        400
+      );
+    }
+
+    // Get pagination parameters
+    const page = parseInt(req.query.page) || 1;
+    const pageSize = parseInt(req.query.pageSize) || 10;
+    const offset = (page - 1) * pageSize;
+
+    // Build include array
+    const includeArray = [
+      {
+        model: Category,
+        as: "category",
+        attributes: ["id", "name", "image", "image_card", "section_id"],
+        required: false,
+        include: [
+          {
+            model: Section,
+            as: "section",
+            attributes: ["id", "name", "description"],
+            required: false,
+          },
+        ],
+      },
+      {
+        model: Topic,
+        as: "topic",
+        attributes: ["id", "name"],
+        required: false,
+      },
+      {
+        model: Industry,
+        as: "promptIndustries",
+        attributes: ["id", "name", "description"],
+        through: { attributes: [] },
+        required: false,
+      },
+    ];
+
+    // Get total count
+    const totalCount = await Prompt.count({
+      where: { id: { [Op.in]: validPromptIds } },
+    });
+
+    // Get prompts with pagination
+    const prompts = await Prompt.findAll({
+      where: { id: { [Op.in]: validPromptIds } },
+      include: includeArray,
+      limit: pageSize,
+      offset: offset,
+      order: [["created_at", "DESC"]],
+    });
+
+    const pagination = calculatePagination(totalCount, page, pageSize);
+    const transformedPrompts = transformToCamelCase(prompts);
+    sendListResponse(res, transformedPrompts, pagination);
+  } catch (error) {
+    sendInternalErrorResponse(
+      res,
+      "Error fetching prompts by IDs: " + error.message
+    );
+  }
+});
+
 // Get a single prompt by ID with detailed info
 router.get("/:id", async (req, res) => {
   try {

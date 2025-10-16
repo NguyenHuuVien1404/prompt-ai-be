@@ -131,7 +131,7 @@ app.use("/api/blogcategory", blogCategoryRoutes);
 app.use("/api/blog", blogRoutes);
 app.use("/api/subscriptions", subscriptionRoutes);
 app.use("/api/topic", topicRoutes);
-app.use("/api/promptfavorite", promptFavorite);
+app.use("/api/prompt-favorite", promptFavorite);
 app.use("/api/products", productRoutes);
 app.use("/api/devicelogs", deviceLogRoutes);
 app.use("/api/payment", paymentRouters);

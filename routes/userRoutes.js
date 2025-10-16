@@ -196,6 +196,34 @@ const upload = multer({
   fileFilter: fileFilter,
   limits: { fileSize: 50 * 1024 * 1024 }, // Giới hạn file tối đa 50MB
 });
+
+// Multer middleware riêng cho CSV import
+const csvFileFilter = (req, file, cb) => {
+  const allowedTypes = [
+    "text/csv",
+    "application/csv",
+    "application/vnd.ms-excel",
+    "text/plain",
+  ];
+
+  if (
+    allowedTypes.includes(file.mimetype) ||
+    file.originalname.toLowerCase().endsWith(".csv")
+  ) {
+    cb(null, true); // Chấp nhận file CSV
+  } else {
+    cb(
+      new Error("Invalid file type. Only CSV files are allowed for import."),
+      false
+    );
+  }
+};
+
+const csvUpload = multer({
+  storage: storage,
+  fileFilter: csvFileFilter,
+  limits: { fileSize: 10 * 1024 * 1024 }, // Giới hạn file CSV tối đa 10MB
+});
 router.use("/upload", express.static("uploads")); // Cho phép truy cập ảnh đã upload
 
 // Lấy tất cả users (GET route for RESTful API)
@@ -542,6 +570,108 @@ router.post("/", authMiddleware, adminMiddleware, async (req, res) => {
       transformToCamelCase(user),
       "User created successfully"
     );
+  } catch (error) {
+    sendInternalErrorResponse(res, error.message);
+  }
+});
+
+// Get current user (me) - requires authentication
+router.get("/me", authMiddleware, async (req, res) => {
+  try {
+    const userId = req.user.id; // Get user ID from JWT token
+    const user = await User.findByPk(userId, {
+      include: [
+        {
+          model: Role,
+          attributes: ["id", "name", "description", "permissions"],
+        },
+      ],
+    });
+
+    if (!user) return sendNotFoundResponse(res, "User not found");
+
+    const userSubs = await user.getUserSubs({
+      include: [Subscription],
+    });
+
+    const sortedUserSubs = userSubs.sort((a, b) => {
+      const typeA = a.Subscription?.type || 0;
+      const typeB = b.Subscription?.type || 0;
+      return typeB - typeA;
+    });
+
+    // ✅ Lấy permissions từ role
+    let permissions = [];
+    if (user.Role && user.Role.permissions) {
+      try {
+        // Kiểm tra nếu permissions đã là array thì dùng trực tiếp, nếu là string thì parse
+        const parsedPermissions =
+          typeof user.Role.permissions === "string"
+            ? JSON.parse(user.Role.permissions)
+            : user.Role.permissions;
+
+        // Nếu là array và có items thì dùng
+        if (Array.isArray(parsedPermissions) && parsedPermissions.length > 0) {
+          permissions = parsedPermissions;
+        }
+        // Nếu là object rỗng {} hoặc array rỗng [] thì fallback
+        else if (
+          Object.keys(parsedPermissions).length === 0 ||
+          (Array.isArray(parsedPermissions) && parsedPermissions.length === 0)
+        ) {
+          permissions = getRolePermissions(user.role_id || user.role);
+        } else {
+          permissions = parsedPermissions;
+        }
+      } catch (error) {
+        permissions = getRolePermissions(user.role_id || user.role);
+      }
+    } else {
+      // ✅ Fallback to default role permissions using utility function
+      permissions = getRolePermissions(user.role_id || user.role);
+    }
+
+    // Prepare userSub data
+    const userSubData =
+      sortedUserSubs.length > 0
+        ? {
+            id: sortedUserSubs[0].id,
+            status: sortedUserSubs[0].status,
+            startDate: sortedUserSubs[0].start_date,
+            endDate: sortedUserSubs[0].end_date,
+            token: sortedUserSubs[0].token,
+            subscription: sortedUserSubs[0].Subscription
+              ? {
+                  id: sortedUserSubs[0].Subscription.id,
+                  nameSub: sortedUserSubs[0].Subscription.name_sub,
+                  type: sortedUserSubs[0].Subscription.type,
+                  price: sortedUserSubs[0].Subscription.price,
+                }
+              : null,
+          }
+        : null;
+
+    // Convert user to plain object and manually construct response
+    const plainUser = user.toJSON();
+
+    const userData = {
+      id: plainUser.id,
+      email: plainUser.email,
+      fullName: plainUser.full_name,
+      role: plainUser.role,
+      roleId: plainUser.role_id,
+      countPrompt: plainUser.count_promt,
+      accountStatus: plainUser.account_status,
+      isVerified: plainUser.is_verified,
+      profileImage: plainUser.profile_image,
+      googleId: plainUser.google_id,
+      createdAt: plainUser.created_at,
+      updatedAt: plainUser.updated_at,
+      permissions: permissions,
+      userSub: userSubData,
+    };
+
+    sendDetailResponse(res, userData);
   } catch (error) {
     sendInternalErrorResponse(res, error.message);
   }
@@ -2219,7 +2349,7 @@ router.post(
   "/import-csv",
   authMiddleware,
   adminMiddleware,
-  upload.single("csvFile"),
+  csvUpload.single("csvFile"),
   async (req, res) => {
     try {
       if (!req.file) {
@@ -2252,7 +2382,7 @@ router.post(
         const rowNumber = i + 2; // +2 vì bắt đầu từ dòng 2 (có header)
 
         try {
-          // Validate dữ liệu bắt buộc
+          // Validate dữ liệu bắt buộc - hỗ trợ cả template cũ và mới
           if (!row.FirstName || !row.LastName || !row.Email) {
             errors.push({
               row: rowNumber,
@@ -2297,6 +2427,13 @@ router.post(
                 },
               ],
             },
+            include: [
+              {
+                model: UserSub,
+                where: { status: 1 },
+                required: false,
+              },
+            ],
           });
 
           if (existingUser) {
@@ -2326,6 +2463,46 @@ router.post(
 
             try {
               await existingUser.update(updateData);
+
+              // Cập nhật hoặc tạo subscription Premium cho user cũ
+              if (existingUser.UserSubs && existingUser.UserSubs.length > 0) {
+                // Cập nhật subscription hiện có thành Premium
+                const userSub = existingUser.UserSubs[0];
+                const premiumSub = await Subscription.findOne({
+                  where: { type: 2 }, // Premium subscription
+                  attributes: ["id"],
+                });
+
+                if (premiumSub) {
+                  await userSub.update({
+                    sub_id: premiumSub.id, // Chuyển sang Premium
+                    start_date: joinedDate,
+                    end_date: otpExpiresAt,
+                    // Giữ nguyên token hiện tại cho user cũ
+                  });
+                  console.log(`Updated user to Premium subscription: ${email}`);
+                }
+              } else {
+                // Tạo subscription Premium mới nếu chưa có
+                const premiumSub = await Subscription.findOne({
+                  where: { type: 2 }, // Premium subscription
+                  attributes: ["id"],
+                });
+
+                if (premiumSub) {
+                  await UserSub.create({
+                    user_id: existingUser.id,
+                    sub_id: premiumSub.id,
+                    status: 1,
+                    start_date: joinedDate,
+                    end_date: otpExpiresAt,
+                    token: 0, // User cũ không thêm token
+                  });
+                  console.log(
+                    `Created Premium subscription for existing user: ${email}`
+                  );
+                }
+              }
             } catch (updateError) {
               console.error(`Update error for ${email}:`, updateError);
               throw updateError;
@@ -2345,23 +2522,26 @@ router.post(
               otp_expires_at: otpExpiresAt,
             });
 
-            // Tạo subscription miễn phí cho user mới
-            const freeSub = await Subscription.findOne({
-              where: { type: 4 },
+            // Tạo subscription Premium cho user mới với 1000 token
+            const premiumSub = await Subscription.findOne({
+              where: { type: 2 }, // Premium subscription
               attributes: ["id"],
             });
 
-            if (freeSub) {
+            if (premiumSub) {
               await UserSub.create({
                 user_id: newUser.id,
-                sub_id: freeSub.id,
+                sub_id: premiumSub.id,
                 status: 1,
                 start_date: joinedDate,
                 end_date: otpExpiresAt,
+                token: 1000, // Thêm 1000 token cho user mới
               });
             }
 
-            console.log(`Created new user: ${email}`);
+            console.log(
+              `Created new user with Premium subscription and 1000 tokens: ${email}`
+            );
           }
         } catch (error) {
           errors.push({

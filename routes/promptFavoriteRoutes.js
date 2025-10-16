@@ -6,6 +6,7 @@ const Prompt = require("../models/Prompt");
 const Section = require("../models/Section");
 const Category = require("../models/Category");
 const Topic = require("../models/Topic");
+const Industry = require("../models/Industry");
 const {
   authMiddleware,
   adminMiddleware,
@@ -27,15 +28,69 @@ const { transformToCamelCase } = require("../utils/transformUtils");
 router.get("/:userId", async (req, res) => {
   try {
     const userId = req.params.userId;
+
+    // Get pagination parameters
+    const page = parseInt(req.query.page) || 1;
+    const pageSize = parseInt(req.query.pageSize) || 10;
+    const offset = (page - 1) * pageSize;
+
     const data = await PromFavorite.findAll({
+      where: { user_id: userId },
+      include: [
+        {
+          model: Prompt,
+          include: [
+            {
+              model: Category,
+              as: "category",
+              attributes: ["id", "name", "image", "image_card"],
+              include: {
+                model: Section,
+                as: "section",
+                attributes: ["id", "name", "description"],
+              },
+            },
+            {
+              model: Topic,
+              as: "topic",
+              attributes: ["id", "name"],
+            },
+            {
+              model: Industry,
+              as: "promptIndustries",
+              attributes: ["id", "name", "description"],
+              through: { attributes: [] },
+              required: false,
+            },
+          ],
+        },
+      ],
+      limit: pageSize,
+      offset: offset,
+      order: [["id", "DESC"]],
+    });
+
+    // Get total count for pagination
+    const totalCount = await PromFavorite.count({
       where: { user_id: userId },
     });
 
-    sendListResponse(
-      res,
-      transformToCamelCase(data),
-      calculatePagination(data.length, 1, data.length)
-    );
+    const pagination = calculatePagination(totalCount, page, pageSize);
+
+    // Transform data to ensure camelCase for all nested objects
+    const transformedData = data.map((item) => {
+      const plainItem = item.get({ plain: true });
+      // Transform the main object
+      const transformed = transformToCamelCase(plainItem);
+      // Transform nested Prompt object
+      if (transformed.Prompt) {
+        transformed.prompt = transformToCamelCase(transformed.Prompt);
+        delete transformed.Prompt;
+      }
+      return transformed;
+    });
+
+    sendListResponse(res, transformedData, pagination);
   } catch (error) {
     sendInternalErrorResponse(
       res,
