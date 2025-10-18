@@ -82,6 +82,57 @@ const transformToCamelCase = (obj, seen = new WeakSet()) => {
   return transformed;
 };
 
+// ✅ Standardized user response builder - ensures consistency across all login APIs
+const buildStandardUserResponse = (
+  user,
+  permissions,
+  userSubs = [],
+  accessToken = null
+) => {
+  // Sort userSubs by type (highest first)
+  const sortedUserSubs = userSubs
+    .map((us) => ({
+      id: us.id,
+      status: us.status,
+      startDate: us.start_date,
+      endDate: us.end_date,
+      token: us.token,
+      subscription: us.Subscription
+        ? {
+            id: us.Subscription.id,
+            nameSub: us.Subscription.name_sub,
+            type: us.Subscription.type,
+            price: us.Subscription.price,
+          }
+        : null,
+    }))
+    .sort((a, b) => (b.subscription?.type || 0) - (a.subscription?.type || 0));
+
+  // Get the highest priority userSub
+  const userSubData = sortedUserSubs.length > 0 ? sortedUserSubs[0] : null;
+
+  // Convert user to plain object
+  const plainUser = user.toJSON ? user.toJSON() : user;
+
+  return {
+    id: plainUser.id,
+    email: plainUser.email,
+    fullName: plainUser.full_name,
+    role: plainUser.role,
+    roleId: plainUser.role_id || null,
+    countPrompt: plainUser.count_promt,
+    accountStatus: plainUser.account_status,
+    isVerified: plainUser.is_verified,
+    profileImage: plainUser.profile_image,
+    googleId: plainUser.google_id || null,
+    createdAt: plainUser.created_at,
+    updatedAt: plainUser.updated_at,
+    permissions: permissions || [],
+    userSub: userSubData,
+    accessToken: accessToken,
+  };
+};
+
 // Cache for role mapping to avoid repeated database queries
 let roleMappingCache = null;
 let roleMappingCacheTime = 0;
@@ -1072,53 +1123,15 @@ router.post("/verify-otp", async (req, res) => {
       { expiresIn: 60 * 60 * 24 * 30 * 6 }
     );
 
-    // Sắp xếp UserSubs theo type giảm dần
-    const sortedUserSubs = user.UserSubs
-      ? [...user.UserSubs].sort((a, b) => {
-          const typeA = a.Subscription?.type || 0;
-          const typeB = b.Subscription?.type || 0;
-          return typeB - typeA;
-        })
-      : [];
-
-    // Prepare userSub data
-    const userSubData =
-      sortedUserSubs.length > 0
-        ? {
-            id: sortedUserSubs[0].id,
-            status: sortedUserSubs[0].status,
-            startDate: sortedUserSubs[0].start_date,
-            endDate: sortedUserSubs[0].end_date,
-            token: sortedUserSubs[0].token,
-            subscription: sortedUserSubs[0].Subscription
-              ? {
-                  id: sortedUserSubs[0].Subscription.id,
-                  nameSub: sortedUserSubs[0].Subscription.name_sub,
-                  type: sortedUserSubs[0].Subscription.type,
-                  price: sortedUserSubs[0].Subscription.price,
-                }
-              : null,
-          }
-        : null;
-
+    // ✅ Use standardized user response builder
     const userData = {
       token,
-      user: {
-        id: user.id,
-        fullName: user.full_name,
-        email: user.email,
-        role: user.role,
-        roleId: user.role_id,
-        countPrompt: user.count_promt,
-        accountStatus: user.account_status,
-        isVerified: user.is_verified,
-        createdAt: user.created_at,
-        updatedAt: user.updated_at,
-        profileImage: user.profile_image,
-        googleId: user.google_id,
-        permissions: permissions,
-        userSub: userSubData,
-      },
+      user: buildStandardUserResponse(
+        user,
+        permissions,
+        user.UserSubs || [],
+        token
+      ),
     };
 
     sendDetailResponse(res, userData, "Tài khoản đã được xác thực thành công");
@@ -1252,21 +1265,6 @@ router.post("/login-verify", async (req, res) => {
       where: { status: 1 },
       include: [Subscription],
     });
-    const sortedUserSubs = userSubs
-      .map((us) => ({
-        id: us.id,
-        status: us.status,
-        start_date: us.start_date,
-        end_date: us.end_date,
-        token: us.token,
-        subscription: {
-          name: us.Subscription
-            ? us.Subscription.name_sub
-            : `Subscription ${us.sub_id}`,
-          type: us.Subscription ? us.Subscription.type : us.sub_id,
-        },
-      }))
-      .sort((a, b) => b.sub_id - a.sub_id);
 
     // Lấy thông tin thiết bị từ yêu cầu
     const userAgent = req.headers["user-agent"];
@@ -1331,23 +1329,10 @@ router.post("/login-verify", async (req, res) => {
       { expiresIn: 60 * 60 * 24 * 30 * 6 }
     );
 
-    // Trả về thông tin người dùng
+    // ✅ Use standardized user response builder
     const userData = {
-      token, // Thêm token vào response
-      user: {
-        id: user.id,
-        fullName: user.full_name,
-        email: user.email,
-        role: user.role,
-        countPrompt: user.count_promt,
-        updatedAt: user.updated_at,
-        profileImage: user.profile_image,
-        permissions: permissions, // ✅ Thêm permissions vào response
-        userSub:
-          sortedUserSubs.length > 0
-            ? transformToCamelCase(sortedUserSubs[0])
-            : null, // Lấy userSub có type lớn nhất
-      },
+      token,
+      user: buildStandardUserResponse(user, permissions, userSubs, token),
     };
     sendDetailResponse(
       res,
@@ -1384,19 +1369,6 @@ router.post("/login-password", async (req, res) => {
         where: { status: 1 },
         include: [Subscription],
       });
-      const sortedUserSubs = userSubs
-        .map((us) => ({
-          status: us.status,
-          start_date: us.start_date,
-          end_date: us.end_date,
-          subscription: us.Subscription
-            ? {
-                name: us.Subscription.name_sub,
-                type: us.Subscription.type,
-              }
-            : null,
-        }))
-        .sort((a, b) => b.subscription?.type - a.subscription?.type);
 
       // Ghi log thiết bị
       const userAgent = req.headers["user-agent"];
@@ -1459,22 +1431,10 @@ router.post("/login-password", async (req, res) => {
         { expiresIn: 60 * 60 * 24 * 30 * 6 }
       );
 
+      // ✅ Use standardized user response builder
       const userData = {
         token,
-        user: {
-          id: user.id,
-          fullName: user.full_name,
-          email: user.email,
-          role: user.role,
-          countPrompt: user.count_promt,
-          updatedAt: user.updated_at,
-          profileImage: user.profile_image,
-          permissions: permissions, // ✅ Thêm permissions vào response
-          userSub:
-            sortedUserSubs.length > 0
-              ? transformToCamelCase(sortedUserSubs[0])
-              : null,
-        },
+        user: buildStandardUserResponse(user, permissions, userSubs, token),
       };
       sendDetailResponse(
         res,
@@ -1963,26 +1923,19 @@ router.post("/auth/google", async (req, res) => {
       { expiresIn: 60 * 60 * 24 * 30 * 6 }
     );
 
-    const firstUserSub = user?.UserSubs?.[0]; // Tên mặc định là 'UserSubs'
-    const subType = firstUserSub?.Subscription;
-    // Trả về response
-    return res.json({
+    // ✅ Use standardized user response builder
+    const userData = {
       message: "Đăng nhập thành công",
       token,
-      user: {
-        id: user.id,
-        fullName: user.full_name,
-        email: user.email,
-        role: user.role,
-        count_prompt: user.count_promt,
-        updated_at: user.updated_at,
-        profile_image: user.profile_image,
-        permissions: permissions, // ✅ Thêm permissions vào response
-        userSub: {
-          subscription: subType,
-        },
-      },
-    });
+      user: buildStandardUserResponse(
+        user,
+        permissions,
+        user.UserSubs || [],
+        token
+      ),
+    };
+
+    return res.json(userData);
   } catch (error) {
     return res.status(401).json({ error: "Google login failed" });
   }
