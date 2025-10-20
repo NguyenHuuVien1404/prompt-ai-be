@@ -34,10 +34,58 @@ const {
   sendInternalErrorResponse,
   calculatePagination,
 } = require("../utils/responseUtils");
+const { safeCreate } = require("../utils/fieldTransformUtils");
 
 // Utility function to convert snake_case to camelCase
 const toCamelCase = (str) => {
   return str.replace(/_([a-z])/g, (match, letter) => letter.toUpperCase());
+};
+
+// Utility function to convert camelCase to snake_case
+const toSnakeCase = (str) => {
+  return str.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`);
+};
+
+// Utility function to transform object fields from camelCase to snake_case
+const transformToSnakeCase = (obj, seen = new WeakSet()) => {
+  if (!obj || typeof obj !== "object") return obj;
+
+  // Check for circular reference
+  if (seen.has(obj)) return obj;
+  seen.add(obj);
+
+  if (Array.isArray(obj)) {
+    return obj.map((item) => transformToSnakeCase(item, seen));
+  }
+
+  // Handle Date objects - return as is
+  if (obj instanceof Date) {
+    return obj;
+  }
+
+  // Handle Sequelize instances - convert to plain object first
+  if (obj.toJSON && typeof obj.toJSON === "function") {
+    obj = obj.toJSON();
+  }
+
+  const transformed = {};
+  for (const [key, value] of Object.entries(obj)) {
+    const snakeKey = toSnakeCase(key);
+
+    // Handle Date objects
+    if (value instanceof Date) {
+      transformed[snakeKey] = value;
+    } else if (value && typeof value === "object" && !Array.isArray(value)) {
+      transformed[snakeKey] = transformToSnakeCase(value, seen);
+    } else if (Array.isArray(value)) {
+      transformed[snakeKey] = value.map((item) =>
+        transformToSnakeCase(item, seen)
+      );
+    } else {
+      transformed[snakeKey] = value;
+    }
+  }
+  return transformed;
 };
 
 // Utility function to transform object fields from snake_case to camelCase
@@ -615,7 +663,7 @@ router.post(
 // Tạo user mới
 router.post("/", authMiddleware, adminMiddleware, async (req, res) => {
   try {
-    const user = await User.create(req.body);
+    const user = await safeCreate(User, req.body);
     sendCreateResponse(
       res,
       transformToCamelCase(user),
@@ -835,11 +883,14 @@ router.put("/:id", async (req, res) => {
     const user = await User.findByPk(req.params.id);
     if (!user) return sendNotFoundResponse(res, "User not found");
 
-    // Extract userSub data from request body
+    // Extract userSub data from request body BEFORE transformation
     const { userSub, ...userData } = req.body;
 
+    // Transform userData to snake_case for database operations
+    const transformedUserData = transformToSnakeCase(userData);
+
     // Update user information (exclude userSub data)
-    await user.update(userData);
+    await user.update(transformedUserData);
 
     // Update subscription if userSub data is provided
     if (userSub) {

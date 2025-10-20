@@ -19,6 +19,7 @@ const {
 
 // Import transform utilities
 const { transformToCamelCase } = require("../utils/transformUtils");
+const { safeUpdate } = require("../utils/fieldTransformUtils");
 // Lấy tất cả danh mục
 router.get("/", async (req, res) => {
   try {
@@ -74,7 +75,7 @@ router.put("/:id", async (req, res) => {
     const category = await BlogCategory.findByPk(id);
     if (!category) return sendNotFoundResponse(res, "Blog category not found");
 
-    await BlogCategory.update(req.body, { where: { id } });
+    await safeUpdate(BlogCategory, req.body, { where: { id } });
     const updatedCategory = await BlogCategory.findByPk(id);
     sendUpdateResponse(
       res,

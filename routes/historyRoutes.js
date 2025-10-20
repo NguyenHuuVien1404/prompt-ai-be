@@ -19,6 +19,7 @@ const {
 
 // Import transform utilities
 const { transformToCamelCase } = require("../utils/transformUtils");
+const { safeUpdate } = require("../utils/fieldTransformUtils");
 
 // Lấy tất cả lịch sử
 router.get("/", async (req, res) => {
@@ -77,7 +78,7 @@ router.put("/:id", async (req, res) => {
     const history = await History.findByPk(id);
     if (!history) return sendNotFoundResponse(res, "History not found");
 
-    await History.update(req.body, { where: { id } });
+    await safeUpdate(History, req.body, { where: { id } });
     const updatedHistory = await History.findByPk(id);
     sendUpdateResponse(
       res,

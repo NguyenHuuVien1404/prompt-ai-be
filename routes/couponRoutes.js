@@ -24,6 +24,53 @@ const {
 // Import transform utilities
 const { transformToCamelCase } = require("../utils/transformUtils");
 
+// Utility function to convert camelCase to snake_case
+const toSnakeCase = (str) => {
+  return str.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`);
+};
+
+// Utility function to transform object fields from camelCase to snake_case
+const transformToSnakeCase = (obj, seen = new WeakSet()) => {
+  if (!obj || typeof obj !== "object") return obj;
+
+  // Check for circular reference
+  if (seen.has(obj)) return obj;
+  seen.add(obj);
+
+  if (Array.isArray(obj)) {
+    return obj.map((item) => transformToSnakeCase(item, seen));
+  }
+
+  // Handle Date objects - return as is
+  if (obj instanceof Date) {
+    return obj;
+  }
+
+  // Handle Sequelize instances - convert to plain object first
+  if (obj.toJSON && typeof obj.toJSON === "function") {
+    obj = obj.toJSON();
+  }
+
+  const transformed = {};
+  for (const [key, value] of Object.entries(obj)) {
+    const snakeKey = toSnakeCase(key);
+
+    // Handle Date objects
+    if (value instanceof Date) {
+      transformed[snakeKey] = value;
+    } else if (value && typeof value === "object" && !Array.isArray(value)) {
+      transformed[snakeKey] = transformToSnakeCase(value, seen);
+    } else if (Array.isArray(value)) {
+      transformed[snakeKey] = value.map((item) =>
+        transformToSnakeCase(item, seen)
+      );
+    } else {
+      transformed[snakeKey] = value;
+    }
+  }
+  return transformed;
+};
+
 // Lấy danh sách tất cả coupons (có phân trang, tìm kiếm và thống kê)
 router.get("/", async (req, res) => {
   try {
@@ -148,7 +195,8 @@ router.get("/:id", async (req, res) => {
 router.post("/", authMiddleware, adminMiddleware, async (req, res) => {
   const t = await sequelize.transaction();
   try {
-    const couponData = req.body;
+    // Transform camelCase to snake_case for database operations
+    const couponData = transformToSnakeCase(req.body);
 
     // Validate dữ liệu
     if (
@@ -225,8 +273,11 @@ router.put("/:id", authMiddleware, adminMiddleware, async (req, res) => {
     // Lưu thông tin cũ
     const oldData = { ...coupon.toJSON() };
 
+    // Transform camelCase to snake_case for database operations
+    const transformedData = transformToSnakeCase(req.body);
+
     // Cập nhật coupon
-    await coupon.update(req.body, { transaction: t });
+    await coupon.update(transformedData, { transaction: t });
 
     // Reload lại dữ liệu mới nhất từ database
     await coupon.reload({ transaction: t });
