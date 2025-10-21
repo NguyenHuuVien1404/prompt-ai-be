@@ -1744,7 +1744,7 @@ router.put(
       await userSub.reload();
       res.json({
         message: "Subscription updated successfully",
-        subscription: userSub,
+        subscription: transformToCamelCase(userSub),
       });
     } catch (error) {
       sendInternalErrorResponse(res, error.message);
@@ -1774,7 +1774,7 @@ router.get(
           },
         ],
       });
-      res.json(subscriptions);
+      res.json(transformToCamelCase(subscriptions));
     } catch (error) {
       sendInternalErrorResponse(res, error.message);
     }
@@ -1809,7 +1809,7 @@ router.post(
       });
       res.json({
         message: "Subscription added successfully",
-        subscription: userSub,
+        subscription: transformToCamelCase(userSub),
       });
     } catch (error) {
       sendInternalErrorResponse(res, error.message);
@@ -1878,7 +1878,7 @@ router.patch(
 
       res.json({
         message: "Subscription changed successfully",
-        newSubscription: newUserSub,
+        newSubscription: transformToCamelCase(newUserSub),
       });
     } catch (error) {
       sendInternalErrorResponse(res, error.message);
@@ -1986,7 +1986,7 @@ router.post("/auth/google", async (req, res) => {
       ),
     };
 
-    return res.json(userData);
+    return res.json(transformToCamelCase(userData));
   } catch (error) {
     return res.status(401).json({ error: "Google login failed" });
   }

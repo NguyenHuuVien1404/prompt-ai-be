@@ -288,13 +288,13 @@ router.put("/:id", authMiddleware, adminMiddleware, async (req, res) => {
     res.json({
       success: true,
       message: "Cập nhật coupon thành công",
-      data: {
+      data: transformToCamelCase({
         id: coupon.id,
         code: coupon.code,
         old_data: oldData,
         new_data: newData,
         updated_at: new Date(),
-      },
+      }),
     });
   } catch (error) {
     await t.rollback();
@@ -324,11 +324,11 @@ router.delete("/:id", authMiddleware, adminMiddleware, async (req, res) => {
     res.json({
       success: true,
       message: "Xóa coupon thành công",
-      data: {
+      data: transformToCamelCase({
         id: deletedCoupon.id,
         code: deletedCoupon.code,
         deleted_at: new Date(),
-      },
+      }),
     });
   } catch (error) {
     await t.rollback();
@@ -427,14 +427,14 @@ router.post("/validate", async (req, res) => {
     res.json({
       success: true,
       message: "Mã coupon hợp lệ",
-      data: {
+      data: transformToCamelCase({
         id: coupon.id,
         code: coupon.code,
         type: coupon.type,
         discount: coupon.discount,
         discount_amount,
         final_price,
-      },
+      }),
     });
   } catch (error) {
     sendInternalErrorResponse(res, "Lỗi khi kiểm tra coupon: " + error.message);
@@ -500,7 +500,7 @@ router.get("/:id/users", async (req, res) => {
     res.json({
       success: true,
       data: {
-        list: pagedUsers,
+        list: transformToCamelCase(pagedUsers),
         pagination: {
           total,
           page: parseInt(page),
