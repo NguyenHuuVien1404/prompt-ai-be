@@ -890,7 +890,21 @@ router.put("/:id", async (req, res) => {
     const transformedUserData = transformToSnakeCase(userData);
 
     // Update user information (exclude userSub data)
-    await user.update(transformedUserData);
+    // Force update with individual field - try Object.entries approach
+    let countPromptValue = undefined;
+    for (const [key, value] of Object.entries(transformedUserData)) {
+      if (key === "count_prompt") {
+        countPromptValue = value;
+        break;
+      }
+    }
+
+    if (countPromptValue !== undefined) {
+      user.count_promt = countPromptValue;
+      await user.save();
+    } else {
+      await user.update(transformedUserData);
+    }
 
     // Update subscription if userSub data is provided
     if (userSub) {
