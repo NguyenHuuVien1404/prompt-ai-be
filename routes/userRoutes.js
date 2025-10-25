@@ -450,12 +450,17 @@ router.get("/", async (req, res) => {
 
     const userSubInclude = {
       model: UserSub,
-      attributes: ["sub_id"],
-      required: !!req.query.sub_id, // Nếu có truyền sub_id thì required: true, ngược lại false
       where: {
         status: 1,
         ...(req.query.sub_id ? { sub_id: req.query.sub_id } : {}),
       },
+      required: false,
+      include: [
+        {
+          model: Subscription,
+          attributes: ["id", "name_sub", "type", "price"],
+        },
+      ],
     };
 
     // Get total count without includes to avoid JOIN counting issues
@@ -496,8 +501,37 @@ router.get("/", async (req, res) => {
         roleName = roleMap[plainRow.role] || "Unknown";
       }
 
+      // ✅ Prepare userSub data giống như API detail
+      let userSubData = null;
+      if (plainRow.UserSubs && plainRow.UserSubs.length > 0) {
+        // Sort by subscription type (highest first)
+        const sortedUserSubs = plainRow.UserSubs.sort((a, b) => {
+          const typeA = a.Subscription?.type || 0;
+          const typeB = b.Subscription?.type || 0;
+          return typeB - typeA;
+        });
+
+        const highestUserSub = sortedUserSubs[0];
+        userSubData = {
+          id: highestUserSub.id,
+          status: highestUserSub.status,
+          startDate: highestUserSub.start_date,
+          endDate: highestUserSub.end_date,
+          token: highestUserSub.token,
+          subscription: highestUserSub.Subscription
+            ? {
+                id: highestUserSub.Subscription.id,
+                nameSub: highestUserSub.Subscription.name_sub,
+                type: highestUserSub.Subscription.type,
+                price: highestUserSub.Subscription.price,
+              }
+            : null,
+        };
+      }
+
       const transformedRow = {
         ...plainRow,
+        userSub: userSubData,
         subId: plainRow.UserSubs?.[0]?.sub_id || null,
         UserSubs: undefined, // Remove the UserSubs array
         roleName: roleName,
@@ -591,12 +625,17 @@ router.post(
 
       const userSubInclude = {
         model: UserSub,
-        attributes: ["sub_id"],
-        required: !!req.body.sub_id, // Nếu có truyền sub_id thì required: true, ngược lại false
         where: {
           status: 1,
           ...(req.body.sub_id ? { sub_id: req.body.sub_id } : {}),
         },
+        required: false,
+        include: [
+          {
+            model: Subscription,
+            attributes: ["id", "name_sub", "type", "price"],
+          },
+        ],
       };
 
       // Get total count without includes to avoid JOIN counting issues
@@ -637,8 +676,37 @@ router.post(
           roleName = roleMap[plainRow.role] || "Unknown";
         }
 
+        // ✅ Prepare userSub data giống như API detail
+        let userSubData = null;
+        if (plainRow.UserSubs && plainRow.UserSubs.length > 0) {
+          // Sort by subscription type (highest first)
+          const sortedUserSubs = plainRow.UserSubs.sort((a, b) => {
+            const typeA = a.Subscription?.type || 0;
+            const typeB = b.Subscription?.type || 0;
+            return typeB - typeA;
+          });
+
+          const highestUserSub = sortedUserSubs[0];
+          userSubData = {
+            id: highestUserSub.id,
+            status: highestUserSub.status,
+            startDate: highestUserSub.start_date,
+            endDate: highestUserSub.end_date,
+            token: highestUserSub.token,
+            subscription: highestUserSub.Subscription
+              ? {
+                  id: highestUserSub.Subscription.id,
+                  nameSub: highestUserSub.Subscription.name_sub,
+                  type: highestUserSub.Subscription.type,
+                  price: highestUserSub.Subscription.price,
+                }
+              : null,
+          };
+        }
+
         const transformedRow = {
           ...plainRow,
+          userSub: userSubData,
           subId: plainRow.UserSubs?.[0]?.sub_id || null,
           UserSubs: undefined, // Remove the UserSubs array
           roleName: roleName,
@@ -2015,39 +2083,110 @@ router.post(
     try {
       const XLSX = require("xlsx");
 
-      // Lấy tham số từ request body
-      let { search, account_status, is_verified, role } = req.body;
+      // Lấy tham số từ request body - support both camelCase and snake_case
+      let {
+        search,
+        searchTerm, // Support new format
+        accountStatus,
+        account_status,
+        status, // Support new format
+        isVerified,
+        is_verified,
+        role,
+        dateRange,
+        dateFrom, // Support new format
+        dateTo, // Support new format
+      } = req.body;
+
+      // Normalize parameters - support both old and new formats
+      const search_normalized = search || searchTerm;
+      const account_status_normalized =
+        accountStatus !== undefined
+          ? accountStatus
+          : account_status !== undefined
+          ? account_status
+          : status === "active"
+          ? 1
+          : status === "inactive"
+          ? 0
+          : status;
+      const is_verified_normalized =
+        isVerified !== undefined ? isVerified : is_verified;
 
       // Xây dựng điều kiện tìm kiếm
       const whereConditions = {};
 
       // Tìm kiếm theo tên hoặc email
-      if (search) {
-        whereConditions[Op.or] = [
-          { full_name: { [Op.like]: `%${search}%` } },
-          { email: { [Op.like]: `%${search}%` } },
-        ];
+      if (search_normalized) {
+        whereConditions[Op.and] = whereConditions[Op.and] || [];
+        whereConditions[Op.and].push({
+          [Op.or]: [
+            { full_name: { [Op.like]: `%${search_normalized}%` } },
+            { email: { [Op.like]: `%${search_normalized}%` } },
+          ],
+        });
       }
 
       // Lọc theo trạng thái
-      if (account_status !== undefined && account_status !== null) {
-        const parsedStatus = parseInt(account_status);
+      if (
+        account_status_normalized !== undefined &&
+        account_status_normalized !== null
+      ) {
+        const parsedStatus = parseInt(account_status_normalized);
         if (!isNaN(parsedStatus)) {
           whereConditions.account_status = parsedStatus;
         }
       }
 
       // Lọc theo tình trạng xác thực
-      if (is_verified !== undefined && is_verified !== null) {
-        if (typeof is_verified === "string") {
-          whereConditions.is_verified = is_verified === "true";
+      if (
+        is_verified_normalized !== undefined &&
+        is_verified_normalized !== null
+      ) {
+        if (typeof is_verified_normalized === "string") {
+          whereConditions.is_verified = is_verified_normalized === "true";
         } else {
-          whereConditions.is_verified = !!is_verified;
+          whereConditions.is_verified = !!is_verified_normalized;
         }
       }
 
       // ✅ Lọc theo vai trò - sử dụng function chung
       await addRoleFilter(whereConditions, role);
+
+      // Lọc theo dateRange nếu có (từ request body)
+      // Hỗ trợ cả dateRange[from]/dateRange[to] và dateFrom/dateTo
+      const dateFromValue =
+        req.body.dateRange?.from ||
+        req.body["dateRange[from]"] ||
+        req.body.dateFrom ||
+        dateFrom;
+      const dateToValue =
+        req.body.dateRange?.to ||
+        req.body["dateRange[to]"] ||
+        req.body.dateTo ||
+        dateTo;
+
+      if (dateFromValue || dateToValue) {
+        whereConditions.created_at = {};
+        if (dateFromValue) {
+          // Nếu chỉ có ngày (YYYY-MM-DD), thêm thời gian 00:00:00
+          const fromDate = new Date(dateFromValue);
+          if (dateFromValue.length === 10) {
+            // YYYY-MM-DD format
+            fromDate.setHours(0, 0, 0, 0);
+          }
+          whereConditions.created_at[Op.gte] = fromDate;
+        }
+        if (dateToValue) {
+          // Nếu chỉ có ngày (YYYY-MM-DD), thêm thời gian 23:59:59
+          const toDate = new Date(dateToValue);
+          if (dateToValue.length === 10) {
+            // YYYY-MM-DD format
+            toDate.setHours(23, 59, 59, 999);
+          }
+          whereConditions.created_at[Op.lte] = toDate;
+        }
+      }
 
       // Lấy tất cả users với thông tin subscription
       const users = await User.findAll({

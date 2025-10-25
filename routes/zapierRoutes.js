@@ -1,6 +1,8 @@
 const express = require("express");
 const router = express.Router();
 const User = require("../models/User");
+const UserSub = require("../models/UserSub");
+const Subscription = require("../models/Subscription");
 const bcrypt = require("bcryptjs");
 const {
   sendCreateResponse,
@@ -13,6 +15,7 @@ const { transformToCamelCase } = require("../utils/transformUtils");
 /**
  * @route POST /api/zapier/member-added
  * @desc Webhook endpoint to receive member data from Zapier/Skool
+ * @desc Automatically creates PREMIUM subscription (type=2) with duration=1000 for new members
  * @access Public (but should be secured with a secret token in production)
  */
 router.post("/member-added", async (req, res) => {
@@ -82,6 +85,43 @@ router.post("/member-added", async (req, res) => {
       // Update user
       await existingUser.update(updateData);
 
+      // Check if user has any active subscription
+      const existingUserSub = await UserSub.findOne({
+        where: { user_id: existingUser.id, status: 1 },
+      });
+
+      // If no active subscription, create PREMIUM subscription
+      if (!existingUserSub) {
+        const premiumSub = await Subscription.findOne({
+          where: { type: 2 },
+          attributes: ["id", "name_sub", "type", "duration"],
+        });
+
+        if (premiumSub) {
+          const startDate = joinedAtDate || new Date();
+          const endDate = new Date(startDate);
+          endDate.setDate(endDate.getDate() + premiumSub.duration);
+
+          await UserSub.create({
+            user_id: existingUser.id,
+            sub_id: premiumSub.id,
+            status: 1,
+            start_date: startDate,
+            end_date: endDate,
+            token: premiumSub.duration || 0, // Token count from subscription
+          });
+
+          // Update user count_promt based on subscription duration
+          await existingUser.update({
+            count_promt: premiumSub.duration,
+          });
+
+          console.log(
+            `✅ Created PREMIUM subscription for existing user: ${email} (token: ${premiumSub.duration})`
+          );
+        }
+      }
+
       // Fetch updated user with relations
       const updatedUser = await User.findOne({
         where: { email },
@@ -98,6 +138,12 @@ router.post("/member-added", async (req, res) => {
         "User updated from Zapier webhook"
       );
     } else {
+      // Find PREMIUM subscription (type = 2) BEFORE creating user
+      const premiumSub = await Subscription.findOne({
+        where: { type: 2 },
+        attributes: ["id", "name_sub", "type", "duration"],
+      });
+
       // Create new user
       const newUserData = {
         email,
@@ -105,7 +151,7 @@ router.post("/member-added", async (req, res) => {
         account_status: 1,
         role: 1, // Default role: User
         is_verified: true, // Auto-verify users from Zapier
-        count_promt: 5, // Default prompt count
+        count_promt: premiumSub?.duration || 0, // Get token count from subscription
       };
 
       // Set created_at to joined_at if provided
@@ -135,6 +181,31 @@ router.post("/member-added", async (req, res) => {
 
       // Create new user
       const newUser = await User.create(newUserData);
+
+      if (premiumSub) {
+        // Calculate end date based on duration (1000 days)
+        const startDate = joinedAtDate || new Date();
+        const endDate = new Date(startDate);
+        endDate.setDate(endDate.getDate() + premiumSub.duration);
+
+        // Create UserSub for new user with token from subscription
+        await UserSub.create({
+          user_id: newUser.id,
+          sub_id: premiumSub.id,
+          status: 1, // Active
+          start_date: startDate,
+          end_date: endDate,
+          token: premiumSub.duration || 0, // Token count from subscription
+        });
+
+        console.log(
+          `✅ Created PREMIUM subscription for user: ${email} (token: ${
+            premiumSub.duration
+          }, end: ${endDate.toISOString()})`
+        );
+      } else {
+        console.warn("⚠️ PREMIUM subscription (type=2) not found in database");
+      }
 
       // Fetch created user without sensitive data
       const createdUser = await User.findOne({
