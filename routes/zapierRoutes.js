@@ -100,7 +100,7 @@ router.post("/member-added", async (req, res) => {
         if (premiumSub) {
           const startDate = joinedAtDate || new Date();
           const endDate = new Date(startDate);
-          endDate.setDate(endDate.getDate() + premiumSub.duration);
+          endDate.setMonth(endDate.getMonth() + 1); // Add 1 month
 
           await UserSub.create({
             user_id: existingUser.id,
@@ -117,7 +117,9 @@ router.post("/member-added", async (req, res) => {
           });
 
           console.log(
-            `✅ Created PREMIUM subscription for existing user: ${email} (token: ${premiumSub.duration})`
+            `✅ Created PREMIUM subscription for existing user: ${email} (token: ${
+              premiumSub.duration
+            }, end: ${endDate.toISOString()})`
           );
         }
       }
@@ -183,10 +185,10 @@ router.post("/member-added", async (req, res) => {
       const newUser = await User.create(newUserData);
 
       if (premiumSub) {
-        // Calculate end date based on duration (1000 days)
+        // Calculate end date: joinedAtDate + 1 month
         const startDate = joinedAtDate || new Date();
         const endDate = new Date(startDate);
-        endDate.setDate(endDate.getDate() + premiumSub.duration);
+        endDate.setMonth(endDate.getMonth() + 1); // Add 1 month
 
         // Create UserSub for new user with token from subscription
         await UserSub.create({

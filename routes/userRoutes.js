@@ -503,6 +503,18 @@ router.get("/", async (req, res) => {
 
       // ✅ Prepare userSub data giống như API detail
       let userSubData = null;
+
+      // DEBUG: Log để kiểm tra UserSubs
+      console.log(`🔍 User ${plainRow.id} (${plainRow.email}):`);
+      console.log(`  - UserSubs exists: ${!!plainRow.UserSubs}`);
+      console.log(`  - UserSubs length: ${plainRow.UserSubs?.length || 0}`);
+      if (plainRow.UserSubs && plainRow.UserSubs.length > 0) {
+        console.log(
+          `  - UserSubs data:`,
+          JSON.stringify(plainRow.UserSubs, null, 2)
+        );
+      }
+
       if (plainRow.UserSubs && plainRow.UserSubs.length > 0) {
         // Sort by subscription type (highest first)
         const sortedUserSubs = plainRow.UserSubs.sort((a, b) => {
@@ -527,6 +539,12 @@ router.get("/", async (req, res) => {
               }
             : null,
         };
+        console.log(
+          `  ✅ Created userSubData:`,
+          JSON.stringify(userSubData, null, 2)
+        );
+      } else {
+        console.log(`  ❌ No UserSubs data for user ${plainRow.id}`);
       }
 
       const transformedRow = {
