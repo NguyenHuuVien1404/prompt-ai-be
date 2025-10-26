@@ -138,8 +138,8 @@ const buildStandardUserResponse = (
   userSubs = [],
   accessToken = null
 ) => {
-  // Sort userSubs by type (highest first)
-  const sortedUserSubs = userSubs
+  // ✅ Single userSub rule: no need to filter by status, just get the user's single userSub
+  const userSubsData = userSubs
     .map((us) => ({
       id: us.id,
       status: us.status,
@@ -155,10 +155,10 @@ const buildStandardUserResponse = (
           }
         : null,
     }))
-    .sort((a, b) => (b.subscription?.type || 0) - (a.subscription?.type || 0));
+    .sort((a, b) => b.id - a.id); // ✅ Sort by ID descending (newest first)
 
-  // Get the highest priority userSub
-  const userSubData = sortedUserSubs.length > 0 ? sortedUserSubs[0] : null;
+  // Get the newest userSub (should be the only one)
+  const userSubData = userSubsData.length > 0 ? userSubsData[0] : null;
 
   // Convert user to plain object
   const plainUser = user.toJSON ? user.toJSON() : user;
@@ -451,10 +451,8 @@ router.get("/", async (req, res) => {
 
     const userSubInclude = {
       model: UserSub,
-      where: {
-        status: 1,
-        ...(req.query.sub_id ? { sub_id: req.query.sub_id } : {}),
-      },
+      // ✅ Single userSub rule: no need to filter by status, just get the user's single userSub
+      ...(req.query.sub_id ? { where: { sub_id: req.query.sub_id } } : {}),
       required: false,
       include: [
         {
@@ -502,29 +500,23 @@ router.get("/", async (req, res) => {
         roleName = roleMap[plainRow.role] || "Unknown";
       }
 
-      // ✅ Prepare userSub data giống như API detail
+      // ✅ Prepare userSub data - single userSub rule
       let userSubData = null;
       if (plainRow.UserSubs && plainRow.UserSubs.length > 0) {
-        // Sort by subscription type (highest first)
-        const sortedUserSubs = plainRow.UserSubs.sort((a, b) => {
-          const typeA = a.Subscription?.type || 0;
-          const typeB = b.Subscription?.type || 0;
-          return typeB - typeA;
-        });
-
-        const highestUserSub = sortedUserSubs[0];
+        // ✅ Single userSub rule: just take the first (and only) userSub
+        const userSub = plainRow.UserSubs[0];
         userSubData = {
-          id: highestUserSub.id,
-          status: highestUserSub.status,
-          startDate: highestUserSub.start_date,
-          endDate: highestUserSub.end_date,
-          token: highestUserSub.token,
-          subscription: highestUserSub.Subscription
+          id: userSub.id,
+          status: userSub.status,
+          startDate: userSub.start_date,
+          endDate: userSub.end_date,
+          token: userSub.token,
+          subscription: userSub.Subscription
             ? {
-                id: highestUserSub.Subscription.id,
-                nameSub: highestUserSub.Subscription.name_sub,
-                type: highestUserSub.Subscription.type,
-                price: highestUserSub.Subscription.price,
+                id: userSub.Subscription.id,
+                nameSub: userSub.Subscription.name_sub,
+                type: userSub.Subscription.type,
+                price: userSub.Subscription.price,
               }
             : null,
         };
@@ -626,10 +618,8 @@ router.post(
 
       const userSubInclude = {
         model: UserSub,
-        where: {
-          status: 1,
-          ...(req.body.sub_id ? { sub_id: req.body.sub_id } : {}),
-        },
+        // ✅ Single userSub rule: no need to filter by status, just get the user's single userSub
+        ...(req.body.sub_id ? { where: { sub_id: req.body.sub_id } } : {}),
         required: false,
         include: [
           {
@@ -677,29 +667,23 @@ router.post(
           roleName = roleMap[plainRow.role] || "Unknown";
         }
 
-        // ✅ Prepare userSub data giống như API detail
+        // ✅ Prepare userSub data - single userSub rule
         let userSubData = null;
         if (plainRow.UserSubs && plainRow.UserSubs.length > 0) {
-          // Sort by subscription type (highest first)
-          const sortedUserSubs = plainRow.UserSubs.sort((a, b) => {
-            const typeA = a.Subscription?.type || 0;
-            const typeB = b.Subscription?.type || 0;
-            return typeB - typeA;
-          });
-
-          const highestUserSub = sortedUserSubs[0];
+          // ✅ Single userSub rule: just take the first (and only) userSub
+          const userSub = plainRow.UserSubs[0];
           userSubData = {
-            id: highestUserSub.id,
-            status: highestUserSub.status,
-            startDate: highestUserSub.start_date,
-            endDate: highestUserSub.end_date,
-            token: highestUserSub.token,
-            subscription: highestUserSub.Subscription
+            id: userSub.id,
+            status: userSub.status,
+            startDate: userSub.start_date,
+            endDate: userSub.end_date,
+            token: userSub.token,
+            subscription: userSub.Subscription
               ? {
-                  id: highestUserSub.Subscription.id,
-                  nameSub: highestUserSub.Subscription.name_sub,
-                  type: highestUserSub.Subscription.type,
-                  price: highestUserSub.Subscription.price,
+                  id: userSub.Subscription.id,
+                  nameSub: userSub.Subscription.name_sub,
+                  type: userSub.Subscription.type,
+                  price: userSub.Subscription.price,
                 }
               : null,
           };
@@ -759,12 +743,12 @@ router.get("/me", authMiddleware, async (req, res) => {
     if (!user) return sendNotFoundResponse(res, "User not found");
 
     const userSubs = await user.getUserSubs({
-      where: { status: 1 }, // ✅ Chỉ lấy active subscriptions để nhất quán với List API
+      // ✅ Single userSub rule: no need to filter by status, just get the user's single userSub
       include: [Subscription],
-      order: [["id", "DESC"]], // ✅ Sắp xếp theo ID giảm dần (mới nhất trước)
+      order: [["id", "DESC"]], // ✅ Sort by ID descending (newest first)
     });
 
-    const sortedUserSubs = userSubs; // ✅ Không cần sort thêm vì đã order trong query
+    const sortedUserSubs = userSubs; // ✅ Single userSub rule: no need to sort further
 
     // ✅ Lấy permissions từ role
     let permissions = [];
@@ -858,12 +842,12 @@ router.get("/:id", async (req, res) => {
     if (!user) return sendNotFoundResponse(res, "User not found");
 
     const userSubs = await user.getUserSubs({
-      where: { status: 1 }, // ✅ Chỉ lấy active subscriptions để nhất quán với List API
+      // ✅ Single userSub rule: no need to filter by status, just get the user's single userSub
       include: [Subscription],
-      order: [["id", "DESC"]], // ✅ Sắp xếp theo ID giảm dần (mới nhất trước)
+      order: [["id", "DESC"]], // ✅ Sort by ID descending (newest first)
     });
 
-    const sortedUserSubs = userSubs; // ✅ Không cần sort thêm vì đã order trong query
+    const sortedUserSubs = userSubs; // ✅ Single userSub rule: no need to sort further
 
     // ✅ Lấy permissions từ role
     let permissions = [];
@@ -999,14 +983,11 @@ router.put("/:id", async (req, res) => {
 
         await existingUserSub.update(updateData, { transaction });
       } else if (subscriptionId) {
-        // Vô hiệu hóa tất cả subscription cũ trước khi tạo mới
-        await UserSub.update(
-          { status: 0 }, // 0 = inactive
-          {
-            where: { user_id: req.params.id, status: 1 },
-            transaction,
-          }
-        );
+        // ✅ Enforce single userSub rule: DELETE existing userSubs before creating new one
+        await UserSub.destroy({
+          where: { user_id: req.params.id },
+          transaction,
+        });
 
         // Create new subscription if none exists
         const createData = {
@@ -1026,42 +1007,23 @@ router.put("/:id", async (req, res) => {
     // Handle legacy subId or sub_id for backward compatibility
     const subId = req.body.subId || req.body.sub_id;
     if (subId && !userSub) {
-      // Vô hiệu hóa tất cả subscription cũ trước khi cập nhật
-      await UserSub.update(
-        { status: 0 }, // 0 = inactive
-        {
-          where: { user_id: req.params.id, status: 1 },
-          transaction,
-        }
-      );
-
-      const legacyUserSub = await UserSub.findOne({
-        where: { user_id: req.params.id, status: 0 }, // Tìm subscription đã inactive
-        order: [["id", "DESC"]], // Lấy subscription mới nhất
+      // ✅ Enforce single userSub rule: DELETE existing userSubs before updating
+      await UserSub.destroy({
+        where: { user_id: req.params.id },
         transaction,
       });
 
-      if (legacyUserSub) {
-        await legacyUserSub.update(
-          {
-            sub_id: subId,
-            status: 1, // Kích hoạt lại
-          },
-          { transaction }
-        );
-      } else {
-        // Create new subscription if none exists
-        await UserSub.create(
-          {
-            user_id: req.params.id,
-            sub_id: subId,
-            status: 1,
-            start_date: new Date(),
-            end_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days from now
-          },
-          { transaction }
-        );
-      }
+      // Create new subscription with legacy subId
+      await UserSub.create(
+        {
+          user_id: req.params.id,
+          sub_id: subId,
+          status: 1,
+          start_date: new Date(),
+          end_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days from now
+        },
+        { transaction }
+      );
     }
 
     // Commit transaction
@@ -1228,13 +1190,14 @@ router.post("/verify-otp", async (req, res) => {
         },
         {
           model: UserSub,
+          // ✅ Single userSub rule: no need to filter by status, just get the user's single userSub
           include: [
             {
               model: Subscription,
               attributes: ["id", "name_sub", "type", "price"],
             },
           ],
-          order: [["created_at", "DESC"]],
+          order: [["id", "DESC"]], // ✅ Sort by ID descending (newest first)
         },
       ],
     });
@@ -1437,8 +1400,9 @@ router.post("/login-verify", async (req, res) => {
     await user.save();
 
     const userSubs = await user.getUserSubs({
-      where: { status: 1 },
+      // ✅ Single userSub rule: no need to filter by status, just get the user's single userSub
       include: [Subscription],
+      order: [["id", "DESC"]], // ✅ Sort by ID descending (newest first)
     });
 
     // Lấy thông tin thiết bị từ yêu cầu
@@ -1920,6 +1884,11 @@ router.post(
       if (!subscription)
         return res.status(404).json({ message: "Subscription not found" });
 
+      // ✅ Enforce single userSub rule: DELETE existing userSub first
+      await UserSub.destroy({
+        where: { user_id: req.params.id },
+      });
+
       const userSub = await UserSub.create({
         user_id: req.params.id,
         sub_id,
@@ -1984,9 +1953,10 @@ router.patch(
       if (!newSubscription)
         return res.status(404).json({ message: "New subscription not found" });
 
-      // Vô hiệu hóa gói hiện tại
-      currentUserSub.status = 2; // 2 = Không hoạt động
-      await currentUserSub.save();
+      // ✅ Enforce single userSub rule: DELETE existing userSub
+      await UserSub.destroy({
+        where: { user_id: req.params.id },
+      });
 
       // Tạo gói mới
       const newUserSub = await UserSub.create({
@@ -2027,14 +1997,14 @@ router.post("/auth/google", async (req, res) => {
       include: [
         {
           model: UserSub,
-          // alias mặc định của hasMany là: Model name + 's' => 'UserSubs'
-          // nhưng nếu viết sai như 'userSub' hoặc 'userSubs' thì sẽ lỗi
+          // ✅ Single userSub rule: no need to filter by status, just get the user's single userSub
           include: [
             {
               model: Subscription,
-              // alias mặc định là 'Subscription'
+              attributes: ["id", "name_sub", "type", "price"],
             },
           ],
+          order: [["id", "DESC"]], // ✅ Sort by ID descending (newest first)
         },
       ],
     });
@@ -2237,7 +2207,7 @@ router.post(
           {
             model: UserSub,
             attributes: ["sub_id", "status", "start_date", "end_date"],
-            where: { status: 1 },
+            // ✅ Single userSub rule: no need to filter by status, just get the user's single userSub
             required: false,
             include: [
               {
@@ -2629,7 +2599,7 @@ router.post(
             include: [
               {
                 model: UserSub,
-                where: { status: 1 },
+                // ✅ Single userSub rule: no need to filter by status, just get the user's single userSub
                 required: false,
               },
             ],
@@ -2665,7 +2635,7 @@ router.post(
 
               // Cập nhật hoặc tạo subscription Premium cho user cũ
               if (existingUser.UserSubs && existingUser.UserSubs.length > 0) {
-                // Cập nhật subscription hiện có thành Premium
+                // ✅ Single userSub rule: just take the first (and only) userSub
                 const userSub = existingUser.UserSubs[0];
                 const premiumSub = await Subscription.findOne({
                   where: { type: 2 }, // Premium subscription
@@ -2673,15 +2643,22 @@ router.post(
                 });
 
                 if (premiumSub) {
+                  // ✅ Enforce single userSub rule: DELETE existing userSub and create new one
+                  await UserSub.destroy({
+                    where: { user_id: existingUser.id },
+                  });
+
                   // Tính end_date = joinedDate + 1 tháng (không dùng duration của subscription)
                   const endDate = new Date(joinedDate);
                   endDate.setMonth(endDate.getMonth() + 1);
 
-                  await userSub.update({
+                  await UserSub.create({
+                    user_id: existingUser.id,
                     sub_id: premiumSub.id, // Chuyển sang Premium
+                    status: 1,
                     start_date: joinedDate,
                     end_date: endDate,
-                    // Giữ nguyên token hiện tại cho user cũ
+                    token: 0, // User cũ không thêm token
                   });
                 } else {
                   console.error(
