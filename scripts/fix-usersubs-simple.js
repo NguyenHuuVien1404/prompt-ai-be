@@ -29,9 +29,9 @@ async function fixDuplicateUserSubs() {
           ORDER BY us.id DESC 
           SEPARATOR '|'
         ) as subscriptions_info
-      FROM Users u
-      INNER JOIN UserSubs us ON u.id = us.user_id
-      INNER JOIN Subscriptions s ON us.sub_id = s.id
+      FROM users u
+      INNER JOIN usersubs us ON u.id = us.user_id
+      INNER JOIN subscriptions s ON us.sub_id = s.id
       WHERE us.status = 1
       GROUP BY u.id, u.email, u.full_name
       HAVING COUNT(us.id) > 1
@@ -75,7 +75,7 @@ async function fixDuplicateUserSubs() {
         const [subId, subName, subType, subToken] = subInfo.split(":");
 
         // Update status to 0 (inactive)
-        await sequelize.query("UPDATE UserSubs SET status = 0 WHERE id = ?", {
+        await sequelize.query("UPDATE usersubs SET status = 0 WHERE id = ?", {
           replacements: [subId],
         });
 

@@ -43,9 +43,9 @@ async function checkDuplicates() {
           ORDER BY us.id DESC 
           SEPARATOR '|'
         ) as subscriptions_info
-      FROM Users u
-      INNER JOIN UserSubs us ON u.id = us.user_id
-      INNER JOIN Subscriptions s ON us.sub_id = s.id
+      FROM users u
+      INNER JOIN usersubs us ON u.id = us.user_id
+      INNER JOIN subscriptions s ON us.sub_id = s.id
       WHERE us.status = 1
       GROUP BY u.id, u.email, u.full_name
       HAVING COUNT(us.id) > 1
@@ -111,7 +111,7 @@ async function fixUser(userId) {
 
     // Kiểm tra user có tồn tại không
     const [userCheck] = await sequelize.query(
-      "SELECT id, email, full_name FROM Users WHERE id = ?",
+      "SELECT id, email, full_name FROM users WHERE id = ?",
       { replacements: [userId] }
     );
 
@@ -133,8 +133,8 @@ async function fixUser(userId) {
         us.token,
         s.name_sub,
         s.type
-      FROM UserSubs us
-      INNER JOIN Subscriptions s ON us.sub_id = s.id
+      FROM usersubs us
+      INNER JOIN subscriptions s ON us.sub_id = s.id
       WHERE us.user_id = ? AND us.status = 1
       ORDER BY us.id DESC
     `,
@@ -178,7 +178,7 @@ async function fixUser(userId) {
     try {
       // Deactivate old subscriptions
       for (const sub of deactivateSubscriptions) {
-        await sequelize.query("UPDATE UserSubs SET status = 0 WHERE id = ?", {
+        await sequelize.query("UPDATE usersubs SET status = 0 WHERE id = ?", {
           replacements: [sub.id],
           transaction,
         });
@@ -228,9 +228,9 @@ async function dryRun() {
           ORDER BY us.id DESC 
           SEPARATOR '|'
         ) as subscriptions_info
-      FROM Users u
-      INNER JOIN UserSubs us ON u.id = us.user_id
-      INNER JOIN Subscriptions s ON us.sub_id = s.id
+      FROM users u
+      INNER JOIN usersubs us ON u.id = us.user_id
+      INNER JOIN subscriptions s ON us.sub_id = s.id
       WHERE us.status = 1
       GROUP BY u.id, u.email, u.full_name
       HAVING COUNT(us.id) > 1

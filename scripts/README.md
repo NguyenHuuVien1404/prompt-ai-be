@@ -228,6 +228,16 @@ User 2012 có 2 subscriptions active:
 
 ## Troubleshooting
 
+### Lỗi "Table 'prompts.Users' doesn't exist":
+
+**Nguyên nhân:** Trên production, tên bảng là lowercase (`users`, `usersubs`, `subscriptions`) chứ không phải uppercase (`Users`, `UserSubs`, `Subscriptions`).
+
+**Giải pháp:** Tất cả scripts đã được sửa để sử dụng tên bảng đúng:
+
+- ✅ `Users` → `users`
+- ✅ `UserSubs` → `usersubs`
+- ✅ `Subscriptions` → `subscriptions`
+
 ### Lỗi kết nối database:
 
 ```bash
@@ -281,9 +291,10 @@ WHERE id IN (1886, 1887, 1888); -- IDs đã bị deactivate
 - ✅ **Scripts hoạt động với raw SQL queries**: Tránh được lỗi Sequelize ORM
 - ✅ **Transaction safety**: Được đảm bảo trong tất cả scripts
 - ✅ **Error handling**: Hoạt động tốt với logging chi tiết
+- ✅ **Production compatibility**: Đã sửa tên bảng lowercase cho production
 
 ### Current Status:
 
-- 📊 **Found 18 users with duplicate subscriptions** (sau khi fix User 2012)
-- 🎯 **Ready for production deployment**
+- 📊 **Production database clean**: Không có duplicate subscriptions
+- 🎯 **Scripts ready for production deployment**
 - 🚀 **Script tổng hợp `duplicates.js` được khuyến nghị sử dụng**

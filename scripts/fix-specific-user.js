@@ -24,7 +24,7 @@ async function fixSpecificUser(userId) {
 
     // Kiểm tra user có tồn tại không
     const [userCheck] = await sequelize.query(
-      "SELECT id, email, full_name FROM Users WHERE id = ?",
+      "SELECT id, email, full_name FROM users WHERE id = ?",
       { replacements: [userId] }
     );
 
@@ -46,8 +46,8 @@ async function fixSpecificUser(userId) {
         us.token,
         s.name_sub,
         s.type
-      FROM UserSubs us
-      INNER JOIN Subscriptions s ON us.sub_id = s.id
+      FROM usersubs us
+      INNER JOIN subscriptions s ON us.sub_id = s.id
       WHERE us.user_id = ? AND us.status = 1
       ORDER BY us.id DESC
     `,
@@ -91,7 +91,7 @@ async function fixSpecificUser(userId) {
     try {
       // Deactivate old subscriptions
       for (const sub of deactivateSubscriptions) {
-        await sequelize.query("UPDATE UserSubs SET status = 0 WHERE id = ?", {
+        await sequelize.query("UPDATE usersubs SET status = 0 WHERE id = ?", {
           replacements: [sub.id],
           transaction,
         });

@@ -27,9 +27,9 @@ async function fixAllDuplicateUserSubs() {
           ORDER BY us.id DESC 
           SEPARATOR '|'
         ) as subscriptions_info
-      FROM Users u
-      INNER JOIN UserSubs us ON u.id = us.user_id
-      INNER JOIN Subscriptions s ON us.sub_id = s.id
+      FROM users u
+      INNER JOIN usersubs us ON u.id = us.user_id
+      INNER JOIN subscriptions s ON us.sub_id = s.id
       WHERE us.status = 1
       GROUP BY u.id, u.email, u.full_name
       HAVING COUNT(us.id) > 1
@@ -108,7 +108,7 @@ async function fixAllDuplicateUserSubs() {
 
             // Update status to 0 (inactive)
             await sequelize.query(
-              "UPDATE UserSubs SET status = 0 WHERE id = ?",
+              "UPDATE usersubs SET status = 0 WHERE id = ?",
               {
                 replacements: [subId],
                 transaction,
@@ -155,8 +155,8 @@ async function fixAllDuplicateUserSubs() {
       SELECT COUNT(*) as remaining_duplicates
       FROM (
         SELECT u.id
-        FROM Users u
-        INNER JOIN UserSubs us ON u.id = us.user_id
+        FROM users u
+        INNER JOIN usersubs us ON u.id = us.user_id
         WHERE us.status = 1
         GROUP BY u.id
         HAVING COUNT(us.id) > 1
