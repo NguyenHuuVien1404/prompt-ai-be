@@ -737,35 +737,24 @@ router.all("/vnpay_return", async function (req, res, next) {
             endDate.setDate(endDate.getDate() + 30);
         }
 
-        if (userSub) {
-          // If user has different subscription or expired subscription
-          if (
-            userSub.sub_id !== subscription.id ||
-            !userSub.end_date ||
-            userSub.end_date < currentDate
-          ) {
-            userSub.sub_id = subscription.id;
-            userSub.status = 1;
-            userSub.start_date = currentDate;
-            userSub.end_date = endDate;
-            userSub.token = subscription.duration || 0;
-            await userSub.save();
-          } else {
-            // Extend existing subscription
-            userSub.token += subscription.duration || 0;
-            await userSub.save();
-          }
-        } else {
-          // Create new UserSub
-          await UserSub.create({
-            user_id: userId,
-            sub_id: subscription.id,
-            status: 1,
-            start_date: currentDate,
-            end_date: endDate,
-            token: subscription.duration || 0,
-          });
-        }
+        // ✅ Enforce single userSub rule: DELETE existing userSubs before creating/updating
+        await UserSub.destroy({
+          where: { user_id: userId },
+        });
+
+        // Create new UserSub with purchased subscription
+        await UserSub.create({
+          user_id: userId,
+          sub_id: subscription.id,
+          status: 1,
+          start_date: currentDate,
+          end_date: endDate,
+          token: subscription.duration || 0,
+        });
+
+        console.log(
+          `UserSub created/updated for user ${userId} with subscription ${subscription.name_sub}`
+        );
 
         // Log successful payment processing
         vnpayLogger.logPaymentResult(orderId, "SUCCESS", {
@@ -1145,40 +1134,24 @@ router.get("/vnpay_ipn", validateIPNIP, async function (req, res, next) {
             endDate.setDate(endDate.getDate() + 30);
         }
 
-        if (userSub) {
-          // If user has different subscription or expired subscription
-          if (
-            userSub.sub_id !== subscription.id ||
-            !userSub.end_date ||
-            userSub.end_date < currentDate
-          ) {
-            userSub.sub_id = subscription.id;
-            userSub.status = 1;
-            userSub.start_date = currentDate;
-            userSub.end_date = endDate;
-            userSub.token = subscription.duration || 0;
-            await userSub.save();
-            console.log(
-              `UserSub updated for user ${userId} with new subscription`
-            );
-          } else {
-            // Extend existing subscription
-            userSub.token += subscription.duration || 0;
-            await userSub.save();
-            console.log(`UserSub token extended for user ${userId}`);
-          }
-        } else {
-          // Create new UserSub
-          await UserSub.create({
-            user_id: userId,
-            sub_id: subscription.id,
-            status: 1,
-            start_date: currentDate,
-            end_date: endDate,
-            token: subscription.duration || 0,
-          });
-          console.log(`New UserSub created for user ${userId}`);
-        }
+        // ✅ Enforce single userSub rule: DELETE existing userSubs before creating/updating
+        await UserSub.destroy({
+          where: { user_id: userId },
+        });
+
+        // Create new UserSub with purchased subscription
+        await UserSub.create({
+          user_id: userId,
+          sub_id: subscription.id,
+          status: 1,
+          start_date: currentDate,
+          end_date: endDate,
+          token: subscription.duration || 0,
+        });
+
+        console.log(
+          `UserSub created/updated for user ${userId} with subscription ${subscription.name_sub}`
+        );
 
         // Track conversion if applicable
         if (order.click_uuid && order.offer_id) {
