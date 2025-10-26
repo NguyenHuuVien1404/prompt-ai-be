@@ -468,10 +468,180 @@ async function sendFeedbackEmail(
   }
 }
 
+async function sendSkoolInviteEmail(
+  email,
+  userName,
+  subscriptionName,
+  orderId
+) {
+  const skoolUrl =
+    process.env.SKOOL_INVITE ||
+    "https://www.skool.com/prom-aihub/about?ref=1a6136e6caba48bcaf8d6a8120bc0cb8";
+
+  const htmlTemplate = `
+    <!DOCTYPE html>
+    <html lang="vi">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Chào mừng bạn đến với Prom AI Hub!</title>
+        <style type="text/css">
+            body { font-family: Arial, sans-serif; background-color: #f5f5ff; margin: 0; padding: 20px; }
+            table { border-collapse: collapse; }
+            img { display: block; max-width: 100%; height: auto; }
+            .container { width: 100%; max-width: 600px; margin: 0 auto; }
+            .content { background-color: #fff; padding: 30px; border-radius: 15px; box-shadow: 0 0 20px rgba(0, 0, 0, 0.1); }
+            .header { text-align: center; margin-bottom: 30px; }
+            .logo { font-size: 28px; font-weight: bold; color: #4a90e2; margin-bottom: 10px; }
+            .title { font-size: 24px; color: #333; margin-bottom: 20px; }
+            .message { font-size: 16px; line-height: 1.6; color: #555; margin-bottom: 25px; }
+            .cta-button { 
+                display: inline-block; 
+                background: linear-gradient(135deg, #4a90e2, #357abd); 
+                color: white; 
+                padding: 15px 30px; 
+                text-decoration: none; 
+                border-radius: 25px; 
+                font-weight: bold; 
+                font-size: 18px;
+                margin: 20px 0;
+                box-shadow: 0 4px 15px rgba(74, 144, 226, 0.3);
+                transition: all 0.3s ease;
+            }
+            .cta-button:hover { 
+                transform: translateY(-2px); 
+                box-shadow: 0 6px 20px rgba(74, 144, 226, 0.4);
+            }
+            .order-info { 
+                background-color: #f8f9fa; 
+                padding: 20px; 
+                border-radius: 10px; 
+                margin: 20px 0; 
+                border-left: 4px solid #4a90e2;
+            }
+            .order-info h3 { color: #4a90e2; margin-top: 0; }
+            .order-info p { margin: 5px 0; color: #666; }
+            .benefits { margin: 25px 0; }
+            .benefits h3 { color: #4a90e2; margin-bottom: 15px; }
+            .benefits ul { list-style: none; padding: 0; }
+            .benefits li { 
+                padding: 8px 0; 
+                color: #555; 
+                position: relative; 
+                padding-left: 25px;
+            }
+            .benefits li:before { 
+                content: "✓"; 
+                color: #4a90e2; 
+                font-weight: bold; 
+                position: absolute; 
+                left: 0;
+            }
+            .footer { 
+                text-align: center; 
+                margin-top: 30px; 
+                padding-top: 20px; 
+                border-top: 1px solid #eee; 
+                color: #888; 
+                font-size: 14px;
+            }
+            .social-links { margin: 15px 0; }
+            .social-links a { 
+                display: inline-block; 
+                margin: 0 10px; 
+                text-decoration: none; 
+                color: #4a90e2;
+            }
+            @media only screen and (max-width: 600px) {
+                .container { width: 100%; padding: 10px; }
+                .content { padding: 20px; }
+                .title { font-size: 20px; }
+                .cta-button { padding: 12px 25px; font-size: 16px; }
+            }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="content">
+                <div class="header">
+                    <div class="logo">🚀 Prom AI Hub</div>
+                    <h1 class="title">Chào mừng bạn đến với cộng đồng!</h1>
+                </div>
+                
+                <div class="message">
+                    <p>Xin chào <strong>${userName}</strong>,</p>
+                    <p>Cảm ơn bạn đã tin tưởng và mua gói <strong>${subscriptionName}</strong>! Chúng tôi rất vui được chào đón bạn vào cộng đồng Prom AI Hub trên Skool.</p>
+                </div>
+
+                <div class="order-info">
+                    <h3>📋 Thông tin đơn hàng</h3>
+                    <p><strong>Mã đơn hàng:</strong> #${orderId}</p>
+                    <p><strong>Gói đã mua:</strong> ${subscriptionName}</p>
+                    <p><strong>Trạng thái:</strong> ✅ Đã thanh toán thành công</p>
+                </div>
+
+                <div class="benefits">
+                    <h3>🎯 Những gì bạn sẽ nhận được:</h3>
+                    <ul>
+                        <li>Truy cập vào cộng đồng độc quyền trên Skool</li>
+                        <li>Chia sẻ và học hỏi kinh nghiệm với các thành viên khác</li>
+                        <li>Nhận hỗ trợ trực tiếp từ team Prom AI</li>
+                        <li>Cập nhật các tính năng mới nhất</li>
+                        <li>Tham gia các sự kiện và workshop đặc biệt</li>
+                        <li>Tài liệu và hướng dẫn chi tiết</li>
+                    </ul>
+                </div>
+
+                <div style="text-align: center;">
+                    <a href="${skoolUrl}" class="cta-button">🎉 Tham gia cộng đồng ngay!</a>
+                </div>
+
+                <div class="message">
+                    <p><strong>Lưu ý quan trọng:</strong></p>
+                    <p>• Link trên sẽ đưa bạn trực tiếp vào cộng đồng Skool</p>
+                    <p>• Nếu bạn chưa có tài khoản Skool, hãy tạo tài khoản miễn phí</p>
+                    <p>• Sau khi tham gia, bạn sẽ có quyền truy cập đầy đủ vào tất cả nội dung</p>
+                </div>
+
+                <div class="footer">
+                    <p>Nếu bạn có bất kỳ câu hỏi nào, đừng ngần ngại liên hệ với chúng tôi!</p>
+                    <div class="social-links">
+                        <a href="#">📧 Email Support</a>
+                        <a href="#">💬 Live Chat</a>
+                    </div>
+                    <p>Copyright © 2024 Prom AI Hub. All rights reserved.</p>
+                </div>
+            </div>
+        </div>
+    </body>
+    </html>
+  `;
+
+  const mailOptions = {
+    from: `"Prom AI Hub" <${process.env.EMAIL_USER}>`,
+    to: email,
+    subject: `🎉 Chào mừng bạn đến với Prom AI Hub - Đơn hàng #${orderId}`,
+    html: htmlTemplate,
+  };
+
+  try {
+    const info = await transporter.sendMail(mailOptions);
+    console.log(
+      `Skool invite email sent successfully to ${email}:`,
+      info.messageId
+    );
+    return { success: true, messageId: info.messageId };
+  } catch (error) {
+    console.error(`Error sending Skool invite email to ${email}:`, error);
+    return { success: false, error: error.message };
+  }
+}
+
 module.exports = {
   sendOtpEmail,
   sendOrderEmail,
   sendReplyEmail,
   sendSurveyEmail,
   sendFeedbackEmail,
+  sendSkoolInviteEmail,
 };

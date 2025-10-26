@@ -1,5 +1,6 @@
 /**
  * Created by CTT VNPAY
+ * Updated with enhanced VNPay integration
  */
 
 let express = require("express");
@@ -31,6 +32,55 @@ const {
 
 // Import transform utilities
 const { transformToCamelCase } = require("../utils/transformUtils");
+
+// Import VNPay configuration
+const vnpayConfig = require("../config/vnpay");
+
+// Import VNPay security middleware
+const {
+  vnpayLimiter,
+  validateVNPayRequest,
+  logVNPayRequest,
+  validateIPNIP,
+  sanitizeVNPayInput,
+  validateAmountLimits,
+} = require("../middleware/vnpaySecurity");
+
+// Import VNPay logger
+const vnpayLogger = require("../utils/vnpayLogger");
+const { sendSkoolInviteEmail } = require("../utils/emailService");
+
+// Apply VNPay security middleware to all routes except vnpay_return
+router.use((req, res, next) => {
+  // Skip middleware for vnpay_return endpoint
+  if (req.path === "/vnpay_return") {
+    return next();
+  }
+  return vnpayLimiter(req, res, next);
+});
+
+router.use((req, res, next) => {
+  // Skip middleware for vnpay_return endpoint
+  if (req.path === "/vnpay_return") {
+    return next();
+  }
+  return validateVNPayRequest(req, res, next);
+});
+
+router.use((req, res, next) => {
+  // Skip middleware for vnpay_return endpoint
+  if (req.path === "/vnpay_return") {
+    return next();
+  }
+  return logVNPayRequest(req, res, next);
+});
+router.use((req, res, next) => {
+  // Skip middleware for vnpay_return endpoint
+  if (req.path === "/vnpay_return") {
+    return next();
+  }
+  return sanitizeVNPayInput(req, res, next);
+});
 
 router.get("/", async function (req, res, next) {
   try {
@@ -237,7 +287,7 @@ router.get("/", async function (req, res, next) {
   }
 });
 
-router.get("/:id", async function (req, res, next) {
+router.get("/payment/:id", async function (req, res, next) {
   try {
     const { id } = req.params;
 
@@ -356,162 +406,555 @@ router.get("/refund", function (req, res, next) {
   });
 });
 
-router.post("/create_payment_url", async function (req, res, next) {
-  try {
-    process.env.TZ = "Asia/Ho_Chi_Minh";
+router.post(
+  "/create_payment_url",
+  validateAmountLimits,
+  async function (req, res, next) {
+    try {
+      process.env.TZ = "Asia/Ho_Chi_Minh";
 
-    let date = new Date();
-    let createDate = moment(date).format("YYYYMMDDHHmmss");
+      const {
+        amount,
+        bankCode,
+        orderInfo,
+        duration,
+        couponId,
+        couponCode,
+        language = "vn",
+      } = req.body;
 
-    let ipAddr =
-      req.headers["x-forwarded-for"] ||
-      req.connection.remoteAddress ||
-      req.socket.remoteAddress ||
-      req.connection.socket.remoteAddress;
+      // Validate input parameters
+      const validation = vnpayConfig.validatePaymentParams({
+        amount: parseFloat(amount),
+        orderInfo,
+      });
 
-    let tmnCode = process.env.VNP_TMNCODE;
-    let secretKey = process.env.VNP_HASHSECRET;
-    let vnpUrl = process.env.VNP_URL;
-    let returnUrl = process.env.VNP_RETURNURL;
+      if (!validation.isValid) {
+        return sendErrorResponse(
+          res,
+          validation.errors.join(", "),
+          "VALIDATION_ERROR",
+          400
+        );
+      }
 
-    // Tạo orderId (vnp_TxnRef) duy nhất
-    let orderId =
-      moment(date).format("DDHHmmss") +
-      Math.floor(100000 + Math.random() * 900000);
+      // Parse order info
+      const orderInfoParsed = vnpayConfig.parseOrderInfo(orderInfo);
+      if (!orderInfoParsed.isValid) {
+        return sendErrorResponse(
+          res,
+          orderInfoParsed.error,
+          "VALIDATION_ERROR",
+          400
+        );
+      }
 
-    let amount = parseFloat(req.body.amount); // Số tiền từ request
-    let bankCode = req.body.bankCode;
-    let orderInfo = req.body.orderInfo; // Dạng userId-subscriptionId (ví dụ: "42-1")
-    const duration = req.body.duration; // Thời gian sử dụng (nếu cần thiết)
-    const couponId = req.body.couponId; // Thêm couponId từ request
+      const { userId, subscriptionId } = orderInfoParsed;
 
-    // Kiểm tra orderInfo hợp lệ
-    if (!orderInfo || !orderInfo.includes("-")) {
-      return sendErrorResponse(
+      // Verify user and subscription exist
+      const user = await User.findByPk(userId);
+      if (!user) {
+        return sendErrorResponse(res, "User not found", "USER_NOT_FOUND", 404);
+      }
+
+      const subscription = await Subscription.findByPk(subscriptionId);
+      if (!subscription) {
+        return sendErrorResponse(
+          res,
+          "Subscription not found",
+          "SUBSCRIPTION_NOT_FOUND",
+          404
+        );
+      }
+
+      // Verify coupon if provided
+      let finalCouponId = couponId;
+      if (couponCode && !couponId) {
+        // Find coupon by code
+        const couponByCode = await Coupon.findOne({
+          where: { code: couponCode },
+        });
+        if (couponByCode) {
+          finalCouponId = couponByCode.id;
+        }
+      }
+
+      if (finalCouponId) {
+        const coupon = await Coupon.findByPk(finalCouponId);
+        if (!coupon || !coupon.is_active) {
+          return sendErrorResponse(
+            res,
+            "Invalid or inactive coupon",
+            "INVALID_COUPON",
+            400
+          );
+        }
+
+        // Check coupon expiry
+        if (coupon.expiry_date && new Date(coupon.expiry_date) < new Date()) {
+          return sendErrorResponse(
+            res,
+            "Coupon has expired",
+            "COUPON_EXPIRED",
+            400
+          );
+        }
+
+        console.log(`Coupon validated: ${coupon.code} (ID: ${coupon.id})`);
+      }
+
+      // Generate unique order ID
+      const orderId = vnpayConfig.generateOrderId();
+      const ipAddr = vnpayConfig.getClientIP(req);
+
+      // Create payment record with PENDING status
+      const payment = await Payment.create({
+        user_id: userId,
+        subscription_id: subscriptionId,
+        amount: parseFloat(amount),
+        payment_method: bankCode || "VNPAY",
+        transaction_id: null,
+        payment_status: "PENDING",
+        payment_date: new Date(),
+        duration: duration,
+        orderId: orderId,
+        coupon_id: finalCouponId,
+        notes: `VNPay Transaction: ${orderId}`,
+      });
+
+      console.log(
+        `Payment created with coupon_id: ${finalCouponId}, orderId: ${orderId}`
+      );
+
+      // Create VNPay payment URL
+      const paymentUrl = vnpayConfig.createPaymentUrl({
+        amount: parseFloat(amount),
+        orderId,
+        orderInfo,
+        bankCode,
+        ipAddr,
+        language,
+      });
+
+      // Log successful payment URL creation
+      vnpayLogger.logPaymentUrlCreation(
+        {
+          userId,
+          subscriptionId,
+          amount: parseFloat(amount),
+          paymentMethod: bankCode || "VNPAY",
+          couponId,
+          ipAddress: ipAddr,
+          userAgent: req.get("User-Agent"),
+        },
+        orderId,
+        paymentUrl
+      );
+
+      sendCreateResponse(
         res,
-        "Invalid orderInfo format",
-        "VALIDATION_ERROR",
-        400
+        transformToCamelCase({
+          paymentUrl,
+          orderId,
+          amount: parseFloat(amount),
+          subscription: {
+            id: subscription.id,
+            name: subscription.name_sub,
+            price: subscription.price,
+          },
+        }),
+        "Payment URL created successfully"
+      );
+    } catch (error) {
+      vnpayLogger.logError("create_payment_url", error, {
+        userId: req.body.userId,
+        subscriptionId: req.body.subscriptionId,
+        amount: req.body.amount,
+      });
+      sendInternalErrorResponse(
+        res,
+        "Failed to create payment URL: " + error.message
       );
     }
+  }
+);
 
-    const [userId, subscriptionId] = orderInfo.split("-").map(Number);
-    if (!userId || !subscriptionId) {
-      return res
-        .status(400)
-        .json({ error: "Invalid user_id or subscription_id" });
-    }
+// Handle both GET and POST requests for VNPay return
+router.all("/vnpay_return", async function (req, res, next) {
+  try {
+    // Handle both GET (query) and POST (body) parameters
+    const vnp_Params =
+      req.method === "GET" ? req.query : { ...req.query, ...req.body };
+    const secureHash = vnp_Params["vnp_SecureHash"];
+    const orderId = vnp_Params["vnp_TxnRef"];
+    const responseCode = vnp_Params["vnp_ResponseCode"];
 
-    // Lưu bản ghi tạm thời vào Payment với trạng thái PENDING
-    const payment = await Payment.create({
-      user_id: userId,
-      subscription_id: subscriptionId,
-      amount: amount, // Lưu dưới dạng giá trị thực (ví dụ: 190.00)
-      payment_method: bankCode || "VNPAY",
-      transaction_id: null, // Chưa có transaction_id
-      payment_status: "PENDING",
-      payment_date: new Date(),
-      duration: duration,
-      orderId: orderId,
-      coupon_id: couponId,
-      notes: `VNPay Transaction: ${orderId}`,
+    // Log return request with full details
+    console.log("VNPay Return Request:", {
+      method: req.method,
+      orderId,
+      responseCode,
+      amount: vnp_Params["vnp_Amount"],
+      bankCode: vnp_Params["vnp_BankCode"],
+      transactionNo: vnp_Params["vnp_TransactionNo"],
+      allParams: vnp_Params,
     });
 
-    let locale = req.body.language || "vn";
-    let currCode = "VND";
-    let vnp_Params = {};
-    vnp_Params["vnp_Version"] = "2.1.0";
-    vnp_Params["vnp_Command"] = "pay";
-    vnp_Params["vnp_TmnCode"] = tmnCode;
-    vnp_Params["vnp_Locale"] = locale;
-    vnp_Params["vnp_CurrCode"] = currCode;
-    vnp_Params["vnp_TxnRef"] = orderId;
-    vnp_Params["vnp_OrderInfo"] = orderInfo;
-    vnp_Params["vnp_OrderType"] = "other";
-    vnp_Params["vnp_Amount"] = amount * 100; // Nhân 100 cho VNPay
-    vnp_Params["vnp_ReturnUrl"] = returnUrl;
-    vnp_Params["vnp_IpAddr"] = ipAddr;
-    vnp_Params["vnp_CreateDate"] = createDate;
-    if (bankCode) {
-      vnp_Params["vnp_BankCode"] = bankCode;
-    }
+    // Log return request
+    vnpayLogger.log("INFO", "VNPay return received", {
+      orderId,
+      responseCode,
+      amount: vnp_Params["vnp_Amount"],
+      bankCode: vnp_Params["vnp_BankCode"],
+      transactionNo: vnp_Params["vnp_TransactionNo"],
+    });
 
-    vnp_Params = sortObject(vnp_Params);
-
-    let signData = querystring.stringify(vnp_Params, { encode: false });
-    let hmac = crypto.createHmac("sha512", secretKey);
-    let signed = hmac.update(new Buffer(signData, "utf-8")).digest("hex");
-    vnp_Params["vnp_SecureHash"] = signed;
-    vnpUrl += "?" + querystring.stringify(vnp_Params, { encode: false });
-    sendCreateResponse(
-      res,
-      transformToCamelCase({ paymentUrl: vnpUrl }),
-      "Payment URL created successfully"
-    );
-  } catch (error) {
-    sendInternalErrorResponse(res, "Failed to create payment URL");
-  }
-});
-
-router.get("/vnpay_return", async function (req, res, next) {
-  try {
-    let vnp_Params = req.query;
-    let secureHash = vnp_Params["vnp_SecureHash"];
-    let orderId = vnp_Params["vnp_TxnRef"];
-
-    delete vnp_Params["vnp_SecureHash"];
-    delete vnp_Params["vnp_SecureHashType"];
-
-    vnp_Params = sortObject(vnp_Params);
-    let secretKey = process.env.VNP_HASHSECRET;
-    let signData = querystring.stringify(vnp_Params, { encode: false });
-    let hmac = crypto.createHmac("sha512", secretKey);
-    let signed = hmac.update(new Buffer(signData, "utf-8")).digest("hex");
-
-    let result = { code: "97" }; // Default to error
-
-    if (secureHash === signed) {
-      result = { code: vnp_Params["vnp_ResponseCode"] };
-    }
-
-    sendDetailResponse(res, transformToCamelCase(result));
-  } catch (error) {
-    sendInternalErrorResponse(res, "Server error");
-  }
-});
-
-router.get("/vnpay_ipn", async function (req, res, next) {
-  try {
-    let vnp_Params = req.query;
-    let secureHash = vnp_Params["vnp_SecureHash"];
-    let orderId = vnp_Params["vnp_TxnRef"];
-    let rspCode = vnp_Params["vnp_ResponseCode"];
-
-    // 2. Xác thực SecureHash
-    delete vnp_Params["vnp_SecureHash"];
-    delete vnp_Params["vnp_SecureHashType"];
-
-    vnp_Params = sortObject(vnp_Params);
-    let secretKey = process.env.VNP_HASHSECRET;
-    let signData = querystring.stringify(vnp_Params, { encode: false });
-    let hmac = crypto.createHmac("sha512", secretKey);
-    let signed = hmac.update(new Buffer(signData, "utf-8")).digest("hex");
-
-    if (secureHash !== signed) {
-      return sendErrorResponse(
-        res,
-        "Invalid Checksum",
-        "INVALID_CHECKSUM",
-        200
+    // Verify signature
+    if (!vnpayConfig.verifySignature({ ...vnp_Params })) {
+      vnpayLogger.logSecurityEvent("Invalid signature in return", {
+        orderId,
+        ip: req.ip,
+      });
+      return res.redirect(
+        `${process.env.FRONTEND_URL}/payment/failed?error=invalid_signature`
       );
     }
 
-    // 3. Kiểm tra checkOrderId (tìm orderId trong bảng Payment)
+    // Find payment record
     const order = await Payment.findOne({
       where: { orderId: orderId },
     });
 
     if (!order) {
+      vnpayLogger.logError("process_return", new Error("Order not found"), {
+        orderId,
+      });
+      return res.redirect(
+        `${process.env.FRONTEND_URL}/payment/failed?error=order_not_found`
+      );
+    }
+
+    // Parse order info to get userId and subscriptionId
+    const orderInfoParsed = vnpayConfig.parseOrderInfo(
+      vnp_Params["vnp_OrderInfo"]
+    );
+
+    if (!orderInfoParsed.isValid) {
+      vnpayLogger.logError("process_return", new Error("Invalid order info"), {
+        orderId,
+        orderInfo: vnp_Params["vnp_OrderInfo"],
+      });
+      return res.redirect(
+        `${process.env.FRONTEND_URL}/payment/failed?error=invalid_order_info`
+      );
+    }
+
+    const { userId, subscriptionId } = orderInfoParsed;
+
+    // Determine redirect URL based on response code
+    const frontendUrl = process.env.FRONTEND_URL || "http://localhost:3000";
+
+    if (responseCode === "00") {
+      // Payment successful - Process subscription update
+      try {
+        // Update payment record
+        const paymentDate = new Date(
+          vnp_Params["vnp_PayDate"].slice(0, 4), // Năm
+          vnp_Params["vnp_PayDate"].slice(4, 6) - 1, // Tháng (trừ 1)
+          vnp_Params["vnp_PayDate"].slice(6, 8), // Ngày
+          vnp_Params["vnp_PayDate"].slice(8, 10), // Giờ
+          vnp_Params["vnp_PayDate"].slice(10, 12), // Phút
+          vnp_Params["vnp_PayDate"].slice(12, 14) // Giây
+        );
+
+        await order.update({
+          transaction_id: vnp_Params["vnp_TransactionNo"],
+          payment_status: "SUCCESS",
+          payment_date: paymentDate,
+          notes: `VNPay Transaction: ${orderId}`,
+        });
+
+        // Update coupon usage if applicable
+        if (order.coupon_id) {
+          console.log(
+            `Processing coupon usage for coupon_id: ${order.coupon_id}`
+          );
+          const coupon = await Coupon.findByPk(order.coupon_id);
+          if (coupon) {
+            console.log(
+              `Coupon found: ${coupon.code}, current usage_count: ${coupon.usage_count}`
+            );
+            await coupon.increment("usage_count");
+            await coupon.reload(); // Reload để lấy giá trị mới
+            console.log(`Coupon usage_count updated to: ${coupon.usage_count}`);
+          } else {
+            console.log(`Coupon not found with id: ${order.coupon_id}`);
+          }
+        } else {
+          console.log(`No coupon_id found in order: ${orderId}`);
+        }
+
+        // Get subscription and user information
+        const subscription = await Subscription.findByPk(subscriptionId);
+        if (!subscription) {
+          throw new Error("Subscription not found");
+        }
+
+        const user = await User.findByPk(userId);
+        if (!user) {
+          throw new Error("User not found");
+        }
+
+        // Update user prompt count
+        user.count_promt += subscription.duration;
+        await user.save();
+
+        // Update or create UserSub
+        let userSub = await UserSub.findOne({
+          where: { user_id: userId },
+        });
+
+        const currentDate = new Date();
+
+        // Calculate end date based on billing cycle
+        let endDate;
+        switch (subscription.billing_cycle) {
+          case "monthly":
+            endDate = new Date(currentDate);
+            endDate.setDate(endDate.getDate() + 30);
+            break;
+          case "yearly":
+            endDate = new Date(currentDate);
+            endDate.setFullYear(endDate.getFullYear() + 1);
+            break;
+          case "token":
+          case "lifetime":
+            endDate = new Date(currentDate);
+            endDate.setFullYear(endDate.getFullYear() + 30);
+            break;
+          default:
+            endDate = new Date(currentDate);
+            endDate.setDate(endDate.getDate() + 30);
+        }
+
+        if (userSub) {
+          // If user has different subscription or expired subscription
+          if (
+            userSub.sub_id !== subscription.id ||
+            !userSub.end_date ||
+            userSub.end_date < currentDate
+          ) {
+            userSub.sub_id = subscription.id;
+            userSub.status = 1;
+            userSub.start_date = currentDate;
+            userSub.end_date = endDate;
+            userSub.token = subscription.duration || 0;
+            await userSub.save();
+          } else {
+            // Extend existing subscription
+            userSub.token += subscription.duration || 0;
+            await userSub.save();
+          }
+        } else {
+          // Create new UserSub
+          await UserSub.create({
+            user_id: userId,
+            sub_id: subscription.id,
+            status: 1,
+            start_date: currentDate,
+            end_date: endDate,
+            token: subscription.duration || 0,
+          });
+        }
+
+        // Log successful payment processing
+        vnpayLogger.logPaymentResult(orderId, "SUCCESS", {
+          userId,
+          subscriptionId,
+          amount: order.amount,
+          transactionId: vnp_Params["vnp_TransactionNo"],
+          subscriptionName: subscription.name_sub,
+        });
+
+        // Send Skool invite email
+        try {
+          const emailResult = await sendSkoolInviteEmail(
+            user.email,
+            user.full_name || user.email,
+            subscription.name_sub,
+            orderId
+          );
+
+          if (emailResult.success) {
+            vnpayLogger.log("INFO", "Skool invite email sent successfully", {
+              orderId,
+              userId,
+              email: user.email,
+              messageId: emailResult.messageId,
+            });
+          } else {
+            vnpayLogger.logError(
+              "send_skool_email",
+              new Error(emailResult.error),
+              {
+                orderId,
+                userId,
+                email: user.email,
+              }
+            );
+          }
+        } catch (emailError) {
+          vnpayLogger.logError("send_skool_email", emailError, {
+            orderId,
+            userId,
+            email: user.email,
+          });
+        }
+
+        // Handle response based on request method
+        if (req.method === "POST") {
+          // Return JSON response for POST requests (frontend callback)
+          return res.json({
+            success: true,
+            orderId,
+            amount: Math.round(vnp_Params["vnp_Amount"] / 100),
+            transactionNo: vnp_Params["vnp_TransactionNo"],
+            bankCode: vnp_Params["vnp_BankCode"] || "",
+            payDate: vnp_Params["vnp_PayDate"] || "",
+            subscriptionId,
+            subscriptionName: subscription.name_sub,
+            message: "Payment processed successfully",
+          });
+        } else {
+          // Redirect for GET requests (direct VNPay callback)
+          const redirectUrl =
+            `${frontendUrl}/payment/success?` +
+            `orderId=${orderId}&` +
+            `amount=${Math.round(vnp_Params["vnp_Amount"] / 100)}&` +
+            `transactionNo=${vnp_Params["vnp_TransactionNo"]}&` +
+            `bankCode=${vnp_Params["vnp_BankCode"] || ""}&` +
+            `payDate=${vnp_Params["vnp_PayDate"] || ""}&` +
+            `subscriptionId=${subscriptionId}&` +
+            `subscriptionName=${encodeURIComponent(subscription.name_sub)}`;
+
+          vnpayLogger.log("INFO", "Redirecting to success page", {
+            orderId,
+            redirectUrl,
+          });
+          return res.redirect(redirectUrl);
+        }
+      } catch (error) {
+        vnpayLogger.logError("process_successful_payment_return", error, {
+          orderId,
+          userId,
+          subscriptionId,
+        });
+
+        if (req.method === "POST") {
+          return res.json({
+            success: false,
+            error: "subscription_update_failed",
+            message: "Error processing payment",
+          });
+        } else {
+          return res.redirect(
+            `${frontendUrl}/payment/failed?error=subscription_update_failed`
+          );
+        }
+      }
+    } else {
+      // Payment failed
+      if (req.method === "POST") {
+        return res.json({
+          success: false,
+          orderId,
+          errorCode: responseCode,
+          message: getErrorMessage(responseCode),
+        });
+      } else {
+        const redirectUrl =
+          `${frontendUrl}/payment/failed?` +
+          `orderId=${orderId}&` +
+          `errorCode=${responseCode}&` +
+          `message=${getErrorMessage(responseCode)}`;
+
+        vnpayLogger.log("INFO", "Redirecting to failed page", {
+          orderId,
+          responseCode,
+          redirectUrl,
+        });
+        return res.redirect(redirectUrl);
+      }
+    }
+  } catch (error) {
+    vnpayLogger.logError("process_return", error, {
+      orderId: req.query.vnp_TxnRef || req.body.vnp_TxnRef,
+    });
+    const frontendUrl = process.env.FRONTEND_URL || "http://localhost:3000";
+
+    if (req.method === "POST") {
+      return res.json({
+        success: false,
+        error: "server_error",
+        message: "Server error processing payment",
+      });
+    } else {
+      return res.redirect(`${frontendUrl}/payment/failed?error=server_error`);
+    }
+  }
+});
+
+// Helper function to get error message
+function getErrorMessage(responseCode) {
+  const errorMessages = {
+    "07": "Trừ tiền thành công. Giao dịch bị nghi ngờ (liên quan tới lừa đảo, giao dịch bất thường).",
+    "09": "Giao dịch không thành công do: Thẻ/Tài khoản của khách hàng chưa đăng ký dịch vụ InternetBanking.",
+    10: "Xác thực thông tin thẻ/tài khoản không đúng quá 3 lần",
+    11: "Đã hết hạn chờ thanh toán. Xin vui lòng thực hiện lại giao dịch.",
+    12: "Giao dịch bị từ chối do thẻ/tài khoản của khách hàng bị khóa.",
+    24: "Khách hàng hủy giao dịch",
+    51: "Tài khoản không đủ số dư để thực hiện giao dịch.",
+    65: "Tài khoản đã vượt quá hạn mức giao dịch trong ngày.",
+    75: "Ngân hàng thanh toán đang bảo trì.",
+    79: "Nhập sai mật khẩu thanh toán quá số lần quy định.",
+    99: "Lỗi không xác định",
+  };
+
+  return errorMessages[responseCode] || "Giao dịch không thành công";
+}
+
+router.get("/vnpay_ipn", validateIPNIP, async function (req, res, next) {
+  try {
+    const vnp_Params = req.query;
+    const orderId = vnp_Params["vnp_TxnRef"];
+    const rspCode = vnp_Params["vnp_ResponseCode"];
+
+    // Log incoming IPN request
+    vnpayLogger.logIPNRequest(vnp_Params, orderId, rspCode);
+
+    // Verify signature using VNPay config
+    if (!vnpayConfig.verifySignature(vnp_Params)) {
+      vnpayLogger.logSecurityEvent("Invalid signature", {
+        orderId,
+        ip: req.ip,
+      });
+      return res.status(200).json({
+        RspCode: "97",
+        Message: "Invalid Checksum",
+        TerminalId: null,
+        OrderId: null,
+        Localdate: null,
+        Signature: null,
+      });
+    }
+
+    // Find order in database
+    const order = await Payment.findOne({
+      where: { orderId: orderId },
+    });
+
+    if (!order) {
+      console.error(`Order not found: ${orderId}`);
       return res.status(200).json({
         RspCode: "01",
         Message: "Order Not Found",
@@ -521,11 +964,15 @@ router.get("/vnpay_ipn", async function (req, res, next) {
         Signature: null,
       });
     }
-    // 4. Kiểm tra checkAmount (so sánh vnp_Amount với số tiền trong Payment)
-    const vnpAmount = parseInt(vnp_Params["vnp_Amount"]) / 100; // Chia 100 để lấy giá trị thực
-    let checkAmount = Math.abs(order.amount - vnpAmount) < 0.01; // So sánh với độ chính xác 0.01
+
+    // Check amount
+    const vnpAmount = parseInt(vnp_Params["vnp_Amount"]) / 100;
+    const checkAmount = Math.abs(order.amount - vnpAmount) < 0.01;
 
     if (!checkAmount) {
+      console.error(
+        `Amount mismatch for order ${orderId}. Expected: ${order.amount}, Received: ${vnpAmount}`
+      );
       return res.status(200).json({
         RspCode: "04",
         Message: "Invalid amount",
@@ -535,23 +982,16 @@ router.get("/vnpay_ipn", async function (req, res, next) {
         Signature: null,
       });
     }
-    // 1. Kiểm tra xem giao dịch đã được xử lý chưa (dựa vào transaction_id trong bảng Payment)
+
+    // Check if transaction already processed
     const existingPayment = await Payment.findOne({
       where: { transaction_id: vnp_Params["vnp_TransactionNo"] },
     });
 
     if (existingPayment) {
-      return res.status(200).json({
-        RspCode: "02",
-        Message: "This order has been updated to the payment status",
-        TerminalId: null,
-        OrderId: null,
-        Localdate: null,
-        Signature: null,
-      });
-    }
-    // 5. Kiểm tra paymentStatus (dựa trên trạng thái trong Payment)
-    if (order.payment_status !== "PENDING") {
+      console.log(
+        `Transaction already processed: ${vnp_Params["vnp_TransactionNo"]}`
+      );
       return res.status(200).json({
         RspCode: "02",
         Message: "This order has been updated to the payment status",
@@ -562,9 +1002,29 @@ router.get("/vnpay_ipn", async function (req, res, next) {
       });
     }
 
-    // // 6. Trích xuất user_id và subscription_id từ vnp_OrderInfo
-    const orderInfo = vnp_Params["vnp_OrderInfo"];
-    if (!orderInfo || orderInfo === "undefined" || !orderInfo.includes("-")) {
+    // Check payment status
+    if (order.payment_status !== "PENDING") {
+      console.log(
+        `Order ${orderId} already processed with status: ${order.payment_status}`
+      );
+      return res.status(200).json({
+        RspCode: "02",
+        Message: "This order has been updated to the payment status",
+        TerminalId: null,
+        OrderId: null,
+        Localdate: null,
+        Signature: null,
+      });
+    }
+
+    // Parse order info
+    const orderInfoParsed = vnpayConfig.parseOrderInfo(
+      vnp_Params["vnp_OrderInfo"]
+    );
+    if (!orderInfoParsed.isValid) {
+      console.error(
+        `Invalid order info for order ${orderId}: ${vnp_Params["vnp_OrderInfo"]}`
+      );
       return res.status(200).json({
         RspCode: "99",
         Message: "Invalid vnp_OrderInfo format",
@@ -574,20 +1034,12 @@ router.get("/vnpay_ipn", async function (req, res, next) {
         Signature: null,
       });
     }
-    const [userId, subscriptionId] = orderInfo.split("-").map(Number);
-    if (!userId || !subscriptionId) {
-      return res.status(200).json({
-        RspCode: "99",
-        Message: "Invalid user_id or subscription_id",
-        TerminalId: null,
-        OrderId: null,
-        Localdate: null,
-        Signature: null,
-      });
-    }
 
-    // 7. Kiểm tra tính hợp lệ của user_id và subscription_id (so với Payment)
+    const { userId, subscriptionId } = orderInfoParsed;
+
+    // Verify order info matches database
     if (order.user_id !== userId || order.subscription_id !== subscriptionId) {
+      console.error(`Order info mismatch for order ${orderId}`);
       return res.status(200).json({
         RspCode: "99",
         Message: "Invalid user_id or subscription_id in vnp_OrderInfo",
@@ -598,7 +1050,7 @@ router.get("/vnpay_ipn", async function (req, res, next) {
       });
     }
 
-    // 8. Cập nhật thông tin giao dịch trong bảng Payment
+    // Update payment record
     const paymentDate = new Date(
       vnp_Params["vnp_PayDate"].slice(0, 4), // Năm
       vnp_Params["vnp_PayDate"].slice(4, 6) - 1, // Tháng (trừ 1)
@@ -616,107 +1068,196 @@ router.get("/vnpay_ipn", async function (req, res, next) {
         notes: `VNPay Transaction: ${orderId}`,
       });
       await order.save();
-    } catch (error) {}
+      console.log(`Payment record updated for order ${orderId}`);
+    } catch (error) {
+      console.error(
+        `Error updating payment record for order ${orderId}:`,
+        error
+      );
+    }
 
-    // 9. Cập nhật User và UserSub nếu giao dịch thành công
+    // Process successful payment
     if (rspCode === "00") {
-      // Tăng usage_count của coupon nếu có
-      if (order.coupon_id) {
-        const coupon = await Coupon.findByPk(order.coupon_id);
-        if (coupon) {
-          await coupon.increment("usage_count");
-        }
-      }
-
-      // Lấy thông tin subscription từ DB để có duration gốc
-      const subscription = await Subscription.findByPk(subscriptionId);
-      if (!subscription) {
-        throw new Error("Subscription not found");
-      }
-
-      // Lấy thông tin user
-      const user = await User.findByPk(userId);
-      if (!user) {
-        throw new Error("User not found");
-      }
-
-      // ✅ Update count_promt trong bảng users
-      user.count_promt += subscription.duration;
-      await user.save();
-
-      // ✅ Update/Create sub_id trong bảng usersubs
-      let userSub = await UserSub.findOne({
-        where: { user_id: userId },
-      });
-
-      const currentDate = new Date();
-
-      // ✅ Tính toán end_date dựa trên billing_cycle
-      let endDate;
-      switch (subscription.billing_cycle) {
-        case "monthly":
-          endDate = new Date(currentDate);
-          endDate.setDate(endDate.getDate() + 30); // +30 ngày
-          break;
-        case "yearly":
-          endDate = new Date(currentDate);
-          endDate.setFullYear(endDate.getFullYear() + 1); // +1 năm
-          break;
-        case "token":
-        case "lifetime":
-          endDate = new Date(currentDate);
-          endDate.setFullYear(endDate.getFullYear() + 30); // +30 năm
-          break;
-        default:
-          endDate = new Date(currentDate);
-          endDate.setDate(endDate.getDate() + 30); // Mặc định +30 ngày
-      }
-
-      // ✅ Cập nhật/Create UserSub cho tất cả subscription types
-      if (userSub) {
-        // Nếu đang FREE hoặc gói khác hoặc đã hết hạn
-        if (
-          userSub.sub_id !== subscription.id ||
-          !userSub.end_date ||
-          userSub.end_date < currentDate
-        ) {
-          // CASE 1: Free hoặc subscription đã hết hạn
-          userSub.sub_id = subscription.id;
-          userSub.status = 1;
-          userSub.start_date = currentDate;
-          userSub.end_date = endDate;
-          userSub.token = subscription.duration || 0;
-          await userSub.save();
+      try {
+        // Update coupon usage if applicable
+        if (order.coupon_id) {
+          console.log(
+            `Processing coupon usage for coupon_id: ${order.coupon_id}`
+          );
+          const coupon = await Coupon.findByPk(order.coupon_id);
+          if (coupon) {
+            console.log(
+              `Coupon found: ${coupon.code}, current usage_count: ${coupon.usage_count}`
+            );
+            await coupon.increment("usage_count");
+            await coupon.reload(); // Reload để lấy giá trị mới
+            console.log(`Coupon usage_count updated to: ${coupon.usage_count}`);
+          } else {
+            console.log(`Coupon not found with id: ${order.coupon_id}`);
+          }
         } else {
-          // CASE 2: Subscription còn hạn - không gia hạn, chỉ cập nhật token
-          userSub.token += subscription.duration || 0;
-          await userSub.save();
+          console.log(`No coupon_id found in order: ${orderId}`);
         }
-      } else {
-        // Nếu chưa có thì tạo mới
-        const newUserSub = await UserSub.create({
-          user_id: userId,
-          sub_id: subscription.id,
-          status: 1,
-          start_date: currentDate,
-          end_date: endDate,
-          token: subscription.duration || 0,
+
+        // Get subscription and user information
+        const subscription = await Subscription.findByPk(subscriptionId);
+        if (!subscription) {
+          throw new Error("Subscription not found");
+        }
+
+        const user = await User.findByPk(userId);
+        if (!user) {
+          throw new Error("User not found");
+        }
+
+        // Update user prompt count
+        user.count_promt += subscription.duration;
+        await user.save();
+        console.log(
+          `User ${userId} prompt count updated: +${subscription.duration}`
+        );
+
+        // Update or create UserSub
+        let userSub = await UserSub.findOne({
+          where: { user_id: userId },
+        });
+
+        const currentDate = new Date();
+
+        // Calculate end date based on billing cycle
+        let endDate;
+        switch (subscription.billing_cycle) {
+          case "monthly":
+            endDate = new Date(currentDate);
+            endDate.setDate(endDate.getDate() + 30);
+            break;
+          case "yearly":
+            endDate = new Date(currentDate);
+            endDate.setFullYear(endDate.getFullYear() + 1);
+            break;
+          case "token":
+          case "lifetime":
+            endDate = new Date(currentDate);
+            endDate.setFullYear(endDate.getFullYear() + 30);
+            break;
+          default:
+            endDate = new Date(currentDate);
+            endDate.setDate(endDate.getDate() + 30);
+        }
+
+        if (userSub) {
+          // If user has different subscription or expired subscription
+          if (
+            userSub.sub_id !== subscription.id ||
+            !userSub.end_date ||
+            userSub.end_date < currentDate
+          ) {
+            userSub.sub_id = subscription.id;
+            userSub.status = 1;
+            userSub.start_date = currentDate;
+            userSub.end_date = endDate;
+            userSub.token = subscription.duration || 0;
+            await userSub.save();
+            console.log(
+              `UserSub updated for user ${userId} with new subscription`
+            );
+          } else {
+            // Extend existing subscription
+            userSub.token += subscription.duration || 0;
+            await userSub.save();
+            console.log(`UserSub token extended for user ${userId}`);
+          }
+        } else {
+          // Create new UserSub
+          await UserSub.create({
+            user_id: userId,
+            sub_id: subscription.id,
+            status: 1,
+            start_date: currentDate,
+            end_date: endDate,
+            token: subscription.duration || 0,
+          });
+          console.log(`New UserSub created for user ${userId}`);
+        }
+
+        // Track conversion if applicable
+        if (order.click_uuid && order.offer_id) {
+          await trackPermate(order, vnp_Params["vnp_TxnRef"]);
+        }
+
+        // Log successful payment processing
+        vnpayLogger.logPaymentResult(orderId, "SUCCESS", {
+          userId,
+          subscriptionId,
+          amount: order.amount,
+          transactionId: vnp_Params["vnp_TransactionNo"],
+          subscriptionName: subscription.name_sub,
+        });
+
+        // Send Skool invite email
+        try {
+          const emailResult = await sendSkoolInviteEmail(
+            user.email,
+            user.full_name || user.email,
+            subscription.name_sub,
+            orderId
+          );
+
+          if (emailResult.success) {
+            vnpayLogger.log("INFO", "Skool invite email sent successfully", {
+              orderId,
+              userId,
+              email: user.email,
+              messageId: emailResult.messageId,
+            });
+          } else {
+            vnpayLogger.logError(
+              "send_skool_email",
+              new Error(emailResult.error),
+              {
+                orderId,
+                userId,
+                email: user.email,
+              }
+            );
+          }
+        } catch (emailError) {
+          vnpayLogger.logError("send_skool_email", emailError, {
+            orderId,
+            userId,
+            email: user.email,
+          });
+        }
+
+        return res.status(200).json({
+          RspCode: "00",
+          Message: `${subscription.name_sub} activated successfully`,
+          OrderId: orderId,
+          Localdate: moment().format("YYYYMMDDHHmmss"),
+          Signature: null,
+        });
+      } catch (error) {
+        vnpayLogger.logError("process_successful_payment", error, {
+          orderId,
+          userId,
+          subscriptionId,
+        });
+        return res.status(200).json({
+          RspCode: "99",
+          Message: "Error processing payment",
+          TerminalId: null,
+          OrderId: null,
+          Localdate: null,
+          Signature: null,
         });
       }
-
-      // Tracking nếu có
-      if (order.click_uuid && order.offer_id) {
-        await trackPermate(order, vnp_Params["vnp_TxnRef"]);
-      }
-
-      return res.status(200).json({
-        RspCode: "00",
-        Message: `${subscription.name_sub} activated successfully`,
-        OrderId: orderId,
-        Localdate: moment().format("YYYYMMDDHHmmss"),
-        Signature: null,
-      });
     } else {
+      vnpayLogger.logPaymentResult(orderId, "FAILED", {
+        userId,
+        subscriptionId,
+        amount: order.amount,
+        responseCode: rspCode,
+      });
       return res.status(200).json({
         RspCode: "00",
         Message: "Success",
@@ -727,6 +1268,10 @@ router.get("/vnpay_ipn", async function (req, res, next) {
       });
     }
   } catch (error) {
+    vnpayLogger.logError("process_ipn", error, {
+      orderId: req.query.vnp_TxnRef,
+      responseCode: req.query.vnp_ResponseCode,
+    });
     return res.status(200).json({
       RspCode: "99",
       Message: "Server error",
@@ -741,167 +1286,142 @@ router.get("/vnpay_ipn", async function (req, res, next) {
 router.post("/querydr", async function (req, res, next) {
   try {
     process.env.TZ = "Asia/Ho_Chi_Minh";
-    let date = new Date();
 
-    let vnp_TxnRef = req.body.orderId;
-    let vnp_TransactionDate = req.body.transDate;
+    const { orderId, transDate } = req.body;
 
-    let vnp_TmnCode = process.env.VNP_TMNCODE;
-    let secretKey = process.env.VNP_HASHSECRET;
-    let vnp_Api = process.env.VNP_API;
+    if (!orderId || !transDate) {
+      return sendErrorResponse(
+        res,
+        "orderId and transDate are required",
+        "VALIDATION_ERROR",
+        400
+      );
+    }
 
-    let vnp_RequestId = moment(date).format("HHmmss");
-    let vnp_Version = "2.1.0";
-    let vnp_Command = "querydr";
-    let vnp_OrderInfo = "Truy van GD ma:" + vnp_TxnRef;
+    const ipAddr = vnpayConfig.getClientIP(req);
 
-    let vnp_IpAddr =
-      req.headers["x-forwarded-for"] ||
-      req.connection.remoteAddress ||
-      req.socket.remoteAddress ||
-      req.connection.socket.remoteAddress;
-
-    let vnp_CreateDate = moment(date).format("YYYYMMDDHHmmss");
-
-    let data =
-      vnp_RequestId +
-      "|" +
-      vnp_Version +
-      "|" +
-      vnp_Command +
-      "|" +
-      vnp_TmnCode +
-      "|" +
-      vnp_TxnRef +
-      "|" +
-      vnp_TransactionDate +
-      "|" +
-      vnp_CreateDate +
-      "|" +
-      vnp_IpAddr +
-      "|" +
-      vnp_OrderInfo;
-
-    let hmac = crypto.createHmac("sha512", secretKey);
-    let vnp_SecureHash = hmac
-      .update(new Buffer.from(data, "utf-8"))
-      .digest("hex");
-
-    let dataObj = {
-      vnp_RequestId: vnp_RequestId,
-      vnp_Version: vnp_Version,
-      vnp_Command: vnp_Command,
-      vnp_TmnCode: vnp_TmnCode,
-      vnp_TxnRef: vnp_TxnRef,
-      vnp_OrderInfo: vnp_OrderInfo,
-      vnp_TransactionDate: vnp_TransactionDate,
-      vnp_CreateDate: vnp_CreateDate,
-      vnp_IpAddr: vnp_IpAddr,
-      vnp_SecureHash: vnp_SecureHash,
-    };
-
-    let result = await request({
-      url: vnp_Api,
-      method: "POST",
-      json: true,
-      body: dataObj,
+    // Create query data using VNPay config
+    const queryData = vnpayConfig.createQueryData({
+      orderId,
+      transDate,
+      ipAddr,
     });
 
+    console.log(`Querying transaction ${orderId} for date ${transDate}`);
+
+    const result = await request({
+      url: vnpayConfig.apiUrl,
+      method: "POST",
+      json: true,
+      body: queryData,
+    });
+
+    vnpayLogger.logQueryTransaction(orderId, transDate, result);
     sendDetailResponse(res, result);
   } catch (error) {
-    sendInternalErrorResponse(res, "Failed to query transaction");
+    vnpayLogger.logError("query_transaction", error, {
+      orderId: req.body.orderId,
+      transDate: req.body.transDate,
+    });
+    sendInternalErrorResponse(
+      res,
+      "Failed to query transaction: " + error.message
+    );
   }
 });
 
 router.post("/refund", async function (req, res, next) {
   try {
     process.env.TZ = "Asia/Ho_Chi_Minh";
-    let date = new Date();
 
-    let vnp_TmnCode = process.env.VNP_TMNCODE;
-    let secretKey = process.env.VNP_HASHSECRET;
-    let vnp_Api = process.env.VNP_API;
+    const { orderId, transDate, amount, transType, user } = req.body;
 
-    let vnp_TxnRef = req.body.orderId;
-    let vnp_TransactionDate = req.body.transDate;
-    let vnp_Amount = req.body.amount * 100;
-    let vnp_TransactionType = req.body.transType;
-    let vnp_CreateBy = req.body.user;
+    if (!orderId || !transDate || !amount || !transType || !user) {
+      return sendErrorResponse(
+        res,
+        "orderId, transDate, amount, transType, and user are required",
+        "VALIDATION_ERROR",
+        400
+      );
+    }
 
-    let vnp_RequestId = moment(date).format("HHmmss");
-    let vnp_Version = "2.1.0";
-    let vnp_Command = "refund";
-    let vnp_OrderInfo = "Hoan tien GD ma:" + vnp_TxnRef;
+    const ipAddr = vnpayConfig.getClientIP(req);
 
-    let vnp_IpAddr =
-      req.headers["x-forwarded-for"] ||
-      req.connection.remoteAddress ||
-      req.socket.remoteAddress ||
-      req.connection.socket.remoteAddress;
-
-    let vnp_CreateDate = moment(date).format("YYYYMMDDHHmmss");
-    let vnp_TransactionNo = "0";
-
-    let data =
-      vnp_RequestId +
-      "|" +
-      vnp_Version +
-      "|" +
-      vnp_Command +
-      "|" +
-      vnp_TmnCode +
-      "|" +
-      vnp_TransactionType +
-      "|" +
-      vnp_TxnRef +
-      "|" +
-      vnp_Amount +
-      "|" +
-      vnp_TransactionNo +
-      "|" +
-      vnp_TransactionDate +
-      "|" +
-      vnp_CreateBy +
-      "|" +
-      vnp_CreateDate +
-      "|" +
-      vnp_IpAddr +
-      "|" +
-      vnp_OrderInfo;
-    let hmac = crypto.createHmac("sha512", secretKey);
-    let vnp_SecureHash = hmac
-      .update(new Buffer.from(data, "utf-8"))
-      .digest("hex");
-
-    let dataObj = {
-      vnp_RequestId: vnp_RequestId,
-      vnp_Version: vnp_Version,
-      vnp_Command: vnp_Command,
-      vnp_TmnCode: vnp_TmnCode,
-      vnp_TransactionType: vnp_TransactionType,
-      vnp_TxnRef: vnp_TxnRef,
-      vnp_Amount: vnp_Amount,
-      vnp_TransactionNo: vnp_TransactionNo,
-      vnp_CreateBy: vnp_CreateBy,
-      vnp_OrderInfo: vnp_OrderInfo,
-      vnp_TransactionDate: vnp_TransactionDate,
-      vnp_CreateDate: vnp_CreateDate,
-      vnp_IpAddr: vnp_IpAddr,
-      vnp_SecureHash: vnp_SecureHash,
-    };
-
-    let result = await request({
-      url: vnp_Api,
-      method: "POST",
-      json: true,
-      body: dataObj,
+    // Create refund data using VNPay config
+    const refundData = vnpayConfig.createRefundData({
+      orderId,
+      transDate,
+      amount: parseFloat(amount),
+      transType,
+      user,
+      ipAddr,
     });
 
+    console.log(`Processing refund for order ${orderId}, amount: ${amount}`);
+
+    const result = await request({
+      url: vnpayConfig.apiUrl,
+      method: "POST",
+      json: true,
+      body: refundData,
+    });
+
+    vnpayLogger.logRefundRequest(orderId, amount, user, result);
     sendDetailResponse(res, result);
   } catch (error) {
-    sendInternalErrorResponse(res, "Failed to process refund");
+    vnpayLogger.logError("process_refund", error, {
+      orderId: req.body.orderId,
+      amount: req.body.amount,
+      user: req.body.user,
+    });
+    sendInternalErrorResponse(
+      res,
+      "Failed to process refund: " + error.message
+    );
   }
 });
+
+// GET /api/payment/logs/stats - Get VNPay log statistics
+router.get("/logs/stats", async (req, res) => {
+  try {
+    const { startDate, endDate } = req.query;
+
+    const start =
+      startDate || moment().subtract(7, "days").format("YYYY-MM-DD");
+    const end = endDate || moment().format("YYYY-MM-DD");
+
+    const stats = vnpayLogger.getLogStatistics(start, end);
+
+    sendDetailResponse(res, {
+      period: { start, end },
+      statistics: stats,
+    });
+  } catch (error) {
+    vnpayLogger.logError("get_log_stats", error);
+    sendInternalErrorResponse(
+      res,
+      "Failed to get log statistics: " + error.message
+    );
+  }
+});
+
+// POST /api/payment/logs/clean - Clean old log files
+router.post("/logs/clean", async (req, res) => {
+  try {
+    const { daysToKeep = 30 } = req.body;
+
+    vnpayLogger.cleanOldLogs(daysToKeep);
+
+    sendDetailResponse(res, {
+      message: `Cleaned logs older than ${daysToKeep} days`,
+      daysToKeep,
+    });
+  } catch (error) {
+    vnpayLogger.logError("clean_logs", error);
+    sendInternalErrorResponse(res, "Failed to clean logs: " + error.message);
+  }
+});
+
 // GET /api/payment/filter
 router.get("/filter", async (req, res) => {
   try {
@@ -1341,22 +1861,6 @@ router.get("/export", async (req, res) => {
   }
 });
 
-function sortObject(obj) {
-  let sorted = {};
-  let str = [];
-  let key;
-  for (key in obj) {
-    if (obj.hasOwnProperty(key)) {
-      str.push(encodeURIComponent(key));
-    }
-  }
-  str.sort();
-  for (key = 0; key < str.length; key++) {
-    sorted[str[key]] = encodeURIComponent(obj[str[key]]).replace(/%20/g, "+");
-  }
-  return sorted;
-}
-
 async function trackPermate(order, vnpTxnRef) {
   if (!order.click_uuid || !order.offer_id) return;
   try {
@@ -1380,7 +1884,9 @@ async function trackPermate(order, vnpTxnRef) {
         },
       }
     );
-  } catch (error) {}
+  } catch (error) {
+    console.error("Error tracking conversion:", error);
+  }
 }
 
 module.exports = router;
