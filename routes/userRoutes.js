@@ -759,14 +759,12 @@ router.get("/me", authMiddleware, async (req, res) => {
     if (!user) return sendNotFoundResponse(res, "User not found");
 
     const userSubs = await user.getUserSubs({
+      where: { status: 1 }, // ✅ Chỉ lấy active subscriptions để nhất quán với List API
       include: [Subscription],
+      order: [["id", "DESC"]], // ✅ Sắp xếp theo ID giảm dần (mới nhất trước)
     });
 
-    const sortedUserSubs = userSubs.sort((a, b) => {
-      const typeA = a.Subscription?.type || 0;
-      const typeB = b.Subscription?.type || 0;
-      return typeB - typeA;
-    });
+    const sortedUserSubs = userSubs; // ✅ Không cần sort thêm vì đã order trong query
 
     // ✅ Lấy permissions từ role
     let permissions = [];
@@ -860,14 +858,12 @@ router.get("/:id", async (req, res) => {
     if (!user) return sendNotFoundResponse(res, "User not found");
 
     const userSubs = await user.getUserSubs({
+      where: { status: 1 }, // ✅ Chỉ lấy active subscriptions để nhất quán với List API
       include: [Subscription],
+      order: [["id", "DESC"]], // ✅ Sắp xếp theo ID giảm dần (mới nhất trước)
     });
 
-    const sortedUserSubs = userSubs.sort((a, b) => {
-      const typeA = a.Subscription?.type || 0;
-      const typeB = b.Subscription?.type || 0;
-      return typeB - typeA;
-    });
+    const sortedUserSubs = userSubs; // ✅ Không cần sort thêm vì đã order trong query
 
     // ✅ Lấy permissions từ role
     let permissions = [];
