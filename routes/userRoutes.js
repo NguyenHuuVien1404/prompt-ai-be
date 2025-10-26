@@ -957,15 +957,11 @@ router.put("/:id", async (req, res) => {
       return sendNotFoundResponse(res, "User not found");
     }
 
-    console.log(`Updating user ${req.params.id} with data:`, req.body);
-
     // Extract userSub data from request body BEFORE transformation
     const { userSub, ...userData } = req.body;
 
     // Transform userData to snake_case for database operations
     const transformedUserData = transformToSnakeCase(userData);
-
-    console.log(`Transformed user data:`, transformedUserData);
 
     // Update user information (exclude userSub data)
     // Force update with individual field - try Object.entries approach
@@ -980,23 +976,13 @@ router.put("/:id", async (req, res) => {
     if (countPromptValue !== undefined) {
       user.count_promt = countPromptValue;
       await user.save({ transaction });
-      console.log(`Updated user count_promt to: ${countPromptValue}`);
     } else {
       await user.update(transformedUserData, { transaction });
-      console.log(`Updated user with transformed data`);
     }
 
     // Update subscription if userSub data is provided
     if (userSub) {
       const { subscriptionId, startDate, endDate, token, status } = userSub;
-
-      console.log(`Updating userSub for user ${req.params.id}:`, {
-        subscriptionId,
-        startDate,
-        endDate,
-        token,
-        status,
-      });
 
       // Find ANY user subscription (not just active ones)
       const existingUserSub = await UserSub.findOne({
@@ -1004,20 +990,6 @@ router.put("/:id", async (req, res) => {
         order: [["id", "DESC"]], // Get the most recent one by ID
         transaction,
       });
-
-      console.log(
-        `Found existingUserSub:`,
-        existingUserSub
-          ? {
-              id: existingUserSub.id,
-              sub_id: existingUserSub.sub_id,
-              status: existingUserSub.status,
-              start_date: existingUserSub.start_date,
-              end_date: existingUserSub.end_date,
-              token: existingUserSub.token,
-            }
-          : "None"
-      );
 
       if (existingUserSub) {
         // Update existing subscription
@@ -1029,11 +1001,17 @@ router.put("/:id", async (req, res) => {
           status: status !== undefined ? status : existingUserSub.status,
         };
 
-        console.log(`Updating existing subscription with data:`, updateData);
-
         await existingUserSub.update(updateData, { transaction });
-        console.log(`Successfully updated existing subscription`);
       } else if (subscriptionId) {
+        // Vô hiệu hóa tất cả subscription cũ trước khi tạo mới
+        await UserSub.update(
+          { status: 0 }, // 0 = inactive
+          {
+            where: { user_id: req.params.id, status: 1 },
+            transaction,
+          }
+        );
+
         // Create new subscription if none exists
         const createData = {
           user_id: req.params.id,
@@ -1044,20 +1022,26 @@ router.put("/:id", async (req, res) => {
           token: token || 0,
         };
 
-        console.log(`Creating new subscription with data:`, createData);
-
         await UserSub.create(createData, { transaction });
-        console.log(`Successfully created new subscription`);
       } else {
-        console.log(`No subscriptionId provided, skipping subscription update`);
       }
     }
 
     // Handle legacy subId or sub_id for backward compatibility
     const subId = req.body.subId || req.body.sub_id;
     if (subId && !userSub) {
+      // Vô hiệu hóa tất cả subscription cũ trước khi cập nhật
+      await UserSub.update(
+        { status: 0 }, // 0 = inactive
+        {
+          where: { user_id: req.params.id, status: 1 },
+          transaction,
+        }
+      );
+
       const legacyUserSub = await UserSub.findOne({
-        where: { user_id: req.params.id, status: 1 },
+        where: { user_id: req.params.id, status: 0 }, // Tìm subscription đã inactive
+        order: [["id", "DESC"]], // Lấy subscription mới nhất
         transaction,
       });
 
@@ -1065,6 +1049,7 @@ router.put("/:id", async (req, res) => {
         await legacyUserSub.update(
           {
             sub_id: subId,
+            status: 1, // Kích hoạt lại
           },
           { transaction }
         );
@@ -1085,7 +1070,6 @@ router.put("/:id", async (req, res) => {
 
     // Commit transaction
     await transaction.commit();
-    console.log(`Transaction committed successfully for user ${req.params.id}`);
 
     // Get updated user with subscription
     const updatedUser = await User.findByPk(req.params.id, {
@@ -2499,8 +2483,6 @@ router.post(
               otpExpiresAt: otpExpiresAt,
               currentRole: existingUser.role,
             });
-
-            console.log(`Updated user: ${email}`);
           } else {
             // Tạo user mới
             const newUser = await User.create({
@@ -2537,8 +2519,6 @@ router.post(
               joinedDate: joinedDate,
               otpExpiresAt: otpExpiresAt,
             });
-
-            console.log(`Created new user: ${email}`);
           }
         } catch (error) {
           console.error(`Error processing row ${rowNumber}:`, error);
@@ -2707,11 +2687,6 @@ router.post(
                     end_date: endDate,
                     // Giữ nguyên token hiện tại cho user cũ
                   });
-                  console.log(
-                    `Updated existing user to Premium subscription: ${email} (Subscription: ${
-                      premiumSub.name_sub
-                    }, End Date: ${endDate.toISOString()})`
-                  );
                 } else {
                   console.error(
                     `Premium subscription not found for existing user: ${email}`
@@ -2737,12 +2712,6 @@ router.post(
                     end_date: endDate,
                     token: 0, // User cũ không thêm token
                   });
-
-                  console.log(
-                    `Created Premium subscription for existing user: ${email} (Subscription: ${
-                      premiumSub.name_sub
-                    }, End Date: ${endDate.toISOString()})`
-                  );
                 } else {
                   console.error(
                     `Premium subscription not found for existing user: ${email}`
@@ -2753,8 +2722,6 @@ router.post(
               console.error(`Update error for ${email}:`, updateError);
               throw updateError;
             }
-
-            console.log(`Updated user: ${email}`);
           } else {
             // Tính countPrompt từ subscription trước khi tạo user
             let countPrompt = 15; // Default fallback
@@ -2770,9 +2737,6 @@ router.post(
               if (premiumSub) {
                 countPrompt =
                   premiumSub.duration > 0 ? premiumSub.duration : 15;
-                console.log(
-                  `Premium subscription found: ${premiumSub.name_sub} (Duration: ${premiumSub.duration} days, CountPrompt: ${countPrompt})`
-                );
               } else {
                 // Fallback Free subscription
                 const freeSub = await Subscription.findOne({
@@ -2782,9 +2746,6 @@ router.post(
 
                 if (freeSub) {
                   countPrompt = freeSub.duration > 0 ? freeSub.duration : 15;
-                  console.log(
-                    `Free subscription fallback: ${freeSub.name_sub} (CountPrompt: ${countPrompt})`
-                  );
                 }
               }
             } catch (subscriptionError) {
@@ -2805,10 +2766,6 @@ router.post(
               count_promt: countPrompt, // Sử dụng countPrompt từ subscription
               otp_expires_at: otpExpiresAt,
             });
-
-            console.log(
-              `Created new user: ${email} (ID: ${newUser.id}, CountPrompt: ${countPrompt})`
-            );
 
             // Tạo subscription cho user mới với end_date = joinedDate + 1 tháng
             try {
@@ -2831,12 +2788,6 @@ router.post(
                   end_date: endDate,
                   token: 1000, // Premium có 1000 token
                 });
-
-                console.log(
-                  `Created Premium subscription for new user: ${email} (Subscription: ${
-                    premiumSub.name_sub
-                  }, CountPrompt: ${countPrompt}, End Date: ${endDate.toISOString()})`
-                );
               } else {
                 // Fallback: Tạo Free subscription nếu không tìm thấy Premium
                 const freeSub = await Subscription.findOne({
@@ -2857,12 +2808,6 @@ router.post(
                     end_date: endDate,
                     token: 0, // Free không có token
                   });
-
-                  console.log(
-                    `Created Free subscription for new user (Premium not found): ${email} (Subscription: ${
-                      freeSub.name_sub
-                    }, CountPrompt: ${countPrompt}, End Date: ${endDate.toISOString()})`
-                  );
                 } else {
                   console.error(`No subscription found for new user: ${email}`);
                   errors.push({
@@ -2931,11 +2876,6 @@ router.post(
         freeSubscriptionsCreated: 0,
       };
 
-      // Đếm số lượng user mới và cũ từ logs (có thể cải thiện bằng cách track trong loop)
-      console.log(
-        `Import completed - Total: ${stats.totalProcessed}, Success: ${stats.successCount}, Errors: ${stats.errorCount}`
-      );
-
       sendDetailResponse(
         res,
         {
@@ -2944,6 +2884,160 @@ router.post(
           errorReportPath: errorReportPath,
         },
         "Import hoàn thành"
+      );
+    } catch (error) {
+      sendInternalErrorResponse(res, error.message);
+    }
+  }
+);
+
+// API để fix user có nhiều subscription active
+router.post(
+  "/fix-duplicate-subscriptions",
+  authMiddleware,
+  adminMiddleware,
+  async (req, res) => {
+    try {
+      const { userId } = req.body;
+
+      if (!userId) {
+        return sendErrorResponse(
+          res,
+          "User ID is required",
+          "MISSING_USER_ID",
+          400
+        );
+      }
+
+      // Tìm tất cả subscription active của user
+      const activeSubscriptions = await UserSub.findAll({
+        where: {
+          user_id: userId,
+          status: 1,
+        },
+        include: [Subscription],
+        order: [["id", "DESC"]], // Sắp xếp theo ID giảm dần (mới nhất trước)
+      });
+
+      if (activeSubscriptions.length <= 1) {
+        return sendDetailResponse(
+          res,
+          {
+            message: "User has no duplicate active subscriptions",
+            activeSubscriptions: activeSubscriptions.length,
+          },
+          "No duplicates found"
+        );
+      }
+
+      // Giữ lại subscription mới nhất (ID cao nhất), vô hiệu hóa các subscription cũ
+      const keepSubscription = activeSubscriptions[0]; // Subscription mới nhất
+      const deactivateSubscriptions = activeSubscriptions.slice(1); // Các subscription cũ
+
+      // Vô hiệu hóa các subscription cũ
+      const deactivatedIds = [];
+      for (const sub of deactivateSubscriptions) {
+        await sub.update({ status: 0 });
+        deactivatedIds.push(sub.id);
+      }
+
+      sendDetailResponse(
+        res,
+        {
+          userId: userId,
+          keptSubscription: {
+            id: keepSubscription.id,
+            subId: keepSubscription.sub_id,
+            subscriptionName: keepSubscription.Subscription?.name_sub,
+            subscriptionType: keepSubscription.Subscription?.type,
+            status: keepSubscription.status,
+            startDate: keepSubscription.start_date,
+            endDate: keepSubscription.end_date,
+            token: keepSubscription.token,
+          },
+          deactivatedSubscriptions: deactivatedIds,
+          totalActiveBefore: activeSubscriptions.length,
+          totalActiveAfter: 1,
+        },
+        "Duplicate subscriptions fixed successfully"
+      );
+    } catch (error) {
+      sendInternalErrorResponse(res, error.message);
+    }
+  }
+);
+
+// API để fix tất cả users có nhiều subscription active
+router.post(
+  "/fix-all-duplicate-subscriptions",
+  authMiddleware,
+  adminMiddleware,
+  async (req, res) => {
+    try {
+      // Tìm tất cả users có nhiều hơn 1 subscription active
+      const usersWithDuplicates = await User.findAll({
+        include: [
+          {
+            model: UserSub,
+            where: { status: 1 },
+            include: [Subscription],
+          },
+        ],
+        having: sequelize.literal("COUNT(UserSubs.id) > 1"),
+        group: ["User.id"],
+      });
+
+      const results = [];
+      const errors = [];
+
+      for (const user of usersWithDuplicates) {
+        try {
+          // Sắp xếp subscriptions theo ID giảm dần
+          const sortedSubscriptions = user.UserSubs.sort((a, b) => b.id - a.id);
+
+          // Giữ lại subscription mới nhất
+          const keepSubscription = sortedSubscriptions[0];
+          const deactivateSubscriptions = sortedSubscriptions.slice(1);
+
+          // Vô hiệu hóa các subscription cũ
+          const deactivatedIds = [];
+          for (const sub of deactivateSubscriptions) {
+            await sub.update({ status: 0 });
+            deactivatedIds.push(sub.id);
+          }
+
+          results.push({
+            userId: user.id,
+            email: user.email,
+            fullName: user.full_name,
+            keptSubscription: {
+              id: keepSubscription.id,
+              subId: keepSubscription.sub_id,
+              subscriptionName: keepSubscription.Subscription?.name_sub,
+              subscriptionType: keepSubscription.Subscription?.type,
+            },
+            deactivatedCount: deactivatedIds.length,
+            deactivatedIds: deactivatedIds,
+          });
+        } catch (error) {
+          errors.push({
+            userId: user.id,
+            email: user.email,
+            error: error.message,
+          });
+        }
+      }
+
+      sendDetailResponse(
+        res,
+        {
+          totalUsersProcessed: usersWithDuplicates.length,
+          successCount: results.length,
+          errorCount: errors.length,
+          results: results,
+          errors: errors,
+        },
+        "All duplicate subscriptions fixed"
       );
     } catch (error) {
       sendInternalErrorResponse(res, error.message);
