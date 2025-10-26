@@ -1786,6 +1786,133 @@ router.post(
   }
 );
 
+// Bulk update subType for multiple prompts
+router.put(
+  "/bulk-subType",
+  authMiddleware,
+  adminMiddleware,
+  checkSubTypeAccess,
+  async (req, res) => {
+    try {
+      const { promptIds, prompt_ids, subType, sub_type } = req.body;
+
+      // Validate required fields
+      const promptIdsParam = promptIds || prompt_ids;
+      const subTypeParam = subType || sub_type;
+
+      if (!promptIdsParam) {
+        return sendErrorResponse(
+          res,
+          "promptIds is required",
+          "VALIDATION_ERROR",
+          400
+        );
+      }
+
+      if (subTypeParam === undefined || subTypeParam === null) {
+        return sendErrorResponse(
+          res,
+          "subType is required",
+          "VALIDATION_ERROR",
+          400
+        );
+      }
+
+      // Convert to array if it's a single value or string
+      let promptIdsArray;
+      if (Array.isArray(promptIdsParam)) {
+        promptIdsArray = promptIdsParam;
+      } else if (typeof promptIdsParam === "string") {
+        // Handle comma-separated string
+        promptIdsArray = promptIdsParam
+          .split(",")
+          .map((id) => id.trim())
+          .filter((id) => id);
+      } else {
+        // Convert single value to array
+        promptIdsArray = [promptIdsParam];
+      }
+
+      // Convert to numbers and filter out invalid values
+      const validPromptIds = promptIdsArray
+        .map((id) => parseInt(id))
+        .filter((id) => !isNaN(id) && id > 0);
+
+      if (validPromptIds.length === 0) {
+        return sendErrorResponse(
+          res,
+          "No valid prompt IDs provided",
+          "VALIDATION_ERROR",
+          400
+        );
+      }
+
+      // Convert subType to number
+      const subTypeNumber = parseInt(subTypeParam);
+
+      if (isNaN(subTypeNumber)) {
+        return sendErrorResponse(
+          res,
+          "subType must be a valid number",
+          "VALIDATION_ERROR",
+          400
+        );
+      }
+
+      // Check if prompts exist
+      const existingPrompts = await Prompt.findAll({
+        where: { id: { [Op.in]: validPromptIds } },
+        attributes: ["id"],
+      });
+
+      const foundIds = existingPrompts.map((p) => p.id);
+      const notFoundIds = validPromptIds.filter((id) => !foundIds.includes(id));
+
+      if (existingPrompts.length === 0) {
+        return sendNotFoundResponse(
+          res,
+          "None of the provided prompt IDs exist"
+        );
+      }
+
+      // Perform bulk update
+      const [updatedCount] = await Prompt.update(
+        { sub_type: subTypeNumber },
+        {
+          where: { id: { [Op.in]: foundIds } },
+        }
+      );
+
+      // Prepare response data
+      const responseData = {
+        updated: updatedCount,
+        totalRequested: validPromptIds.length,
+        totalFound: foundIds.length,
+        notFound: notFoundIds.length,
+        notFoundIds: notFoundIds.length > 0 ? notFoundIds : undefined,
+      };
+
+      // Remove notFoundIds if empty for cleaner response
+      if (responseData.notFoundIds === undefined) {
+        delete responseData.notFoundIds;
+      }
+
+      res.status(200).json({
+        success: true,
+        message: `Successfully updated subType for ${updatedCount} prompt(s)`,
+        data: responseData,
+      });
+    } catch (error) {
+      console.error("Error bulk updating prompt subType:", error);
+      res.status(500).json({
+        success: false,
+        message: "Error updating prompt subType",
+        error: error.message,
+      });
+    }
+  }
+);
+
 // Update a prompt
 router.put(
   "/:id",

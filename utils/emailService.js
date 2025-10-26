@@ -389,9 +389,89 @@ async function sendSurveyEmail(email, reply) {
     throw error;
   }
 }
+async function sendFeedbackEmail(
+  userEmail,
+  userName,
+  userPhone,
+  feedbackName,
+  feedbackMessage
+) {
+  const htmlTemplate = `
+    <!DOCTYPE html>
+    <html lang="vi">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Feedback từ người dùng</title>
+        <style type="text/css">
+            body { font-family: Arial, sans-serif; background-color: #f5f5ff; margin: 0; padding: 0; }
+            table { border-collapse: collapse; }
+            img { display: block; max-width: 100%; height: auto; }
+            .container { width: 100%; max-width: 600px; margin: 0 auto; }
+            .content { background-color: #fff; padding: 20px; border-radius: 10px; box-shadow: 0 0 10px rgba(0, 0, 0, 0.1); }
+        </style>
+    </head>
+    <body>
+        <table class="container" cellpadding="0" cellspacing="0" align="center" style="background-color: #f5f5ff;">
+            <tr>
+                <td align="center" style="padding: 20px;">
+                    <!-- Logo -->
+                    <img src="https://s3-alpha-sig.figma.com/img/c9e6/61f6/a057c97fc6850110c478f8cb0d421ed8?Expires=1743379200&Key-Pair-Id=APKAQ4GOSFWCW27IBOMQ&Signature=jVtY6Ugqb7mB3SAXocs0WOp~CCkgkmgqHrnSZC7jx0IANiw7rHVXBCIyutOi9kmwWTrMo7-3Kr7DKTGK1W3Hxt8hqKg1AuWxwXKdfxnYvB3chzA1RkllmfnqtSF4KnpheSzBi3MxypjGwl1LRFxMGHcG1B15K5jSm5Surw22zvwFpRjvqNZhm7WaoQPFvQxwKM~VJSmKtU1k~TwqvHHP7KrVN9-9kIxQLjts0yLfGHNkEpuc5GoptCRC9AtES6g4qhIxZETpsR0xKy6FrAKgiWg0xif5NDYP7qxCzTipSRzZ3-Govy8WK9v92adDKz6-bYqrsBxTb2LjFB2DVtNdDg__" alt="Prom Logo" style="max-width: 150px; margin-bottom: 20px;">
+
+                    <!-- Greeting -->
+                    <div style="font-size: 24px; font-weight: bold; margin: 20px 0 10px; color: #333;">
+                        Feedback từ người dùng
+                    </div>
+
+                    <!-- Content -->
+                    <table class="content" cellpadding="0" cellspacing="0" style="width: 100%;">
+                        <tr>
+                            <td>
+                                <div style="font-size: 16px; color: #333; margin-bottom: 20px;">
+                                    <p><strong>Email người dùng:</strong> ${userEmail}</p>
+                                    <p><strong>Tên:</strong> ${feedbackName}</p>
+                                    <p><strong>Số điện thoại:</strong> ${userPhone}</p>
+                                    <p><strong>Nội dung feedback:</strong></p>
+                                    <p style="background-color: #f9f9f9; padding: 15px; border-radius: 5px; border-left: 4px solid #4b0082;">${
+                                      feedbackMessage || ""
+                                    }</p>
+                                </div>
+                                <div style="font-size: 18px; font-weight: bold; color: #4b0082; margin-bottom: 20px;">
+                                    Trân trọng,<br>Prom
+                                </div>
+                            </td>
+                        </tr>
+                    </table>
+                </td>
+            </tr>
+        </table>
+    </body>
+    </html>
+    `;
+
+  const emailList = ["hoang94nhan@gmail.com", "quocdat.asean@gmail.com"];
+
+  for (const email of emailList) {
+    const mailOptions = {
+      from: process.env.EMAIL_USER,
+      to: email,
+      subject: `Feedback từ ${feedbackName}`,
+      html: htmlTemplate,
+    };
+
+    try {
+      await transporter.sendMail(mailOptions);
+    } catch (error) {
+      console.error(`Error sending feedback email to ${email}:`, error);
+      throw error;
+    }
+  }
+}
+
 module.exports = {
   sendOtpEmail,
   sendOrderEmail,
   sendReplyEmail,
   sendSurveyEmail,
+  sendFeedbackEmail,
 };

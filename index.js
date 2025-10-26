@@ -43,6 +43,7 @@ const couponRoutes = require("./routes/couponRoutes");
 const industryRoutes = require("./routes/industryRoutes");
 const uploadRoutes = require("./routes/uploadRoutes");
 const zapierRoutes = require("./routes/zapierRoutes");
+const feedbackRoutes = require("./routes/feedbackRoutes");
 require("./cronJob.js");
 
 dotenv.config();
@@ -142,6 +143,7 @@ app.use("/api/coupons", couponRoutes);
 app.use("/api/industries", industryRoutes);
 app.use("/api/upload", uploadRoutes);
 app.use("/api/zapier", zapierRoutes);
+app.use("/api/feedback", feedbackRoutes);
 const PORT = process.env.PORT || 5000;
 
 app.listen(PORT, "0.0.0.0", () => {
