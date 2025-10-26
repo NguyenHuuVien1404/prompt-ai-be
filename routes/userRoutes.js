@@ -9,6 +9,7 @@ const Subscription = require("../models/Subscription");
 const DeviceLog = require("../models/DeviceLog");
 const userAgentParser = require("useragent");
 const { Sequelize } = require("sequelize");
+const sequelize = require("../config/database");
 const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
@@ -947,15 +948,24 @@ router.get("/:id", async (req, res) => {
 
 // Cập nhật user
 router.put("/:id", async (req, res) => {
+  const transaction = await sequelize.transaction();
+
   try {
-    const user = await User.findByPk(req.params.id);
-    if (!user) return sendNotFoundResponse(res, "User not found");
+    const user = await User.findByPk(req.params.id, { transaction });
+    if (!user) {
+      await transaction.rollback();
+      return sendNotFoundResponse(res, "User not found");
+    }
+
+    console.log(`Updating user ${req.params.id} with data:`, req.body);
 
     // Extract userSub data from request body BEFORE transformation
     const { userSub, ...userData } = req.body;
 
     // Transform userData to snake_case for database operations
     const transformedUserData = transformToSnakeCase(userData);
+
+    console.log(`Transformed user data:`, transformedUserData);
 
     // Update user information (exclude userSub data)
     // Force update with individual field - try Object.entries approach
@@ -969,64 +979,113 @@ router.put("/:id", async (req, res) => {
 
     if (countPromptValue !== undefined) {
       user.count_promt = countPromptValue;
-      await user.save();
+      await user.save({ transaction });
+      console.log(`Updated user count_promt to: ${countPromptValue}`);
     } else {
-      await user.update(transformedUserData);
+      await user.update(transformedUserData, { transaction });
+      console.log(`Updated user with transformed data`);
     }
 
     // Update subscription if userSub data is provided
     if (userSub) {
       const { subscriptionId, startDate, endDate, token, status } = userSub;
 
-      // Find active user subscription
-      const existingUserSub = await UserSub.findOne({
-        where: { user_id: req.params.id, status: 1 },
+      console.log(`Updating userSub for user ${req.params.id}:`, {
+        subscriptionId,
+        startDate,
+        endDate,
+        token,
+        status,
       });
+
+      // Find ANY user subscription (not just active ones)
+      const existingUserSub = await UserSub.findOne({
+        where: { user_id: req.params.id },
+        order: [["id", "DESC"]], // Get the most recent one by ID
+        transaction,
+      });
+
+      console.log(
+        `Found existingUserSub:`,
+        existingUserSub
+          ? {
+              id: existingUserSub.id,
+              sub_id: existingUserSub.sub_id,
+              status: existingUserSub.status,
+              start_date: existingUserSub.start_date,
+              end_date: existingUserSub.end_date,
+              token: existingUserSub.token,
+            }
+          : "None"
+      );
 
       if (existingUserSub) {
         // Update existing subscription
-        await existingUserSub.update({
+        const updateData = {
           sub_id: subscriptionId || existingUserSub.sub_id,
           start_date: startDate || existingUserSub.start_date,
           end_date: endDate || existingUserSub.end_date,
           token: token !== undefined ? token : existingUserSub.token,
           status: status !== undefined ? status : existingUserSub.status,
-        });
+        };
+
+        console.log(`Updating existing subscription with data:`, updateData);
+
+        await existingUserSub.update(updateData, { transaction });
+        console.log(`Successfully updated existing subscription`);
       } else if (subscriptionId) {
         // Create new subscription if none exists
-        await UserSub.create({
+        const createData = {
           user_id: req.params.id,
           sub_id: subscriptionId,
           status: status || 1,
           start_date: startDate || new Date(),
           end_date: endDate || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
           token: token || 0,
-        });
+        };
+
+        console.log(`Creating new subscription with data:`, createData);
+
+        await UserSub.create(createData, { transaction });
+        console.log(`Successfully created new subscription`);
+      } else {
+        console.log(`No subscriptionId provided, skipping subscription update`);
       }
     }
 
     // Handle legacy subId or sub_id for backward compatibility
     const subId = req.body.subId || req.body.sub_id;
     if (subId && !userSub) {
-      const userSub = await UserSub.findOne({
+      const legacyUserSub = await UserSub.findOne({
         where: { user_id: req.params.id, status: 1 },
+        transaction,
       });
 
-      if (userSub) {
-        await userSub.update({
-          sub_id: subId,
-        });
+      if (legacyUserSub) {
+        await legacyUserSub.update(
+          {
+            sub_id: subId,
+          },
+          { transaction }
+        );
       } else {
         // Create new subscription if none exists
-        await UserSub.create({
-          user_id: req.params.id,
-          sub_id: subId,
-          status: 1,
-          start_date: new Date(),
-          end_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days from now
-        });
+        await UserSub.create(
+          {
+            user_id: req.params.id,
+            sub_id: subId,
+            status: 1,
+            start_date: new Date(),
+            end_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days from now
+          },
+          { transaction }
+        );
       }
     }
+
+    // Commit transaction
+    await transaction.commit();
+    console.log(`Transaction committed successfully for user ${req.params.id}`);
 
     // Get updated user with subscription
     const updatedUser = await User.findByPk(req.params.id, {
@@ -1045,6 +1104,9 @@ router.put("/:id", async (req, res) => {
       "User updated successfully"
     );
   } catch (error) {
+    // Rollback transaction on error
+    await transaction.rollback();
+    console.error(`Error updating user ${req.params.id}:`, error);
     sendInternalErrorResponse(res, error.message);
   }
 });

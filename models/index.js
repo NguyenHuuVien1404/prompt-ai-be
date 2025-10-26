@@ -283,6 +283,7 @@ sequelize
 module.exports = {
   User,
   Role,
+  Section,
   Subscription,
   UserSub,
   Category,

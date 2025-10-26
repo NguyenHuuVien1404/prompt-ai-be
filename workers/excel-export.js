@@ -49,6 +49,7 @@ async function exportPromptsToExcel(filters = {}) {
       where,
       include: includeArray,
       order: [["created_at", "DESC"]],
+      raw: false, // Keep Sequelize instances
     };
 
     // Limit results if specified
@@ -58,6 +59,9 @@ async function exportPromptsToExcel(filters = {}) {
 
     // Fetch prompts
     const prompts = await Prompt.findAll(queryOptions);
+
+    // Convert to plain objects to avoid serialization issues in worker thread
+    const plainPrompts = prompts.map((prompt) => prompt.toJSON());
 
     // Prepare data for Excel
     const excelData = [];
@@ -88,7 +92,7 @@ async function exportPromptsToExcel(filters = {}) {
     };
 
     // Add data rows
-    prompts.forEach((prompt) => {
+    plainPrompts.forEach((prompt) => {
       const industryNames =
         prompt.promptIndustries && prompt.promptIndustries.length > 0
           ? prompt.promptIndustries.map((industry) => industry.name).join(", ")
@@ -99,9 +103,9 @@ async function exportPromptsToExcel(filters = {}) {
         stripHtmlTags(prompt.title) || "",
         stripHtmlTags(prompt.short_description) || "",
         stripHtmlTags(prompt.content) || "",
-        prompt.Category ? prompt.Category.name : "",
-        prompt.topic ? prompt.topic.name : "",
-        industryNames, // Industries separated by comma
+        prompt.category?.name || "",
+        prompt.topic?.name || "",
+        industryNames,
         stripHtmlTags(prompt.text) || "",
         stripHtmlTags(prompt.optimizationGuide) || "",
         prompt.is_type || 1,

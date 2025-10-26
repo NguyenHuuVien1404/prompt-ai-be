@@ -100,15 +100,30 @@ const buildPromptIncludeArray = (industryFilterIds, models) => {
   const includeArray = [
     {
       model: Category,
+      as: "category",
       attributes: ["id", "name", "image", "image_card", "section_id"],
-      include: [{ model: Section, attributes: ["id", "name", "description"] }],
+      required: false, // LEFT JOIN - không bỏ prompts nếu category null
+      include: [
+        {
+          model: Section,
+          as: "section",
+          attributes: ["id", "name", "description"],
+          required: false, // LEFT JOIN
+        },
+      ],
     },
-    { model: Topic, as: "topic", attributes: ["id", "name"] },
+    {
+      model: Topic,
+      as: "topic",
+      attributes: ["id", "name"],
+      required: false, // LEFT JOIN
+    },
     {
       model: Industry,
       as: "promptIndustries",
       attributes: ["id", "name", "description"],
       through: { attributes: [] },
+      required: false, // LEFT JOIN
     },
   ];
 

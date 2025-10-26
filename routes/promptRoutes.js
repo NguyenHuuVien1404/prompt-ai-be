@@ -270,7 +270,7 @@ router.get(
       // Get filters from query parameters - support arrays
       const filters = {};
 
-      // Handle categoryId/categoryIds (support array format)
+      // Handle categoryId/categoryIds (support array format with validation)
       if (
         req.query.categoryIds ||
         req.query.categoryId ||
@@ -280,12 +280,24 @@ router.get(
           req.query.categoryIds ||
           req.query.categoryId ||
           req.query.category_id;
-        filters.categoryId = Array.isArray(categoryIds)
+        const categoryArray = Array.isArray(categoryIds)
           ? categoryIds
           : [categoryIds];
+
+        // Convert to numbers and filter out invalid values
+        const validCategoryIds = categoryArray
+          .map((id) => parseInt(id))
+          .filter((id) => !isNaN(id) && id > 0);
+
+        if (validCategoryIds.length > 0) {
+          filters.categoryId =
+            validCategoryIds.length === 1
+              ? validCategoryIds[0]
+              : validCategoryIds;
+        }
       }
 
-      // Handle industryId/industryIds
+      // Handle industryId/industryIds (support array format with validation)
       if (
         req.query.industryIds ||
         req.query.industryId ||
@@ -295,24 +307,63 @@ router.get(
           req.query.industryIds ||
           req.query.industryId ||
           req.query.industry_id;
-        filters.industryId = Array.isArray(industryIds)
+        const industryArray = Array.isArray(industryIds)
           ? industryIds
           : [industryIds];
+
+        // Convert to numbers and filter out invalid values
+        const validIndustryIds = industryArray
+          .map((id) => parseInt(id))
+          .filter((id) => !isNaN(id) && id > 0);
+
+        if (validIndustryIds.length > 0) {
+          filters.industryId =
+            validIndustryIds.length === 1
+              ? validIndustryIds[0]
+              : validIndustryIds;
+        }
       }
 
-      // Handle topicId/topicIds
+      // Handle topicId/topicIds (support array format with validation)
       if (req.query.topicIds || req.query.topicId || req.query.topic_id) {
         const topicIds =
           req.query.topicIds || req.query.topicId || req.query.topic_id;
-        filters.topicId = Array.isArray(topicIds) ? topicIds : [topicIds];
+        const topicArray = Array.isArray(topicIds) ? topicIds : [topicIds];
+
+        // Convert to numbers and filter out invalid values
+        const validTopicIds = topicArray
+          .map((id) => parseInt(id))
+          .filter((id) => !isNaN(id) && id > 0);
+
+        if (validTopicIds.length > 0) {
+          filters.topicId =
+            validTopicIds.length === 1 ? validTopicIds[0] : validTopicIds;
+        }
       }
 
       // Handle other filters
-      if (req.query.subType || req.query.sub_type) {
+      if (
+        (!!req.query.subType && Number(req.query.subType) !== 0) ||
+        (!!req.query.sub_type && Number(req.query.sub_type) !== 0)
+      ) {
         filters.subType = req.query.subType || req.query.sub_type;
       }
-      if (req.query.isType || req.query.is_type) {
-        filters.isType = req.query.isType || req.query.is_type;
+
+      // Handle isType filtering - support multiple values (same as API list)
+      if (req.query.isTypeIds || req.query.isType || req.query.is_type) {
+        const isTypes =
+          req.query.isTypeIds || req.query.isType || req.query.is_type;
+        const isTypeArray = Array.isArray(isTypes) ? isTypes : [isTypes];
+
+        // Convert to numbers and filter out invalid values
+        const validIsTypes = isTypeArray
+          .map((type) => parseInt(type))
+          .filter((type) => !isNaN(type) && type > 0);
+
+        if (validIsTypes.length > 0) {
+          filters.isType =
+            validIsTypes.length === 1 ? validIsTypes[0] : validIsTypes;
+        }
       }
       // Handle search - support multiple parameter names
       if (
@@ -335,6 +386,59 @@ router.get(
       }
       if (req.query.dateTo) {
         filters.dateTo = req.query.dateTo;
+      }
+
+      // Handle sorting (same as API list)
+      if (req.query.sortField && req.query.sortOrder) {
+        const sortField = req.query.sortField;
+        const sortOrder = req.query.sortOrder.toUpperCase();
+
+        // Validate sort order
+        if (["ASC", "DESC"].includes(sortOrder)) {
+          // Validate sort field to prevent SQL injection
+          const allowedSortFields = [
+            "id",
+            "title",
+            "shortDescription",
+            "short_description",
+            "content",
+            "what",
+            "tips",
+            "text",
+            "how",
+            "input",
+            "output",
+            "optimizationGuide",
+            "addTip",
+            "addInformation",
+            "isType",
+            "is_type",
+            "subType",
+            "sub_type",
+            "createdAt",
+            "created_at",
+            "updatedAt",
+            "updated_at",
+          ];
+
+          if (allowedSortFields.includes(sortField)) {
+            // Map camelCase to snake_case for database
+            const dbField =
+              sortField === "shortDescription"
+                ? "short_description"
+                : sortField === "isType"
+                ? "is_type"
+                : sortField === "subType"
+                ? "sub_type"
+                : sortField === "createdAt"
+                ? "created_at"
+                : sortField === "updatedAt"
+                ? "updated_at"
+                : sortField;
+            filters.sortField = dbField;
+            filters.sortOrder = sortOrder;
+          }
+        }
       }
 
       try {
@@ -615,10 +719,13 @@ router.post(
   "/import-excel",
   authMiddleware,
   adminMiddleware,
-  uploadExcel.single("file"),
+  uploadExcel.any(),
   async (req, res) => {
     try {
-      if (!req.file) {
+      // Handle both single file and multiple files
+      const file = req.file || (req.files && req.files[0]);
+
+      if (!file) {
         return sendErrorResponse(
           res,
           "No file uploaded",
@@ -629,7 +736,7 @@ router.post(
 
       // Kiểm tra file extension
       const allowedExtensions = [".xlsx", ".xls"];
-      const fileExtension = path.extname(req.file.originalname).toLowerCase();
+      const fileExtension = path.extname(file.originalname).toLowerCase();
 
       if (!allowedExtensions.includes(fileExtension)) {
         return sendErrorResponse(
@@ -646,7 +753,7 @@ router.post(
         // Excel import started
 
         const result = await runTask("excel-processor.js", {
-          filePath: req.file.path,
+          filePath: file.path,
         });
 
         // Excel processing completed
