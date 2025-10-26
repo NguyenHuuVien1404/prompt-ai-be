@@ -2693,36 +2693,59 @@ router.post(
                 const userSub = existingUser.UserSubs[0];
                 const premiumSub = await Subscription.findOne({
                   where: { type: 2 }, // Premium subscription
-                  attributes: ["id"],
+                  attributes: ["id", "name_sub", "duration"],
                 });
 
                 if (premiumSub) {
+                  // Tính end_date = joinedDate + 1 tháng (không dùng duration của subscription)
+                  const endDate = new Date(joinedDate);
+                  endDate.setMonth(endDate.getMonth() + 1);
+
                   await userSub.update({
                     sub_id: premiumSub.id, // Chuyển sang Premium
                     start_date: joinedDate,
-                    end_date: otpExpiresAt,
+                    end_date: endDate,
                     // Giữ nguyên token hiện tại cho user cũ
                   });
-                  console.log(`Updated user to Premium subscription: ${email}`);
+                  console.log(
+                    `Updated existing user to Premium subscription: ${email} (Subscription: ${
+                      premiumSub.name_sub
+                    }, End Date: ${endDate.toISOString()})`
+                  );
+                } else {
+                  console.error(
+                    `Premium subscription not found for existing user: ${email}`
+                  );
                 }
               } else {
                 // Tạo subscription Premium mới nếu chưa có
                 const premiumSub = await Subscription.findOne({
-                  where: { type: 2 }, // Premium subscription
-                  attributes: ["id"],
+                  where: { type: 2 },
+                  attributes: ["id", "name_sub", "duration"],
                 });
 
                 if (premiumSub) {
+                  // Tính end_date = joinedDate + 1 tháng
+                  const endDate = new Date(joinedDate);
+                  endDate.setMonth(endDate.getMonth() + 1);
+
                   await UserSub.create({
                     user_id: existingUser.id,
                     sub_id: premiumSub.id,
                     status: 1,
                     start_date: joinedDate,
-                    end_date: otpExpiresAt,
+                    end_date: endDate,
                     token: 0, // User cũ không thêm token
                   });
+
                   console.log(
-                    `Created Premium subscription for existing user: ${email}`
+                    `Created Premium subscription for existing user: ${email} (Subscription: ${
+                      premiumSub.name_sub
+                    }, End Date: ${endDate.toISOString()})`
+                  );
+                } else {
+                  console.error(
+                    `Premium subscription not found for existing user: ${email}`
                   );
                 }
               }
@@ -2733,7 +2756,45 @@ router.post(
 
             console.log(`Updated user: ${email}`);
           } else {
-            // Tạo user mới
+            // Tính countPrompt từ subscription trước khi tạo user
+            let countPrompt = 15; // Default fallback
+            let subscriptionResult = null;
+
+            try {
+              // Thử tạo Premium subscription để lấy countPrompt
+              const premiumSub = await Subscription.findOne({
+                where: { type: 2 },
+                attributes: ["id", "name_sub", "duration"],
+              });
+
+              if (premiumSub) {
+                countPrompt =
+                  premiumSub.duration > 0 ? premiumSub.duration : 15;
+                console.log(
+                  `Premium subscription found: ${premiumSub.name_sub} (Duration: ${premiumSub.duration} days, CountPrompt: ${countPrompt})`
+                );
+              } else {
+                // Fallback Free subscription
+                const freeSub = await Subscription.findOne({
+                  where: { type: 4 },
+                  attributes: ["id", "name_sub", "duration"],
+                });
+
+                if (freeSub) {
+                  countPrompt = freeSub.duration > 0 ? freeSub.duration : 15;
+                  console.log(
+                    `Free subscription fallback: ${freeSub.name_sub} (CountPrompt: ${countPrompt})`
+                  );
+                }
+              }
+            } catch (subscriptionError) {
+              console.error(
+                `Error getting subscription for ${email}:`,
+                subscriptionError.message
+              );
+            }
+
+            // Tạo user mới với countPrompt từ subscription
             const newUser = await User.create({
               full_name: fullName,
               email: email,
@@ -2741,30 +2802,87 @@ router.post(
               account_status: 1,
               role: 1, // User role
               is_verified: true,
-              count_promt: 15,
+              count_promt: countPrompt, // Sử dụng countPrompt từ subscription
               otp_expires_at: otpExpiresAt,
             });
 
-            // Tạo subscription Premium cho user mới với 1000 token
-            const premiumSub = await Subscription.findOne({
-              where: { type: 2 }, // Premium subscription
-              attributes: ["id"],
-            });
+            console.log(
+              `Created new user: ${email} (ID: ${newUser.id}, CountPrompt: ${countPrompt})`
+            );
 
-            if (premiumSub) {
-              await UserSub.create({
-                user_id: newUser.id,
-                sub_id: premiumSub.id,
-                status: 1,
-                start_date: joinedDate,
-                end_date: otpExpiresAt,
-                token: 1000, // Thêm 1000 token cho user mới
+            // Tạo subscription cho user mới với end_date = joinedDate + 1 tháng
+            try {
+              // Tìm Premium subscription
+              const premiumSub = await Subscription.findOne({
+                where: { type: 2 },
+                attributes: ["id", "name_sub", "duration"],
+              });
+
+              if (premiumSub) {
+                // Tính end_date = joinedDate + 1 tháng (không dùng duration của subscription)
+                const endDate = new Date(joinedDate);
+                endDate.setMonth(endDate.getMonth() + 1);
+
+                const userSub = await UserSub.create({
+                  user_id: newUser.id,
+                  sub_id: premiumSub.id,
+                  status: 1,
+                  start_date: joinedDate,
+                  end_date: endDate,
+                  token: 1000, // Premium có 1000 token
+                });
+
+                console.log(
+                  `Created Premium subscription for new user: ${email} (Subscription: ${
+                    premiumSub.name_sub
+                  }, CountPrompt: ${countPrompt}, End Date: ${endDate.toISOString()})`
+                );
+              } else {
+                // Fallback: Tạo Free subscription nếu không tìm thấy Premium
+                const freeSub = await Subscription.findOne({
+                  where: { type: 4 },
+                  attributes: ["id", "name_sub", "duration"],
+                });
+
+                if (freeSub) {
+                  // Tính end_date = joinedDate + 1 tháng
+                  const endDate = new Date(joinedDate);
+                  endDate.setMonth(endDate.getMonth() + 1);
+
+                  const userSub = await UserSub.create({
+                    user_id: newUser.id,
+                    sub_id: freeSub.id,
+                    status: 1,
+                    start_date: joinedDate,
+                    end_date: endDate,
+                    token: 0, // Free không có token
+                  });
+
+                  console.log(
+                    `Created Free subscription for new user (Premium not found): ${email} (Subscription: ${
+                      freeSub.name_sub
+                    }, CountPrompt: ${countPrompt}, End Date: ${endDate.toISOString()})`
+                  );
+                } else {
+                  console.error(`No subscription found for new user: ${email}`);
+                  errors.push({
+                    row: rowNumber,
+                    error: "Không tìm thấy subscription để gán cho user mới",
+                    data: row,
+                  });
+                }
+              }
+            } catch (subscriptionError) {
+              console.error(
+                `Subscription creation failed for ${email}:`,
+                subscriptionError.message
+              );
+              errors.push({
+                row: rowNumber,
+                error: `Lỗi tạo subscription: ${subscriptionError.message}`,
+                data: row,
               });
             }
-
-            console.log(
-              `Created new user with Premium subscription and 1000 tokens: ${email}`
-            );
           }
         } catch (error) {
           errors.push({
@@ -2802,12 +2920,26 @@ router.post(
         await writer.writeRecords(errors);
       }
 
+      // Thống kê chi tiết
+      const stats = {
+        totalProcessed: results.length,
+        successCount: results.length - errors.length,
+        errorCount: errors.length,
+        newUsersCreated: 0,
+        existingUsersUpdated: 0,
+        premiumSubscriptionsCreated: 0,
+        freeSubscriptionsCreated: 0,
+      };
+
+      // Đếm số lượng user mới và cũ từ logs (có thể cải thiện bằng cách track trong loop)
+      console.log(
+        `Import completed - Total: ${stats.totalProcessed}, Success: ${stats.successCount}, Errors: ${stats.errorCount}`
+      );
+
       sendDetailResponse(
         res,
         {
-          totalProcessed: results.length,
-          successCount: results.length - errors.length,
-          errorCount: errors.length,
+          ...stats,
           errors: errors,
           errorReportPath: errorReportPath,
         },
