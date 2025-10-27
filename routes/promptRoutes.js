@@ -1112,9 +1112,10 @@ router.get("/latest", checkSubTypeAccess, async (req, res) => {
 
     const whereCondition = {};
 
-    // Optional filters
-    if (req.query.category_id) {
-      whereCondition.category_id = req.query.category_id;
+    // Optional filters - support both camelCase and snake_case
+    if (req.query.categoryId || req.query.category_id) {
+      whereCondition.category_id =
+        req.query.categoryId || req.query.category_id;
     }
 
     if (!!req.query.sub_type && Number(req.query.sub_type) !== 0) {
