@@ -157,7 +157,8 @@ router.post(
     const streamBuffer = new StreamBuffer();
 
     try {
-      const { userPrompt, model, language, title, nangCap } = req.body;
+      const { userPrompt, model, language, title, nangCap, plainText } =
+        req.body;
 
       // ✅ Enhanced validation
       if (!userPrompt?.trim()) {
@@ -326,7 +327,8 @@ router.post(
         userPrompt,
         language,
         nangCap,
-        req.body.type
+        req.body.type,
+        plainText
       );
 
       const stream = await callGPTWithStream(messages, model);

@@ -458,8 +458,14 @@ const languageGuides = {
   en: "Please respond entirely in English.",
 };
 
+// ✅ Plain text guide - xóa markdown formatting
+const plainTextGuides = {
+  vi: "Trả lời bằng văn bản thuần, không sử dụng markdown formatting (không dùng **bold**, *italic*, # heading, hoặc các ký hiệu đặc biệt khác). Chỉ sử dụng xuống dòng và khoảng trắng bình thường.",
+  en: "Respond in plain text only, do not use markdown formatting (no **bold**, *italic*, # headings, or other special symbols). Use only line breaks and normal spacing.",
+};
+
 // ✅ Main function để prepare messages
-function prepareMessages(userPrompt, language, nangCap, type) {
+function prepareMessages(userPrompt, language, nangCap, type, plainText) {
   const messages = [];
 
   // ✅ Xử lý logic theo yêu cầu
@@ -500,11 +506,23 @@ function prepareMessages(userPrompt, language, nangCap, type) {
       language
     );
 
+    // ✅ Chỉ thêm system format khi không phải plainText
+    if (!plainText) {
+      messages.push({
+        role: "system",
+        content: systemFomart[language] || systemFomart.en,
+      });
+    }
+
+    // ✅ Sử dụng plainTextGuides khi plainText = true, ngược lại dùng languageGuides
+    const guideContent = plainText
+      ? plainTextGuides[language] || plainTextGuides.en
+      : languageGuides[language] || languageGuides.en;
+
     messages.push(
-      { role: "system", content: systemFomart[language] || systemFomart.en },
       {
         role: "system",
-        content: languageGuides[language] || languageGuides.en,
+        content: guideContent,
       },
       { role: "user", content: wrappedPrompt }
     );
@@ -520,11 +538,23 @@ function prepareMessages(userPrompt, language, nangCap, type) {
     // ✅ Wrap user prompt với writing prompt (luôn dùng STANDARD)
     const wrappedPrompt = generateWritingPrompt(userPrompt, "standard");
 
+    // ✅ Chỉ thêm system format khi không phải plainText
+    if (!plainText) {
+      messages.push({
+        role: "system",
+        content: systemFomart[language] || systemFomart.en,
+      });
+    }
+
+    // ✅ Sử dụng plainTextGuides khi plainText = true, ngược lại dùng languageGuides
+    const guideContent = plainText
+      ? plainTextGuides[language] || plainTextGuides.en
+      : languageGuides[language] || languageGuides.en;
+
     messages.push(
-      { role: "system", content: systemFomart[language] || systemFomart.en },
       {
         role: "system",
-        content: languageGuides[language] || languageGuides.en,
+        content: guideContent,
       },
       { role: "user", content: wrappedPrompt }
     );
