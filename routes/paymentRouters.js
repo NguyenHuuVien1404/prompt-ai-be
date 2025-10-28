@@ -765,39 +765,41 @@ router.all("/vnpay_return", async function (req, res, next) {
           subscriptionName: subscription.name_sub,
         });
 
-        // Send Skool invite email
-        try {
-          const emailResult = await sendSkoolInviteEmail(
-            user.email,
-            user.full_name || user.email,
-            subscription.name_sub,
-            orderId
-          );
+        // Send Skool invite email only for subscription ID 12
+        if (subscriptionId === 12) {
+          try {
+            const emailResult = await sendSkoolInviteEmail(
+              user.email,
+              user.full_name || user.email,
+              subscription.name_sub,
+              orderId
+            );
 
-          if (emailResult.success) {
-            vnpayLogger.log("INFO", "Skool invite email sent successfully", {
-              orderId,
-              userId,
-              email: user.email,
-              messageId: emailResult.messageId,
-            });
-          } else {
-            vnpayLogger.logError(
-              "send_skool_email",
-              new Error(emailResult.error),
-              {
+            if (emailResult.success) {
+              vnpayLogger.log("INFO", "Skool invite email sent successfully", {
                 orderId,
                 userId,
                 email: user.email,
-              }
-            );
+                messageId: emailResult.messageId,
+              });
+            } else {
+              vnpayLogger.logError(
+                "send_skool_email",
+                new Error(emailResult.error),
+                {
+                  orderId,
+                  userId,
+                  email: user.email,
+                }
+              );
+            }
+          } catch (emailError) {
+            vnpayLogger.logError("send_skool_email", emailError, {
+              orderId,
+              userId,
+              email: user.email,
+            });
           }
-        } catch (emailError) {
-          vnpayLogger.logError("send_skool_email", emailError, {
-            orderId,
-            userId,
-            email: user.email,
-          });
         }
 
         // Handle response based on request method
@@ -1167,39 +1169,41 @@ router.get("/vnpay_ipn", validateIPNIP, async function (req, res, next) {
           subscriptionName: subscription.name_sub,
         });
 
-        // Send Skool invite email
-        try {
-          const emailResult = await sendSkoolInviteEmail(
-            user.email,
-            user.full_name || user.email,
-            subscription.name_sub,
-            orderId
-          );
+        // Send Skool invite email only for subscription ID 12
+        if (subscriptionId === 12) {
+          try {
+            const emailResult = await sendSkoolInviteEmail(
+              user.email,
+              user.full_name || user.email,
+              subscription.name_sub,
+              orderId
+            );
 
-          if (emailResult.success) {
-            vnpayLogger.log("INFO", "Skool invite email sent successfully", {
-              orderId,
-              userId,
-              email: user.email,
-              messageId: emailResult.messageId,
-            });
-          } else {
-            vnpayLogger.logError(
-              "send_skool_email",
-              new Error(emailResult.error),
-              {
+            if (emailResult.success) {
+              vnpayLogger.log("INFO", "Skool invite email sent successfully", {
                 orderId,
                 userId,
                 email: user.email,
-              }
-            );
+                messageId: emailResult.messageId,
+              });
+            } else {
+              vnpayLogger.logError(
+                "send_skool_email",
+                new Error(emailResult.error),
+                {
+                  orderId,
+                  userId,
+                  email: user.email,
+                }
+              );
+            }
+          } catch (emailError) {
+            vnpayLogger.logError("send_skool_email", emailError, {
+              orderId,
+              userId,
+              email: user.email,
+            });
           }
-        } catch (emailError) {
-          vnpayLogger.logError("send_skool_email", emailError, {
-            orderId,
-            userId,
-            email: user.email,
-          });
         }
 
         return res.status(200).json({
