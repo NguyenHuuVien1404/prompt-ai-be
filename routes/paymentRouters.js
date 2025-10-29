@@ -674,12 +674,14 @@ router.all("/vnpay_return", async function (req, res, next) {
           notes: `VNPay Transaction: ${orderId}`,
         });
 
+        // Reload order để đảm bảo có dữ liệu mới nhất
+        await order.reload();
+
         // Update coupon usage if applicable
-        if (order.coupon_id) {
-          console.log(
-            `Processing coupon usage for coupon_id: ${order.coupon_id}`
-          );
-          const coupon = await Coupon.findByPk(order.coupon_id);
+        const couponId = order.coupon_id;
+        if (couponId && couponId !== null && couponId !== undefined) {
+          console.log(`Processing coupon usage for coupon_id: ${couponId}`);
+          const coupon = await Coupon.findByPk(couponId);
           if (coupon) {
             console.log(
               `Coupon found: ${coupon.code}, current usage_count: ${coupon.usage_count}`
@@ -688,7 +690,7 @@ router.all("/vnpay_return", async function (req, res, next) {
             await coupon.reload(); // Reload để lấy giá trị mới
             console.log(`Coupon usage_count updated to: ${coupon.usage_count}`);
           } else {
-            console.log(`Coupon not found with id: ${order.coupon_id}`);
+            console.log(`Coupon not found with id: ${couponId}`);
           }
         } else {
           console.log(`No coupon_id found in order: ${orderId}`);
@@ -1059,6 +1061,8 @@ router.get("/vnpay_ipn", validateIPNIP, async function (req, res, next) {
         notes: `VNPay Transaction: ${orderId}`,
       });
       await order.save();
+      // Reload order để đảm bảo có dữ liệu mới nhất
+      await order.reload();
       console.log(`Payment record updated for order ${orderId}`);
     } catch (error) {
       console.error(
@@ -1071,11 +1075,10 @@ router.get("/vnpay_ipn", validateIPNIP, async function (req, res, next) {
     if (rspCode === "00") {
       try {
         // Update coupon usage if applicable
-        if (order.coupon_id) {
-          console.log(
-            `Processing coupon usage for coupon_id: ${order.coupon_id}`
-          );
-          const coupon = await Coupon.findByPk(order.coupon_id);
+        const couponId = order.coupon_id;
+        if (couponId && couponId !== null && couponId !== undefined) {
+          console.log(`Processing coupon usage for coupon_id: ${couponId}`);
+          const coupon = await Coupon.findByPk(couponId);
           if (coupon) {
             console.log(
               `Coupon found: ${coupon.code}, current usage_count: ${coupon.usage_count}`
@@ -1084,7 +1087,7 @@ router.get("/vnpay_ipn", validateIPNIP, async function (req, res, next) {
             await coupon.reload(); // Reload để lấy giá trị mới
             console.log(`Coupon usage_count updated to: ${coupon.usage_count}`);
           } else {
-            console.log(`Coupon not found with id: ${order.coupon_id}`);
+            console.log(`Coupon not found with id: ${couponId}`);
           }
         } else {
           console.log(`No coupon_id found in order: ${orderId}`);
