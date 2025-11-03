@@ -20,7 +20,6 @@ const { transformToCamelCase } = require("../utils/transformUtils");
  */
 router.post("/member-added", async (req, res) => {
   try {
-    console.log("📩 Data received from Zapier:", req.body);
 
     // Validate required fields (3 main fields: name, email, joined_at)
     const { email, name, joined_at } = req.body;
@@ -116,11 +115,6 @@ router.post("/member-added", async (req, res) => {
             count_promt: premiumSub.duration,
           });
 
-          console.log(
-            `✅ Created PREMIUM subscription for existing user: ${email} (token: ${
-              premiumSub.duration
-            }, end: ${endDate.toISOString()})`
-          );
         }
       }
 
@@ -200,11 +194,6 @@ router.post("/member-added", async (req, res) => {
           token: premiumSub.duration || 0, // Token count from subscription
         });
 
-        console.log(
-          `✅ Created PREMIUM subscription for user: ${email} (token: ${
-            premiumSub.duration
-          }, end: ${endDate.toISOString()})`
-        );
       } else {
         console.warn("⚠️ PREMIUM subscription (type=2) not found in database");
       }
@@ -253,7 +242,6 @@ router.post("/member-added", async (req, res) => {
  */
 router.post("/member-joined", async (req, res) => {
   try {
-    console.log("📩 Data received from Zapier (member-joined):", req.body);
 
     // Validate required fields (3 main fields: name, email, joined_at)
     const { email, name, joined_at } = req.body;
@@ -349,11 +337,6 @@ router.post("/member-joined", async (req, res) => {
             count_promt: premiumSub.duration,
           });
 
-          console.log(
-            `✅ Created PREMIUM subscription for existing user: ${email} (token: ${
-              premiumSub.duration
-            }, end: ${endDate.toISOString()})`
-          );
         }
       }
 
@@ -433,11 +416,6 @@ router.post("/member-joined", async (req, res) => {
           token: premiumSub.duration || 0, // Token count from subscription
         });
 
-        console.log(
-          `✅ Created PREMIUM subscription for user: ${email} (token: ${
-            premiumSub.duration
-          }, end: ${endDate.toISOString()})`
-        );
       } else {
         console.warn("⚠️ PREMIUM subscription (type=2) not found in database");
       }
@@ -485,7 +463,6 @@ router.post("/member-joined", async (req, res) => {
  */
 router.post("/member-updated", async (req, res) => {
   try {
-    console.log("📩 Update data received from Zapier:", req.body);
 
     const { email } = req.body;
 
@@ -562,7 +539,6 @@ router.post("/member-updated", async (req, res) => {
  */
 router.post("/member-removed", async (req, res) => {
   try {
-    console.log("📩 Remove member data received from Zapier:", req.body);
 
     const { email } = req.body;
 

@@ -8,7 +8,8 @@
     "dev": "nodemon index.js",
     "cluster": "node cluster.js",
     "init-roles": "node utils/initRoles.js",
-    "migrate-roles": "node utils/migrateRolesSoft.js"
+    "migrate-roles": "node utils/migrateRolesSoft.js",
+    "migrate-feedbacks": "node migrations/create-feedbacks-table.js"
   },
   "keywords": [],
   "author": "",

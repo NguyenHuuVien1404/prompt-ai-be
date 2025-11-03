@@ -79,23 +79,12 @@ const validateVNPayRequest = (req, res, next) => {
 const logVNPayRequest = (req, res, next) => {
   const startTime = Date.now();
 
-  // Log request details
-  console.log(`VNPay Request: ${req.method} ${req.path}`, {
-    ip: req.ip,
-    userAgent: req.get("User-Agent"),
-    timestamp: new Date().toISOString(),
-    body: req.method === "POST" ? req.body : undefined,
-  });
+  // Request processing
 
   // Override res.json to log response
   const originalJson = res.json;
   res.json = function (data) {
     const duration = Date.now() - startTime;
-    console.log(`VNPay Response: ${req.method} ${req.path}`, {
-      statusCode: res.statusCode,
-      duration: `${duration}ms`,
-      timestamp: new Date().toISOString(),
-    });
     return originalJson.call(this, data);
   };
 

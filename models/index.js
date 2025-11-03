@@ -19,6 +19,7 @@ const History = require("./History");
 const Industry = require("./Industry");
 const CategoryIndustry = require("./CategoryIndustry");
 const PromptIndustry = require("./PromptIndustry");
+const Feedback = require("./Feedback");
 // Định nghĩa các quan hệ với tên khóa ngoại cụ thể
 User.hasMany(UserSub, {
   foreignKey: "user_id",
@@ -270,6 +271,21 @@ PromptIndustry.belongsTo(Industry, {
   as: "Industry",
 });
 
+// Định nghĩa quan hệ giữa User và Feedback
+User.hasMany(Feedback, {
+  foreignKey: "user_id",
+  onDelete: "CASCADE",
+  constraints: true,
+  foreignKeyConstraint: true,
+  name: "fk_feedback_user_id",
+});
+Feedback.belongsTo(User, {
+  foreignKey: "user_id",
+  constraints: true,
+  foreignKeyConstraint: true,
+  name: "fk_feedback_user_id",
+});
+
 // Đồng bộ Models với Database
 sequelize
   .sync({ force: false, alter: false })
@@ -299,4 +315,5 @@ module.exports = {
   Industry,
   CategoryIndustry,
   PromptIndustry,
+  Feedback,
 };

@@ -2,6 +2,8 @@ const express = require("express");
 const router = express.Router();
 const Subscription = require("../models/Subscription");
 const ContentSubscription = require("../models/ContentSubscription");
+const UserSub = require("../models/UserSub");
+const { User } = require("../models");
 const {
   authMiddleware,
   adminMiddleware,
@@ -566,4 +568,135 @@ router.delete("/:id", authMiddleware, adminMiddleware, async (req, res) => {
     sendInternalErrorResponse(res, "Lỗi khi xóa Subscription!");
   }
 });
+
+// Lấy danh sách users có subscription sắp hết hạn (theo subscription type hoặc ID)
+router.get(
+  "/expiring",
+  authMiddleware,
+  adminOrMarketerMiddleware,
+  async (req, res) => {
+    try {
+      const { days = 5, subscriptionId, subscriptionType, page = 1, pageSize = 10 } = req.query;
+
+      const daysValue = parseInt(days) || 5;
+      const currentPage = parseInt(page) || 1;
+      const limit = parseInt(pageSize) || 10;
+      const offset = (currentPage - 1) * limit;
+
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+
+      // Tính ngày N ngày kể từ hôm nay
+      const nDaysLater = new Date(today);
+      nDaysLater.setDate(nDaysLater.getDate() + daysValue);
+      nDaysLater.setHours(23, 59, 59, 999);
+
+      // Tính ngày hôm nay (để không bao gồm đã hết hạn)
+      const tomorrow = new Date(today);
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      tomorrow.setHours(0, 0, 0, 0);
+
+      // Xây dựng điều kiện where
+      const whereConditions = {
+        status: 1, // Chỉ kiểm tra subscription đang active
+        end_date: {
+          [Op.gte]: tomorrow, // end_date >= tomorrow (không bao gồm đã hết hạn)
+          [Op.lte]: nDaysLater, // end_date <= N ngày sau
+        },
+      };
+
+      // Lọc theo subscription ID nếu có
+      if (subscriptionId) {
+        const parsedSubId = parseInt(subscriptionId);
+        if (!isNaN(parsedSubId)) {
+          whereConditions.sub_id = parsedSubId;
+        }
+      }
+
+      // Include condition cho subscription type
+      const subscriptionInclude = {
+        model: Subscription,
+        attributes: ["id", "name_sub", "type", "price"],
+      };
+      if (subscriptionType) {
+        const parsedType = parseInt(subscriptionType);
+        if (!isNaN(parsedType)) {
+          subscriptionInclude.where = { type: parsedType };
+        }
+      }
+
+      // Get total count
+      let totalCountQuery = {
+        where: whereConditions,
+      };
+
+      if (subscriptionType && !isNaN(parseInt(subscriptionType))) {
+        totalCountQuery.include = [
+          {
+            model: Subscription,
+            where: { type: parseInt(subscriptionType) },
+            attributes: [],
+          },
+        ];
+      }
+
+      const totalCount = await UserSub.count(totalCountQuery);
+
+      // Get actual data
+      const expiringUserSubs = await UserSub.findAll({
+        where: whereConditions,
+        include: [
+          {
+            model: User,
+            attributes: ["id", "email", "full_name", "created_at"],
+          },
+          subscriptionInclude,
+        ],
+        offset,
+        limit,
+        order: [["end_date", "ASC"]], // Sắp xếp theo ngày hết hạn tăng dần
+      });
+
+      // Transform data
+      const transformedData = expiringUserSubs.map((userSub) => {
+        const endDate = new Date(userSub.end_date);
+        const daysRemaining = Math.ceil(
+          (endDate - today) / (1000 * 60 * 60 * 24)
+        );
+
+        return {
+          userId: userSub.user_id,
+          userEmail: userSub.User?.email || null,
+          userName: userSub.User?.full_name || userSub.User?.email || null,
+          subscriptionId: userSub.sub_id,
+          subscriptionName: userSub.Subscription?.name_sub || null,
+          subscriptionType: userSub.Subscription?.type || null,
+          subscriptionPrice: userSub.Subscription?.price || null,
+          userSubId: userSub.id,
+          status: userSub.status,
+          startDate: userSub.start_date,
+          endDate: userSub.end_date,
+          daysRemaining: daysRemaining,
+          token: userSub.token,
+        };
+      });
+
+      const pagination = calculatePagination(totalCount, currentPage, limit);
+
+      sendListResponse(
+        res,
+        transformSubscriptionData(transformedData),
+        pagination,
+        `Found ${totalCount} users with subscriptions expiring within ${daysValue} days`
+      );
+    } catch (error) {
+      console.error("Error getting expiring subscriptions:", error);
+      sendInternalErrorResponse(
+        res,
+        "Lỗi khi lấy danh sách subscriptions sắp hết hạn!"
+      );
+    }
+  }
+);
+
 module.exports = router;

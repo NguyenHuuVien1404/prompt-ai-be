@@ -500,7 +500,6 @@ router.post(
           );
         }
 
-        console.log(`Coupon validated: ${coupon.code} (ID: ${coupon.id})`);
       }
 
       // Generate unique order ID
@@ -522,9 +521,6 @@ router.post(
         notes: `VNPay Transaction: ${orderId}`,
       });
 
-      console.log(
-        `Payment created with coupon_id: ${finalCouponId}, orderId: ${orderId}`
-      );
 
       // Create VNPay payment URL
       const paymentUrl = vnpayConfig.createPaymentUrl({
@@ -588,17 +584,6 @@ router.all("/vnpay_return", async function (req, res, next) {
     const secureHash = vnp_Params["vnp_SecureHash"];
     const orderId = vnp_Params["vnp_TxnRef"];
     const responseCode = vnp_Params["vnp_ResponseCode"];
-
-    // Log return request with full details
-    console.log("VNPay Return Request:", {
-      method: req.method,
-      orderId,
-      responseCode,
-      amount: vnp_Params["vnp_Amount"],
-      bankCode: vnp_Params["vnp_BankCode"],
-      transactionNo: vnp_Params["vnp_TransactionNo"],
-      allParams: vnp_Params,
-    });
 
     // Log return request
     vnpayLogger.log("INFO", "VNPay return received", {
@@ -680,20 +665,13 @@ router.all("/vnpay_return", async function (req, res, next) {
         // Update coupon usage if applicable
         const couponId = order.coupon_id;
         if (couponId && couponId !== null && couponId !== undefined) {
-          console.log(`Processing coupon usage for coupon_id: ${couponId}`);
           const coupon = await Coupon.findByPk(couponId);
           if (coupon) {
-            console.log(
-              `Coupon found: ${coupon.code}, current usage_count: ${coupon.usage_count}`
-            );
             await coupon.increment("usage_count");
             await coupon.reload(); // Reload để lấy giá trị mới
-            console.log(`Coupon usage_count updated to: ${coupon.usage_count}`);
           } else {
-            console.log(`Coupon not found with id: ${couponId}`);
           }
         } else {
-          console.log(`No coupon_id found in order: ${orderId}`);
         }
 
         // Get subscription and user information
@@ -754,9 +732,6 @@ router.all("/vnpay_return", async function (req, res, next) {
           token: subscription.duration || 0,
         });
 
-        console.log(
-          `UserSub created/updated for user ${userId} with subscription ${subscription.name_sub}`
-        );
 
         // Log successful payment processing
         vnpayLogger.logPaymentResult(orderId, "SUCCESS", {
@@ -982,9 +957,6 @@ router.get("/vnpay_ipn", validateIPNIP, async function (req, res, next) {
     });
 
     if (existingPayment) {
-      console.log(
-        `Transaction already processed: ${vnp_Params["vnp_TransactionNo"]}`
-      );
       return res.status(200).json({
         RspCode: "02",
         Message: "This order has been updated to the payment status",
@@ -997,9 +969,6 @@ router.get("/vnpay_ipn", validateIPNIP, async function (req, res, next) {
 
     // Check payment status
     if (order.payment_status !== "PENDING") {
-      console.log(
-        `Order ${orderId} already processed with status: ${order.payment_status}`
-      );
       return res.status(200).json({
         RspCode: "02",
         Message: "This order has been updated to the payment status",
@@ -1063,7 +1032,6 @@ router.get("/vnpay_ipn", validateIPNIP, async function (req, res, next) {
       await order.save();
       // Reload order để đảm bảo có dữ liệu mới nhất
       await order.reload();
-      console.log(`Payment record updated for order ${orderId}`);
     } catch (error) {
       console.error(
         `Error updating payment record for order ${orderId}:`,
@@ -1077,20 +1045,13 @@ router.get("/vnpay_ipn", validateIPNIP, async function (req, res, next) {
         // Update coupon usage if applicable
         const couponId = order.coupon_id;
         if (couponId && couponId !== null && couponId !== undefined) {
-          console.log(`Processing coupon usage for coupon_id: ${couponId}`);
           const coupon = await Coupon.findByPk(couponId);
           if (coupon) {
-            console.log(
-              `Coupon found: ${coupon.code}, current usage_count: ${coupon.usage_count}`
-            );
             await coupon.increment("usage_count");
             await coupon.reload(); // Reload để lấy giá trị mới
-            console.log(`Coupon usage_count updated to: ${coupon.usage_count}`);
           } else {
-            console.log(`Coupon not found with id: ${couponId}`);
           }
         } else {
-          console.log(`No coupon_id found in order: ${orderId}`);
         }
 
         // Get subscription and user information
@@ -1107,9 +1068,6 @@ router.get("/vnpay_ipn", validateIPNIP, async function (req, res, next) {
         // Update user prompt count
         user.count_promt += subscription.duration;
         await user.save();
-        console.log(
-          `User ${userId} prompt count updated: +${subscription.duration}`
-        );
 
         // Update or create UserSub
         let userSub = await UserSub.findOne({
@@ -1154,9 +1112,6 @@ router.get("/vnpay_ipn", validateIPNIP, async function (req, res, next) {
           token: subscription.duration || 0,
         });
 
-        console.log(
-          `UserSub created/updated for user ${userId} with subscription ${subscription.name_sub}`
-        );
 
         // Track conversion if applicable
         if (order.click_uuid && order.offer_id) {
@@ -1287,7 +1242,6 @@ router.post("/querydr", async function (req, res, next) {
       ipAddr,
     });
 
-    console.log(`Querying transaction ${orderId} for date ${transDate}`);
 
     const result = await request({
       url: vnpayConfig.apiUrl,
@@ -1337,7 +1291,6 @@ router.post("/refund", async function (req, res, next) {
       ipAddr,
     });
 
-    console.log(`Processing refund for order ${orderId}, amount: ${amount}`);
 
     const result = await request({
       url: vnpayConfig.apiUrl,

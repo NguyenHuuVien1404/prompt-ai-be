@@ -675,7 +675,6 @@ router.post("/survey", authMiddleware, adminMiddleware, async (req, res) => {
 
     sendEmailsInBatches(emailList, reply, 10, 3000)
       .then((failedEmails) => {
-        console.log("Email sending completed. Failed emails:", failedEmails);
       })
       .catch((err) => {
         console.error("Error in email sending:", err);

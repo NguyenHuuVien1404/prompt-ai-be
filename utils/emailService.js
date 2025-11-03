@@ -637,6 +637,160 @@ async function sendSkoolInviteEmail(
   }
 }
 
+async function sendSubscriptionExpiringEmail(
+  email,
+  userName,
+  subscriptionName,
+  daysRemaining,
+  endDate
+) {
+  const formattedEndDate = new Date(endDate).toLocaleDateString("vi-VN", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
+
+  const htmlTemplate = `
+    <!DOCTYPE html>
+    <html lang="vi">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Cảnh báo: Subscription sắp hết hạn</title>
+        <style type="text/css">
+            body { font-family: Arial, sans-serif; background-color: #f5f5ff; margin: 0; padding: 20px; }
+            table { border-collapse: collapse; }
+            img { display: block; max-width: 100%; height: auto; }
+            .container { width: 100%; max-width: 600px; margin: 0 auto; }
+            .content { background-color: #fff; padding: 30px; border-radius: 15px; box-shadow: 0 0 20px rgba(0, 0, 0, 0.1); }
+            .header { text-align: center; margin-bottom: 30px; }
+            .logo { font-size: 28px; font-weight: bold; color: #4a90e2; margin-bottom: 10px; }
+            .title { font-size: 24px; color: #333; margin-bottom: 20px; }
+            .warning-box { 
+                background-color: #fff3cd; 
+                border-left: 4px solid #ffc107; 
+                padding: 20px; 
+                border-radius: 5px; 
+                margin: 20px 0;
+            }
+            .warning-box strong { color: #856404; font-size: 18px; }
+            .info-box { 
+                background-color: #f8f9fa; 
+                padding: 20px; 
+                border-radius: 10px; 
+                margin: 20px 0; 
+                border-left: 4px solid #4a90e2;
+            }
+            .info-box h3 { color: #4a90e2; margin-top: 0; }
+            .info-box p { margin: 5px 0; color: #666; }
+            .cta-button { 
+                display: inline-block; 
+                background: linear-gradient(135deg, #4a90e2, #357abd); 
+                color: white; 
+                padding: 15px 30px; 
+                text-decoration: none; 
+                border-radius: 25px; 
+                font-weight: bold; 
+                font-size: 18px;
+                margin: 20px 0;
+                box-shadow: 0 4px 15px rgba(74, 144, 226, 0.3);
+                transition: all 0.3s ease;
+            }
+            .cta-button:hover { 
+                transform: translateY(-2px); 
+                box-shadow: 0 6px 20px rgba(74, 144, 226, 0.4);
+            }
+            .message { font-size: 16px; line-height: 1.6; color: #555; margin-bottom: 25px; }
+            .footer { 
+                text-align: center; 
+                margin-top: 30px; 
+                padding-top: 20px; 
+                border-top: 1px solid #eee; 
+                color: #888; 
+                font-size: 14px;
+            }
+            @media only screen and (max-width: 600px) {
+                .container { width: 100%; padding: 10px; }
+                .content { padding: 20px; }
+                .title { font-size: 20px; }
+                .cta-button { padding: 12px 25px; font-size: 16px; }
+            }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="content">
+                <div class="header">
+                    <div class="logo">🚀 Prom AI Hub</div>
+                    <h1 class="title">⚠️ Cảnh báo: Subscription sắp hết hạn</h1>
+                </div>
+                
+                <div class="message">
+                    <p>Xin chào <strong>${userName}</strong>,</p>
+                    <p>Chúng tôi muốn thông báo cho bạn biết rằng subscription <strong>${subscriptionName}</strong> của bạn sẽ hết hạn trong <strong style="color: #ff6b6b; font-size: 20px;">${daysRemaining} ngày</strong>.</p>
+                </div>
+
+                <div class="warning-box">
+                    <strong>⚠️ Ngày hết hạn:</strong> ${formattedEndDate}
+                </div>
+
+                <div class="info-box">
+                    <h3>📋 Thông tin subscription</h3>
+                    <p><strong>Tên gói:</strong> ${subscriptionName}</p>
+                    <p><strong>Ngày hết hạn:</strong> ${formattedEndDate}</p>
+                    <p><strong>Số ngày còn lại:</strong> ${daysRemaining} ngày</p>
+                </div>
+
+                <div class="message">
+                    <p><strong>Để tiếp tục sử dụng các tính năng premium:</strong></p>
+                    <ul style="color: #555; line-height: 2;">
+                        <li>Hãy gia hạn subscription trước khi hết hạn</li>
+                        <li>Tránh gián đoạn dịch vụ và mất quyền truy cập</li>
+                        <li>Tiếp tục tận hưởng tất cả các tính năng độc quyền</li>
+                    </ul>
+                </div>
+
+                <div style="text-align: center;">
+                    <a href="https://prom.vn/subscription" class="cta-button">🔄 Gia hạn ngay</a>
+                </div>
+
+                <div class="message">
+                    <p><strong>Lưu ý quan trọng:</strong></p>
+                    <p>• Sau khi subscription hết hạn, tài khoản của bạn sẽ tự động chuyển về gói miễn phí</p>
+                    <p>• Một số tính năng premium sẽ bị giới hạn</p>
+                    <p>• Hãy gia hạn sớm để không bỏ lỡ bất kỳ tính năng nào</p>
+                </div>
+
+                <div class="footer">
+                    <p>Nếu bạn có bất kỳ câu hỏi nào, đừng ngần ngại liên hệ với chúng tôi!</p>
+                    <p>Copyright © 2024 Prom AI Hub. All rights reserved.</p>
+                </div>
+            </div>
+        </div>
+    </body>
+    </html>
+  `;
+
+  const mailOptions = {
+    from: `"Prom AI Hub" <${process.env.EMAIL_USER}>`,
+    to: email,
+    subject: `⚠️ Cảnh báo: Subscription của bạn sắp hết hạn trong ${daysRemaining} ngày`,
+    html: htmlTemplate,
+  };
+
+  try {
+    const info = await transporter.sendMail(mailOptions);
+    console.log(
+      `Subscription expiring email sent successfully to ${email}:`,
+      info.messageId
+    );
+    return { success: true, messageId: info.messageId };
+  } catch (error) {
+    console.error(`Error sending subscription expiring email to ${email}:`, error);
+    return { success: false, error: error.message };
+  }
+}
+
 module.exports = {
   sendOtpEmail,
   sendOrderEmail,
@@ -644,4 +798,5 @@ module.exports = {
   sendSurveyEmail,
   sendFeedbackEmail,
   sendSkoolInviteEmail,
+  sendSubscriptionExpiringEmail,
 };

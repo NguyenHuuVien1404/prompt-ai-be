@@ -126,14 +126,14 @@ const createClient = async () => {
             }
         });
 
-        client.on('connect', () => console.log('Redis client connected'));
-        client.on('error', (err) => console.log('Redis Client Error', err));
+        client.on('connect', () => {});
+        client.on('error', (err) => console.error('Redis Client Error', err));
 
         // Connect to Redis
         await client.connect();
         return client;
     } catch (error) {
-        console.log('Failed to create Redis client, using memory fallback:', error.message);
+        console.error('Failed to create Redis client, using memory fallback:', error.message);
         return memoryCache;
     }
 };
