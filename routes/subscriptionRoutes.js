@@ -569,41 +569,111 @@ router.delete("/:id", authMiddleware, adminMiddleware, async (req, res) => {
   }
 });
 
-// Lấy danh sách users có subscription sắp hết hạn (theo subscription type hoặc ID)
+// Lấy danh sách users có subscription sắp hết hạn (theo subscription type hoặc ID) - loại bỏ free subscription mặc định
 router.get(
   "/expiring",
   authMiddleware,
   adminOrMarketerMiddleware,
   async (req, res) => {
     try {
-      const { days = 5, subscriptionId, subscriptionType, page = 1, pageSize = 10 } = req.query;
+      const {
+        days = 5,
+        subscriptionId,
+        subscriptionType,
+        page = 1,
+        pageSize = 10,
+        includeFree = false,
+        search,
+        sortBy = "end_date",
+        order = "ASC",
+        dateFrom,
+        dateTo,
+      } = req.query;
 
       const daysValue = parseInt(days) || 5;
       const currentPage = parseInt(page) || 1;
       const limit = parseInt(pageSize) || 10;
       const offset = (currentPage - 1) * limit;
-
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-
-      // Tính ngày N ngày kể từ hôm nay
-      const nDaysLater = new Date(today);
-      nDaysLater.setDate(nDaysLater.getDate() + daysValue);
-      nDaysLater.setHours(23, 59, 59, 999);
-
-      // Tính ngày hôm nay (để không bao gồm đã hết hạn)
-      const tomorrow = new Date(today);
-      tomorrow.setDate(tomorrow.getDate() + 1);
-      tomorrow.setHours(0, 0, 0, 0);
+      const includeFreeValue = includeFree === "true" || includeFree === true;
+      const sortOrder = order.toUpperCase() === "DESC" ? "DESC" : "ASC";
 
       // Xây dựng điều kiện where
       const whereConditions = {
         status: 1, // Chỉ kiểm tra subscription đang active
-        end_date: {
-          [Op.gte]: tomorrow, // end_date >= tomorrow (không bao gồm đã hết hạn)
-          [Op.lte]: nDaysLater, // end_date <= N ngày sau
-        },
       };
+
+      // Filter theo dateFrom và dateTo nếu có (ưu tiên), nếu không thì dùng days
+      if (dateFrom || dateTo) {
+        whereConditions.end_date = {};
+
+        // Helper function để validate và parse date
+        const validateAndParseDate = (dateString, paramName) => {
+          // Check format YYYY-MM-DD
+          const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+          if (!dateRegex.test(dateString)) {
+            throw new Error(
+              `${paramName} không hợp lệ. Vui lòng sử dụng định dạng YYYY-MM-DD (ví dụ: 2025-01-01)`
+            );
+          }
+
+          const date = new Date(dateString);
+
+          // Check nếu date không hợp lệ
+          if (isNaN(date.getTime())) {
+            throw new Error(
+              `${paramName} không hợp lệ. Vui lòng sử dụng định dạng YYYY-MM-DD (ví dụ: 2025-01-01)`
+            );
+          }
+
+          // Check nếu parse ra date khác với input (ví dụ: 2025-13-01 -> invalid month)
+          const [year, month, day] = dateString.split("-").map(Number);
+          if (
+            date.getFullYear() !== year ||
+            date.getMonth() + 1 !== month ||
+            date.getDate() !== day
+          ) {
+            throw new Error(
+              `${paramName} không hợp lệ. Vui lòng kiểm tra lại ngày, tháng, năm (ví dụ: 2025-01-01)`
+            );
+          }
+
+          return date;
+        };
+
+        if (dateFrom) {
+          try {
+            const fromDate = validateAndParseDate(dateFrom, "dateFrom");
+            fromDate.setHours(0, 0, 0, 0);
+            whereConditions.end_date[Op.gte] = fromDate;
+          } catch (error) {
+            return sendInternalErrorResponse(res, error.message);
+          }
+        }
+
+        if (dateTo) {
+          try {
+            const toDate = validateAndParseDate(dateTo, "dateTo");
+            toDate.setHours(23, 59, 59, 999);
+            whereConditions.end_date[Op.lte] = toDate;
+          } catch (error) {
+            return sendInternalErrorResponse(res, error.message);
+          }
+        }
+      } else {
+        // Nếu không có dateFrom/dateTo, dùng days để tính toán
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+
+        // Tính ngày N ngày kể từ hôm nay
+        const nDaysLater = new Date(today);
+        nDaysLater.setDate(nDaysLater.getDate() + daysValue);
+        nDaysLater.setHours(23, 59, 59, 999);
+
+        whereConditions.end_date = {
+          [Op.gte]: today, // end_date >= today (bao gồm cả hôm nay)
+          [Op.lte]: nDaysLater, // end_date <= N ngày sau
+        };
+      }
 
       // Lọc theo subscription ID nếu có
       if (subscriptionId) {
@@ -613,16 +683,47 @@ router.get(
         }
       }
 
+      // Include condition cho User - để search theo email/name
+      const userInclude = {
+        model: User,
+        attributes: ["id", "email", "full_name", "created_at"],
+      };
+
+      // Filter search theo email hoặc name
+      if (search) {
+        userInclude.where = {
+          [Op.or]: [
+            { email: { [Op.like]: `%${search}%` } },
+            { full_name: { [Op.like]: `%${search}%` } },
+          ],
+        };
+        userInclude.required = true; // INNER JOIN để filter
+      }
+
       // Include condition cho subscription type
       const subscriptionInclude = {
         model: Subscription,
         attributes: ["id", "name_sub", "type", "price"],
       };
+
+      // Build where condition for subscription
+      const subscriptionWhere = {};
+
       if (subscriptionType) {
         const parsedType = parseInt(subscriptionType);
         if (!isNaN(parsedType)) {
-          subscriptionInclude.where = { type: parsedType };
+          subscriptionWhere.type = parsedType;
         }
+      }
+
+      // Nếu không include free và không có subscriptionType cụ thể, loại bỏ free subscription (type = 1)
+      if (!includeFreeValue && !subscriptionType) {
+        subscriptionWhere.type = { [Op.ne]: 1 }; // Loại bỏ Free subscription (type = 1)
+      }
+
+      if (Object.keys(subscriptionWhere).length > 0) {
+        subscriptionInclude.where = subscriptionWhere;
+        subscriptionInclude.required = true; // INNER JOIN để filter
       }
 
       // Get total count
@@ -630,32 +731,77 @@ router.get(
         where: whereConditions,
       };
 
-      if (subscriptionType && !isNaN(parseInt(subscriptionType))) {
-        totalCountQuery.include = [
-          {
-            model: Subscription,
-            where: { type: parseInt(subscriptionType) },
-            attributes: [],
+      const countIncludes = [];
+
+      // Include User cho search filter
+      if (search) {
+        countIncludes.push({
+          model: User,
+          where: {
+            [Op.or]: [
+              { email: { [Op.like]: `%${search}%` } },
+              { full_name: { [Op.like]: `%${search}%` } },
+            ],
           },
-        ];
+          attributes: [],
+          required: true,
+        });
       }
 
-      const totalCount = await UserSub.count(totalCountQuery);
+      // Build subscription where for count query
+      const countSubscriptionWhere = {};
+      if (subscriptionType && !isNaN(parseInt(subscriptionType))) {
+        countSubscriptionWhere.type = parseInt(subscriptionType);
+      } else if (!includeFreeValue && !subscriptionType) {
+        countSubscriptionWhere.type = { [Op.ne]: 1 }; // Loại bỏ Free subscription (type = 1)
+      }
+
+      if (Object.keys(countSubscriptionWhere).length > 0) {
+        countIncludes.push({
+          model: Subscription,
+          where: countSubscriptionWhere,
+          attributes: [],
+          required: true,
+        });
+      }
+
+      if (countIncludes.length > 0) {
+        totalCountQuery.include = countIncludes;
+        // Lấy tất cả IDs rồi đếm để tránh lỗi với distinct khi có nhiều includes
+        const userSubs = await UserSub.findAll({
+          ...totalCountQuery,
+          attributes: ["id"],
+        });
+        totalCount = userSubs.length;
+      } else {
+        totalCount = await UserSub.count(totalCountQuery);
+      }
+
+      // Build order by clause
+      let orderBy = [["end_date", sortOrder]];
+      if (sortBy === "email" || sortBy === "userEmail") {
+        orderBy = [[{ model: User }, "email", sortOrder]];
+      } else if (sortBy === "name" || sortBy === "userName") {
+        orderBy = [[{ model: User }, "full_name", sortOrder]];
+      } else if (sortBy === "subscriptionName") {
+        orderBy = [[{ model: Subscription }, "name_sub", sortOrder]];
+      } else if (sortBy === "daysRemaining") {
+        // Sort by daysRemaining requires calculation, we'll sort by end_date instead
+        orderBy = [["end_date", sortOrder]];
+      }
 
       // Get actual data
       const expiringUserSubs = await UserSub.findAll({
         where: whereConditions,
-        include: [
-          {
-            model: User,
-            attributes: ["id", "email", "full_name", "created_at"],
-          },
-          subscriptionInclude,
-        ],
+        include: [userInclude, subscriptionInclude],
         offset,
         limit,
-        order: [["end_date", "ASC"]], // Sắp xếp theo ngày hết hạn tăng dần
+        order: orderBy,
       });
+
+      // Tính today để dùng cho daysRemaining
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
 
       // Transform data
       const transformedData = expiringUserSubs.map((userSub) => {
@@ -683,11 +829,16 @@ router.get(
 
       const pagination = calculatePagination(totalCount, currentPage, limit);
 
+      const messageText =
+        dateFrom || dateTo
+          ? `from ${dateFrom || "beginning"} to ${dateTo || "end"}`
+          : `within ${daysValue} days`;
+
       sendListResponse(
         res,
         transformSubscriptionData(transformedData),
         pagination,
-        `Found ${totalCount} users with subscriptions expiring within ${daysValue} days`
+        `Found ${totalCount} users with subscriptions expiring ${messageText}`
       );
     } catch (error) {
       console.error("Error getting expiring subscriptions:", error);
