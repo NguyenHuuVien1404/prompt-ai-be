@@ -17,6 +17,8 @@ const Subscription = sequelize.define("Subscription", {
     created_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW },
     updated_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW },
     is_popular: { type: DataTypes.BOOLEAN, defaultValue: false },
+    is_active: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: true },
+    display_order: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },
 
     description: { type: DataTypes.TEXT, allowNull: true },
     description_per_year: { type: DataTypes.TEXT, allowNull: true },

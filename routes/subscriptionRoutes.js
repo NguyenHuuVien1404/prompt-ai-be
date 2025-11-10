@@ -55,6 +55,93 @@ const transformSubscriptionData = (data) => {
 
   return camelCaseData;
 };
+const buildSubscriptionAttributes = (payload = {}) => {
+  const {
+    name,
+    type,
+    duration,
+    billingCycle,
+    price,
+    priceYear,
+    pricePerMonthYear,
+    priceTotalYearly,
+    description,
+    descriptionPerYear,
+    imageDiscount,
+    isPopular,
+    isActive,
+    displayOrder,
+  } = payload;
+  const sanitizeDecimal = (value) => {
+    if (value === undefined || value === null) {
+      return value;
+    }
+    const preparedValue = typeof value === "string" ? value.trim() : value;
+    if (preparedValue === "") {
+      return null;
+    }
+    return preparedValue;
+  };
+  const sanitizeText = (value) => {
+    if (typeof value !== "string") {
+      return value;
+    }
+    const trimmedValue = value.trim();
+    if (trimmedValue.length === 0) {
+      return null;
+    }
+    return trimmedValue;
+  };
+  const sanitizeBoolean = (value) => {
+    if (value === undefined || value === null) {
+      return value;
+    }
+    if (typeof value === "string") {
+      const normalized = value.trim().toLowerCase();
+      if (normalized === "") {
+        return null;
+      }
+      if (["true", "1", "yes"].includes(normalized)) {
+        return true;
+      }
+      if (["false", "0", "no"].includes(normalized)) {
+        return false;
+      }
+      return null;
+    }
+    return Boolean(value);
+  };
+  const sanitizeInteger = (value) => {
+    if (value === undefined || value === null) {
+      return value;
+    }
+    const preparedValue = typeof value === "string" ? value.trim() : value;
+    if (preparedValue === "") {
+      return null;
+    }
+    const parsedValue = Number(preparedValue);
+    if (Number.isNaN(parsedValue)) {
+      return null;
+    }
+    return Math.trunc(parsedValue);
+  };
+  return {
+    name_sub: name,
+    type,
+    duration,
+    billing_cycle: billingCycle,
+    price: sanitizeDecimal(price),
+    price_year: sanitizeDecimal(priceYear),
+    price_per_month_year: sanitizeDecimal(pricePerMonthYear),
+    price_total_yearly: sanitizeDecimal(priceTotalYearly),
+    description: sanitizeText(description),
+    description_per_year: sanitizeText(descriptionPerYear),
+    imageDiscount: sanitizeText(imageDiscount),
+    is_popular: sanitizeBoolean(isPopular),
+    is_active: sanitizeBoolean(isActive),
+    display_order: sanitizeInteger(displayOrder),
+  };
+};
 // Lấy danh sách Subscription (GET route for RESTful API)
 router.get("/", async (req, res) => {
   try {
@@ -329,35 +416,8 @@ router.get(
 // Tạo Subscription mới
 router.post("/", authMiddleware, adminMiddleware, async (req, res) => {
   try {
-    const {
-      name_sub,
-      type,
-      duration,
-      billing_cycle,
-      price,
-      price_year,
-      price_per_month_year,
-      price_total_yearly,
-      description,
-      description_per_year,
-      imageDiscount,
-      is_popular,
-    } = req.body;
-
-    const newSubscription = await Subscription.create({
-      name_sub,
-      type,
-      duration,
-      billing_cycle,
-      price,
-      price_year,
-      price_per_month_year,
-      price_total_yearly,
-      description,
-      description_per_year,
-      imageDiscount,
-      is_popular,
-    });
+    const subscriptionAttributes = buildSubscriptionAttributes(req.body);
+    const newSubscription = await Subscription.create(subscriptionAttributes);
 
     sendCreateResponse(
       res,
@@ -372,42 +432,15 @@ router.post("/", authMiddleware, adminMiddleware, async (req, res) => {
 // Cập nhật Subscription
 router.put("/:id", authMiddleware, adminMiddleware, async (req, res) => {
   try {
-    const {
-      name_sub,
-      type,
-      duration,
-      billing_cycle,
-      price,
-      price_year,
-      price_per_month_year,
-      price_total_yearly,
-      description,
-      description_per_year,
-      imageDiscount,
-      is_popular,
-      contentSubscriptions, // Array of content subscription objects
-    } = req.body;
-
+    const { contentSubscriptions } = req.body;
+    const subscriptionAttributes = buildSubscriptionAttributes(req.body);
     const subscription = await Subscription.findByPk(req.params.id);
     if (!subscription) {
       return sendNotFoundResponse(res, "Không tìm thấy Subscription!");
     }
 
     // Update basic subscription fields
-    await subscription.update({
-      name_sub,
-      type,
-      duration,
-      billing_cycle,
-      price,
-      price_year,
-      price_per_month_year,
-      price_total_yearly,
-      description,
-      description_per_year,
-      imageDiscount,
-      is_popular,
-    });
+    await subscription.update(subscriptionAttributes);
 
     // Update contentSubscriptions if provided
     if (contentSubscriptions && Array.isArray(contentSubscriptions)) {
