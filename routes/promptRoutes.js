@@ -823,6 +823,26 @@ router.post(
   }
 );
 
+const parseBooleanQuery = (value) => {
+  if (value === undefined || value === null) {
+    return null;
+  }
+  if (typeof value === "boolean") {
+    return value;
+  }
+  const normalized = String(value).trim().toLowerCase();
+  if (normalized === "") {
+    return null;
+  }
+  if (["1", "true", "yes"].includes(normalized)) {
+    return true;
+  }
+  if (["0", "false", "no"].includes(normalized)) {
+    return false;
+  }
+  return null;
+};
+
 // Get all prompts with pagination
 router.get("/", async (req, res) => {
   try {
@@ -833,8 +853,14 @@ router.get("/", async (req, res) => {
 
     const where = {};
 
-    // Handle category filtering - support multiple categoryIds
-    if (
+    const onlyWithoutCategory = parseBooleanQuery(
+      req.query.onlyWithoutCategory || req.query.only_without_category
+    );
+
+    // Handle category filtering - support multiple categoryIds (skip when onlyWithoutCategory true)
+    if (onlyWithoutCategory === true) {
+      where.category_id = null;
+    } else if (
       req.query.categoryIds ||
       req.query.categoryId ||
       req.query.category_id
@@ -856,6 +882,8 @@ router.get("/", async (req, res) => {
             ? validCategoryIds[0]
             : { [Op.in]: validCategoryIds };
       }
+    } else if (onlyWithoutCategory === false) {
+      where.category_id = { [Op.not]: null };
     }
 
     // Handle is_type filtering - support multiple values
@@ -2195,6 +2223,75 @@ router.put(
     }
   }
 );
+
+router.delete("/bulk", authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const { promptIds, prompt_ids } = req.body;
+    const promptIdsParam = promptIds || prompt_ids;
+    if (!promptIdsParam) {
+      return sendErrorResponse(
+        res,
+        "promptIds is required",
+        "VALIDATION_ERROR",
+        400
+      );
+    }
+    const promptIdsArray = Array.isArray(promptIdsParam)
+      ? promptIdsParam
+      : typeof promptIdsParam === "string"
+      ? promptIdsParam
+          .split(",")
+          .map((id) => id.trim())
+          .filter((id) => id)
+      : [promptIdsParam];
+    const validPromptIds = promptIdsArray
+      .map((id) => parseInt(id))
+      .filter((id) => !isNaN(id) && id > 0);
+    if (validPromptIds.length === 0) {
+      return sendErrorResponse(
+        res,
+        "No valid prompt IDs provided",
+        "VALIDATION_ERROR",
+        400
+      );
+    }
+    const existingPrompts = await Prompt.findAll({
+      where: { id: { [Op.in]: validPromptIds } },
+      attributes: ["id"],
+    });
+    if (existingPrompts.length === 0) {
+      return sendNotFoundResponse(res, "None of the provided prompt IDs exist");
+    }
+    const existingIds = existingPrompts.map((prompt) => prompt.id);
+    const notFoundIds = validPromptIds.filter(
+      (id) => !existingIds.includes(id)
+    );
+    const deletedCount = await Prompt.destroy({
+      where: { id: { [Op.in]: existingIds } },
+    });
+    const responseData = {
+      deleted: deletedCount,
+      totalRequested: validPromptIds.length,
+      totalFound: existingIds.length,
+      notFound: notFoundIds.length,
+      notFoundIds: notFoundIds.length > 0 ? notFoundIds : undefined,
+    };
+    if (!responseData.notFoundIds) {
+      delete responseData.notFoundIds;
+    }
+    res.status(200).json({
+      success: true,
+      message: `Deleted ${deletedCount} prompt(s) successfully`,
+      data: responseData,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Error bulk deleting prompts",
+      error: error.message,
+    });
+  }
+});
 
 // Delete a prompt
 router.delete("/:id", authMiddleware, adminMiddleware, async (req, res) => {
