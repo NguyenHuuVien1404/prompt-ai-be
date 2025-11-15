@@ -1,5 +1,7 @@
 const express = require("express");
 const router = express.Router();
+const { Sequelize } = require("sequelize");
+const sequelize = require("../config/database");
 const { Industry, Category, CategoryIndustry } = require("../models");
 const {
   authMiddleware,
@@ -48,12 +50,13 @@ router.get("/", async (req, res) => {
 
     // Handle categoryIds filtering
     let includeOptions = [];
+    let validCategoryIds = [];
     if (categoryIds) {
       const categoryIdArray = Array.isArray(categoryIds)
         ? categoryIds.map((id) => parseInt(id))
         : [parseInt(categoryIds)];
 
-      const validCategoryIds = categoryIdArray.filter(
+      validCategoryIds = categoryIdArray.filter(
         (id) => !isNaN(id) && id > 0
       );
 
@@ -93,17 +96,105 @@ router.get("/", async (req, res) => {
         distinct: true,
       });
 
-      // Get paginated results
-      const industries = await Industry.findAll({
-        where: whereCondition,
-        include: includeOptions,
-        order: [["name", "ASC"]],
-        limit: limit,
-        offset: offset,
-      });
+      // When filtering by categoryIds, we need to use subquery to get correct pagination
+      // because offset/limit on join results can cause duplicate industries
+      if (includeOptions.length > 0) {
+        // Build query with proper escaping for arrays
+        const categoryIdsPlaceholder = validCategoryIds.map((_, index) => `?`).join(',');
+        const countParams = [...validCategoryIds];
+        const queryParams = [...validCategoryIds];
+        
+        let searchCondition = '';
+        if (search_normalized && search_normalized.trim()) {
+          searchCondition = 'AND i.name LIKE ?';
+          const searchValue = `%${search_normalized.trim()}%`;
+          countParams.push(searchValue);
+          queryParams.push(searchValue);
+        }
+        
+        // Get total count using same query structure for consistency
+        const countResults = await sequelize.query(
+          `
+          SELECT COUNT(DISTINCT i.id) as total
+          FROM industries i
+          INNER JOIN category_industries ci ON i.id = ci.industry_id
+          INNER JOIN categories c ON ci.category_id = c.id
+          WHERE c.id IN (${categoryIdsPlaceholder})
+          ${searchCondition}
+        `,
+          {
+            replacements: countParams,
+            type: Sequelize.QueryTypes.SELECT,
+          }
+        );
 
-      const pagination = calculatePagination(totalCount, pageNumber, limit);
-      sendListResponse(res, transformToCamelCase(industries), pagination);
+        const totalCount = countResults && countResults.length > 0 && countResults[0].total 
+          ? parseInt(countResults[0].total) 
+          : 0;
+        
+        // Calculate total pages and validate page number
+        const totalPages = Math.ceil(totalCount / limit);
+        const validatedPageNumber = pageNumber > totalPages && totalPages > 0 ? totalPages : pageNumber;
+        const validatedOffset = (validatedPageNumber - 1) * limit;
+        
+        queryParams.push(limit, validatedOffset);
+
+        // First, get the industry IDs that match the filter (with pagination)
+        // Note: Must include i.name in SELECT when using DISTINCT with ORDER BY i.name
+        const industryIdsQuery = await sequelize.query(
+          `
+          SELECT DISTINCT i.id, i.name
+          FROM industries i
+          INNER JOIN category_industries ci ON i.id = ci.industry_id
+          INNER JOIN categories c ON ci.category_id = c.id
+          WHERE c.id IN (${categoryIdsPlaceholder})
+          ${searchCondition}
+          ORDER BY i.name ASC
+          LIMIT ? OFFSET ?
+        `,
+          {
+            replacements: queryParams,
+            type: Sequelize.QueryTypes.SELECT,
+          }
+        );
+
+        // Extract industry IDs from query results
+        const industryIds = Array.isArray(industryIdsQuery) 
+          ? industryIdsQuery.map((row) => row.id)
+          : [];
+
+        if (industryIds.length === 0) {
+          const pagination = calculatePagination(totalCount, validatedPageNumber, limit);
+          return sendListResponse(res, [], pagination);
+        }
+
+        // Then, get the full industry data with categories
+        const industries = await Industry.findAll({
+          where: {
+            id: {
+              [Sequelize.Op.in]: industryIds,
+            },
+            ...whereCondition,
+          },
+          include: includeOptions,
+          order: [["name", "ASC"]],
+        });
+
+        const pagination = calculatePagination(totalCount, validatedPageNumber, limit);
+        sendListResponse(res, transformToCamelCase(industries), pagination);
+      } else {
+        // No category filter - normal pagination works fine
+        const industries = await Industry.findAll({
+          where: whereCondition,
+          include: includeOptions,
+          order: [["name", "ASC"]],
+          limit: limit,
+          offset: offset,
+        });
+
+        const pagination = calculatePagination(totalCount, pageNumber, limit);
+        sendListResponse(res, transformToCamelCase(industries), pagination);
+      }
     } else {
       // No pagination - return all results
       const industries = await Industry.findAll({
@@ -122,6 +213,7 @@ router.get("/", async (req, res) => {
     }
   } catch (error) {
     console.error("Error fetching industries:", error);
+    console.error("Error stack:", error.stack);
     sendInternalErrorResponse(res, "Lỗi máy chủ nội bộ");
   }
 });
