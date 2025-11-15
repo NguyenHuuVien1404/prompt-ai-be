@@ -128,21 +128,28 @@ async function processExcelFile(filePath) {
         });
 
         // Kiểm tra dữ liệu bắt buộc - sử dụng các tên header có thể có
-        const categoryValue =
+        const categoryValueRaw =
           promptData.category ||
           promptData["Category Description"] ||
           promptData["category_description"] ||
           promptData.Category;
-        const topicValue =
+        const topicValueRaw =
           promptData.topic ||
           promptData["Topic"] ||
           promptData["topic_name"] ||
           promptData.Topic;
-        const titleValue =
+        const titleValueRaw =
           promptData.title ||
           promptData["Title"] ||
           promptData["title_name"] ||
           promptData.Title;
+
+        // Normalize values (trim whitespace)
+        const categoryValue = categoryValueRaw
+          ? String(categoryValueRaw).trim()
+          : null;
+        const topicValue = topicValueRaw ? String(topicValueRaw).trim() : null;
+        const titleValue = titleValueRaw ? String(titleValueRaw).trim() : null;
 
         if (!categoryValue || !topicValue || !titleValue) {
           const missingFields = [];
@@ -168,18 +175,38 @@ async function processExcelFile(filePath) {
         const promptId = promptData.id ? parseInt(promptData.id) : null;
         const isUpdate = promptId && !isNaN(promptId);
 
-        // Process category
+        // Process category - use case-insensitive and trimmed search
+        // Normalize category name for searching (trim)
+        const normalizedCategoryName = categoryValue.trim();
+
+        // Try exact match first (case-sensitive)
         let category = await Category.findOne({
-          where: { name: categoryValue },
+          where: { name: normalizedCategoryName },
           transaction,
         });
 
+        // If not found, try case-insensitive search using raw query for better compatibility
+        if (!category) {
+          // Use raw query for case-insensitive search (works with MySQL/MariaDB)
+          const categories = await Category.findAll({
+            where: sequelize.where(
+              sequelize.fn("LOWER", sequelize.col("name")),
+              normalizedCategoryName.toLowerCase()
+            ),
+            transaction,
+            limit: 1,
+          });
+
+          category = categories.length > 0 ? categories[0] : null;
+        }
+
         if (!category) {
           // Auto-create category if it doesn't exist
+          // Use normalized name (trimmed) to ensure consistency
           try {
             category = await Category.create(
               {
-                name: categoryValue,
+                name: normalizedCategoryName,
                 image: "", // Set default empty string
                 image_card: "", // Set default empty string
                 section_id: 1, // Set default section_id
@@ -204,18 +231,36 @@ async function processExcelFile(filePath) {
           }
         }
 
-        // Process topic
+        // Process topic - use normalized name (trimmed)
+        const normalizedTopicName = topicValue.trim();
+
+        // Try exact match first (case-sensitive)
         let topic = await Topic.findOne({
-          where: { name: topicValue },
+          where: { name: normalizedTopicName },
           transaction,
         });
 
+        // If not found, try case-insensitive search
+        if (!topic) {
+          const topics = await Topic.findAll({
+            where: sequelize.where(
+              sequelize.fn("LOWER", sequelize.col("name")),
+              normalizedTopicName.toLowerCase()
+            ),
+            transaction,
+            limit: 1,
+          });
+
+          topic = topics.length > 0 ? topics[0] : null;
+        }
+
         if (!topic) {
           // Auto-create topic if it doesn't exist
+          // Use normalized name (trimmed) to ensure consistency
           try {
             topic = await Topic.create(
               {
-                name: topicValue,
+                name: normalizedTopicName,
                 created_at: new Date(),
                 updated_at: new Date(),
               },
@@ -400,6 +445,45 @@ async function processExcelFile(filePath) {
       if (prompts.length > 0) {
         for (const promptData of prompts) {
           try {
+            // Helper function to find field value with multiple name variations (case-insensitive)
+            const findFieldValue = (fieldVariations) => {
+              // First, try exact matches
+              for (const variation of fieldVariations) {
+                if (
+                  promptData[variation] !== undefined &&
+                  promptData[variation] !== null &&
+                  promptData[variation] !== ""
+                ) {
+                  return promptData[variation];
+                }
+              }
+              // Then, try case-insensitive match
+              const keys = Object.keys(promptData);
+              for (const variation of fieldVariations) {
+                const normalizedVariation = variation
+                  .toLowerCase()
+                  .replace(/_/g, "")
+                  .replace(/ /g, "");
+                const matchingKey = keys.find((key) => {
+                  if (!key) return false;
+                  const normalizedKey = key
+                    .toLowerCase()
+                    .replace(/_/g, "")
+                    .replace(/ /g, "");
+                  return normalizedKey === normalizedVariation;
+                });
+                if (
+                  matchingKey &&
+                  promptData[matchingKey] !== undefined &&
+                  promptData[matchingKey] !== null &&
+                  promptData[matchingKey] !== ""
+                ) {
+                  return promptData[matchingKey];
+                }
+              }
+              return null;
+            };
+
             const promptRecord = {
               short_description: promptData.short_description || "",
               category_id: promptData.category_id,
@@ -410,12 +494,40 @@ async function processExcelFile(filePath) {
               what: promptData.what || null,
               tips: promptData.tips || null,
               text: promptData.text || null,
-              optimizationGuide: promptData.optimization_guide || null,
+              optimizationGuide:
+                findFieldValue([
+                  "optimization_guide",
+                  "Optimization_Guide",
+                  "Optimation_Guide",
+                  "OPTIMIZATION_GUIDE",
+                  "OPTIMATION_GUIDE",
+                  "optimizationGuide",
+                  "OptimizationGuide",
+                  "OptimationGuide",
+                  "Optimization_guide",
+                  "Optimation_guide",
+                ]) || null,
               how: promptData.how || null,
               input: promptData.input || null,
               output: promptData.output || null,
-              addTip: promptData.add_tip || null,
-              addInformation: promptData.add_information || null,
+              addTip:
+                findFieldValue([
+                  "add_tip",
+                  "Add_Tip",
+                  "addtip",
+                  "Addtip",
+                  "addTip",
+                  "AddTip",
+                ]) || null,
+              addInformation:
+                findFieldValue([
+                  "add_information",
+                  "Add_Information",
+                  "addinformation",
+                  "Addinformation",
+                  "addInformation",
+                  "AddInformation",
+                ]) || null,
               sub_type: promptData.sub_type || 1,
               updated_at: new Date(),
             };
