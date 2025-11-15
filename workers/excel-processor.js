@@ -1,6 +1,7 @@
 const { parentPort, workerData } = require("worker_threads");
 const XLSX = require("xlsx");
 const sequelize = require("../config/database");
+const { Sequelize, Op } = require("sequelize");
 const {
   Prompt,
   Category,
@@ -185,19 +186,15 @@ async function processExcelFile(filePath) {
           transaction,
         });
 
-        // If not found, try case-insensitive search using raw query for better compatibility
+        // If not found, try case-insensitive search
+        // MySQL/MariaDB default collation is case-insensitive, but we use explicit LOWER() for safety
         if (!category) {
-          // Use raw query for case-insensitive search (works with MySQL/MariaDB)
-          const categories = await Category.findAll({
-            where: sequelize.where(
-              sequelize.fn("LOWER", sequelize.col("name")),
-              normalizedCategoryName.toLowerCase()
-            ),
+          // Use Sequelize.literal for case-insensitive comparison with proper escaping
+          const escapedName = sequelize.escape(normalizedCategoryName);
+          category = await Category.findOne({
+            where: Sequelize.literal(`LOWER(name) = LOWER(${escapedName})`),
             transaction,
-            limit: 1,
           });
-
-          category = categories.length > 0 ? categories[0] : null;
         }
 
         if (!category) {
@@ -242,16 +239,12 @@ async function processExcelFile(filePath) {
 
         // If not found, try case-insensitive search
         if (!topic) {
-          const topics = await Topic.findAll({
-            where: sequelize.where(
-              sequelize.fn("LOWER", sequelize.col("name")),
-              normalizedTopicName.toLowerCase()
-            ),
+          // Use Sequelize.literal for case-insensitive comparison with proper escaping
+          const escapedName = sequelize.escape(normalizedTopicName);
+          topic = await Topic.findOne({
+            where: Sequelize.literal(`LOWER(name) = LOWER(${escapedName})`),
             transaction,
-            limit: 1,
           });
-
-          topic = topics.length > 0 ? topics[0] : null;
         }
 
         if (!topic) {
@@ -544,23 +537,88 @@ async function processExcelFile(filePath) {
               );
 
               if (!existingPrompt) {
-                console.warn(
-                  `Row: Prompt with ID ${promptData.original_id} not found, skipping update`
+                // If prompt not found, create new instead of skipping
+                console.log(
+                  `Row ${promptData.rowIndex + 1}: Prompt with ID ${
+                    promptData.original_id
+                  } not found, creating new prompt instead`
                 );
-                skippedRecords.push({
-                  row: promptData.rowIndex + 1,
-                  reason: `Prompt with ID ${promptData.original_id} not found`,
-                  data: promptData,
-                });
-                continue;
-              }
 
-              await existingPrompt.update(promptRecord, { transaction });
-              resultPrompt = existingPrompt;
+                // Validate required fields before insert
+                if (!promptRecord.category_id) {
+                  throw new Error(
+                    `Missing category_id. Category: ${promptData.category}, Category ID: ${promptData.category_id}`
+                  );
+                }
+                if (!promptRecord.topic_id) {
+                  throw new Error(
+                    `Missing topic_id. Topic: ${promptData.topic}, Topic ID: ${promptData.topic_id}`
+                  );
+                }
+                if (!promptRecord.title || promptRecord.title.trim() === "") {
+                  throw new Error(`Missing or empty title`);
+                }
+                if (
+                  !promptRecord.content ||
+                  promptRecord.content.trim() === ""
+                ) {
+                  throw new Error(`Missing or empty content`);
+                }
+
+                // Create new prompt
+                promptRecord.created_at = new Date();
+                resultPrompt = await Prompt.create(promptRecord, {
+                  transaction,
+                });
+
+                // Update operation to "insert" for tracking
+                promptData.operation = "insert";
+
+                console.log(
+                  `Row ${
+                    promptData.rowIndex + 1
+                  }: Successfully created new prompt ID ${
+                    resultPrompt.id
+                  } (original ID ${promptData.original_id} not found)`
+                );
+              } else {
+                // Update existing prompt
+                await existingPrompt.update(promptRecord, { transaction });
+                resultPrompt = existingPrompt;
+                console.log(
+                  `Row ${
+                    promptData.rowIndex + 1
+                  }: Successfully updated prompt ID ${resultPrompt.id}`
+                );
+              }
             } else {
               // Insert new prompt
               promptRecord.created_at = new Date();
+
+              // Validate required fields before insert
+              if (!promptRecord.category_id) {
+                throw new Error(
+                  `Missing category_id. Category: ${promptData.category}, Category ID: ${promptData.category_id}`
+                );
+              }
+              if (!promptRecord.topic_id) {
+                throw new Error(
+                  `Missing topic_id. Topic: ${promptData.topic}, Topic ID: ${promptData.topic_id}`
+                );
+              }
+              if (!promptRecord.title || promptRecord.title.trim() === "") {
+                throw new Error(`Missing or empty title`);
+              }
+              if (!promptRecord.content || promptRecord.content.trim() === "") {
+                throw new Error(`Missing or empty content`);
+              }
+
               resultPrompt = await Prompt.create(promptRecord, { transaction });
+              console.log(
+                `Row ${
+                  promptData.rowIndex + 1
+                }: Successfully created prompt ID ${resultPrompt.id}`
+              );
             }
 
             // Handle industry relationships for both insert and update
@@ -625,12 +683,25 @@ async function processExcelFile(filePath) {
               original_id: promptData.original_id,
             });
           } catch (error) {
-            console.error(`Error processing prompt: ${error.message}`);
+            console.error(
+              `Row ${promptData.rowIndex + 1}: Error processing prompt: ${
+                error.message
+              }`
+            );
+            console.error(`Error stack:`, error.stack);
+            console.error(`Prompt data:`, {
+              title: promptData.title,
+              category_id: promptData.category_id,
+              topic_id: promptData.topic_id,
+              operation: promptData.operation,
+              original_id: promptData.original_id,
+            });
             skippedRecords.push({
               row: promptData.rowIndex + 1,
               reason: `Error processing: ${error.message}`,
               data: promptData,
               error: error.message,
+              errorStack: error.stack,
             });
           }
         }
@@ -653,7 +724,7 @@ async function processExcelFile(filePath) {
       const autoCreatedCategoriesCount = autoCreatedCategories.size;
       const autoCreatedIndustriesCount = autoCreatedIndustries.size;
 
-      if (prompts.length > 0 && skippedRecords.length === 0) {
+      if (insertedRecords.length > 0 && skippedRecords.length === 0) {
         let operationText = [];
         if (insertCount > 0) operationText.push(`${insertCount} inserted`);
         if (updateCount > 0) operationText.push(`${updateCount} updated`);
@@ -671,16 +742,16 @@ async function processExcelFile(filePath) {
           if (autoCreatedIndustriesCount > 0)
             autoCreatedText.push(`${autoCreatedIndustriesCount} industries`);
           message = `Import thành công! ${
-            prompts.length
+            insertedRecords.length
           } records đã được xử lý (${operationText.join(
             ", "
           )}). ${autoCreatedText.join(", ")} mới đã được tạo tự động.`;
         } else {
           message = `Import thành công! ${
-            prompts.length
+            insertedRecords.length
           } records đã được xử lý (${operationText.join(", ")}).`;
         }
-      } else if (prompts.length > 0 && skippedRecords.length > 0) {
+      } else if (insertedRecords.length > 0 && skippedRecords.length > 0) {
         let operationText = [];
         if (insertCount > 0) operationText.push(`${insertCount} inserted`);
         if (updateCount > 0) operationText.push(`${updateCount} updated`);
@@ -698,7 +769,7 @@ async function processExcelFile(filePath) {
           if (autoCreatedIndustriesCount > 0)
             autoCreatedText.push(`${autoCreatedIndustriesCount} industries`);
           message = `Import một phần thành công! ${
-            prompts.length
+            insertedRecords.length
           } records đã được xử lý (${operationText.join(
             ", "
           )}, ${autoCreatedText.join(", ")} mới được tạo), ${
@@ -706,22 +777,25 @@ async function processExcelFile(filePath) {
           } records bị bỏ qua.`;
         } else {
           message = `Import một phần thành công! ${
-            prompts.length
+            insertedRecords.length
           } records đã được xử lý (${operationText.join(", ")}), ${
             skippedRecords.length
           } records bị bỏ qua.`;
         }
-      } else if (prompts.length === 0 && skippedRecords.length > 0) {
+      } else if (insertedRecords.length === 0 && skippedRecords.length > 0) {
         message = `Import thất bại! Tất cả ${skippedRecords.length} records đều bị bỏ qua.`;
       } else {
         message = "Không có dữ liệu nào được xử lý.";
       }
 
+      // Success should be based on actual inserted/updated records, not parsed prompts
+      const hasSuccessfulOperations = insertedRecords.length > 0;
+
       parentPort.postMessage({
-        success: prompts.length > 0, // Chỉ thành công nếu có ít nhất 1 record được xử lý
-        count: prompts.length,
+        success: hasSuccessfulOperations, // Chỉ thành công nếu có ít nhất 1 record được insert/update thành công
+        count: insertedRecords.length, // Return actual processed count
         message: message,
-        data: prompts,
+        data: insertedRecords, // Return actual inserted records, not parsed prompts
         insertedRecords: insertedRecords,
         skippedRecords: skippedRecords,
         summary: {

@@ -857,7 +857,9 @@ router.get("/", async (req, res) => {
       req.query.onlyWithoutCategory || req.query.only_without_category
     );
 
-    // Handle category filtering - support multiple categoryIds (skip when onlyWithoutCategory true)
+    // Handle category filtering - support multiple categoryIds or category names
+    // (skip when onlyWithoutCategory true)
+    let categoryFilterIds = null;
     if (onlyWithoutCategory === true) {
       where.category_id = null;
     } else if (
@@ -871,16 +873,56 @@ router.get("/", async (req, res) => {
         ? categoryIds
         : [categoryIds];
 
-      // Convert to numbers and filter out invalid values
-      const validCategoryIds = categoryArray
-        .map((id) => parseInt(id))
+      // Check if values are numeric (IDs) or strings (names)
+      const numericValues = categoryArray
+        .map((val) => parseInt(val))
         .filter((id) => !isNaN(id) && id > 0);
+      const stringValues = categoryArray
+        .filter((val) => isNaN(parseInt(val)) || parseInt(val) <= 0)
+        .map((val) => String(val).trim())
+        .filter((val) => val.length > 0);
 
-      if (validCategoryIds.length > 0) {
+      // If we have numeric IDs, use them directly
+      if (numericValues.length > 0) {
+        categoryFilterIds = numericValues;
         where.category_id =
-          validCategoryIds.length === 1
-            ? validCategoryIds[0]
-            : { [Op.in]: validCategoryIds };
+          numericValues.length === 1
+            ? numericValues[0]
+            : { [Op.in]: numericValues };
+      }
+
+      // If we have string names, find category IDs by name (case-insensitive)
+      if (stringValues.length > 0) {
+        // Build case-insensitive search conditions for category names
+        const categoryNameConditions = stringValues.map((name) =>
+          Sequelize.literal(
+            `LOWER(categories.name) = LOWER(${sequelize.escape(name)})`
+          )
+        );
+        
+        const categories = await Category.findAll({
+          where: Sequelize.or(...categoryNameConditions),
+          attributes: ["id"],
+          raw: true,
+        });
+        const foundIds = categories.map((cat) => cat.id);
+        if (foundIds.length > 0) {
+          if (categoryFilterIds) {
+            // Merge with existing IDs
+            categoryFilterIds = [...new Set([...categoryFilterIds, ...foundIds])];
+            where.category_id = { [Op.in]: categoryFilterIds };
+          } else {
+            categoryFilterIds = foundIds;
+            where.category_id =
+              foundIds.length === 1
+                ? foundIds[0]
+                : { [Op.in]: foundIds };
+          }
+        } else if (numericValues.length === 0) {
+          // No IDs found for string names and no numeric IDs
+          // Return empty result
+          where.category_id = { [Op.in]: [] };
+        }
       }
     } else if (onlyWithoutCategory === false) {
       where.category_id = { [Op.not]: null };
