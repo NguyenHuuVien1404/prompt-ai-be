@@ -443,7 +443,6 @@ router.get("/", async (req, res) => {
       }
     }
 
-
     const userSubInclude = {
       model: UserSub,
       // ✅ Single userSub rule: no need to filter by status, just get the user's single userSub
@@ -829,10 +828,10 @@ router.get(
   adminOrMarketerMiddleware,
   async (req, res) => {
     try {
-      const { 
+      const {
         days = 5,
-        page = 1, 
-        pageSize = 10, 
+        page = 1,
+        pageSize = 10,
         includeFree = false,
         search,
         subscriptionType,
@@ -858,33 +857,41 @@ router.get(
       // Filter theo dateFrom và dateTo nếu có (ưu tiên), nếu không thì dùng days
       if (dateFrom || dateTo) {
         whereConditions.end_date = {};
-        
+
         // Helper function để validate và parse date
         const validateAndParseDate = (dateString, paramName) => {
           // Check format YYYY-MM-DD
           const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
           if (!dateRegex.test(dateString)) {
-            throw new Error(`${paramName} không hợp lệ. Vui lòng sử dụng định dạng YYYY-MM-DD (ví dụ: 2025-01-01)`);
+            throw new Error(
+              `${paramName} không hợp lệ. Vui lòng sử dụng định dạng YYYY-MM-DD (ví dụ: 2025-01-01)`
+            );
           }
-          
+
           const date = new Date(dateString);
-          
+
           // Check nếu date không hợp lệ
           if (isNaN(date.getTime())) {
-            throw new Error(`${paramName} không hợp lệ. Vui lòng sử dụng định dạng YYYY-MM-DD (ví dụ: 2025-01-01)`);
+            throw new Error(
+              `${paramName} không hợp lệ. Vui lòng sử dụng định dạng YYYY-MM-DD (ví dụ: 2025-01-01)`
+            );
           }
-          
+
           // Check nếu parse ra date khác với input (ví dụ: 2025-13-01 -> invalid month)
-          const [year, month, day] = dateString.split('-').map(Number);
-          if (date.getFullYear() !== year || 
-              date.getMonth() + 1 !== month || 
-              date.getDate() !== day) {
-            throw new Error(`${paramName} không hợp lệ. Vui lòng kiểm tra lại ngày, tháng, năm (ví dụ: 2025-01-01)`);
+          const [year, month, day] = dateString.split("-").map(Number);
+          if (
+            date.getFullYear() !== year ||
+            date.getMonth() + 1 !== month ||
+            date.getDate() !== day
+          ) {
+            throw new Error(
+              `${paramName} không hợp lệ. Vui lòng kiểm tra lại ngày, tháng, năm (ví dụ: 2025-01-01)`
+            );
           }
-          
+
           return date;
         };
-        
+
         if (dateFrom) {
           try {
             const fromDate = validateAndParseDate(dateFrom, "dateFrom");
@@ -975,7 +982,7 @@ router.get(
 
       // Get total count với subscription filter
       let totalCount;
-      
+
       // Build count query với tất cả filters
       const countQuery = {
         where: whereConditions,
@@ -1012,18 +1019,18 @@ router.get(
         attributes: [],
         required: true, // INNER JOIN
       };
-      
+
       if (Object.keys(countSubscriptionWhere).length > 0) {
         countSubscriptionInclude.where = countSubscriptionWhere;
       }
-      
+
       countIncludes.push(countSubscriptionInclude);
 
       // Luôn dùng findAll với includes để đếm chính xác
       countQuery.include = countIncludes;
       const userSubs = await UserSub.findAll({
         ...countQuery,
-        attributes: ['id'],
+        attributes: ["id"],
       });
       totalCount = userSubs.length;
 
@@ -1043,10 +1050,7 @@ router.get(
       // Get actual data
       const expiringUserSubs = await UserSub.findAll({
         where: whereConditions,
-        include: [
-          userInclude,
-          subscriptionInclude,
-        ],
+        include: [userInclude, subscriptionInclude],
         offset,
         limit,
         order: orderBy,
@@ -1082,9 +1086,10 @@ router.get(
 
       const pagination = calculatePagination(totalCount, currentPage, limit);
 
-      const messageText = dateFrom || dateTo
-        ? `from ${dateFrom || "beginning"} to ${dateTo || "end"}`
-        : `within ${daysValue} days`;
+      const messageText =
+        dateFrom || dateTo
+          ? `from ${dateFrom || "beginning"} to ${dateTo || "end"}`
+          : `within ${daysValue} days`;
 
       sendListResponse(
         res,
@@ -1912,25 +1917,80 @@ router.put("/count-prompt/:id", async (req, res) => {
   }
 });
 
+/**
+ * @route PUT /api/users/update-info/:id
+ * @desc Update user profile (name and/or profile image)
+ * @access Private (authenticated users can update their own profile, Admin can update any profile)
+ *
+ * @headers
+ *   Authorization: Bearer <token> (required)
+ *
+ * @body (multipart/form-data)
+ *   full_name hoặc fullName: "Tên mới" (optional)
+ *   profile_image: <file> (optional)
+ *
+ * @response
+ *   Success: 200 - Profile updated successfully
+ *   Error: 403 - Forbidden (trying to update another user's profile)
+ *   Error: 404 - User not found
+ *   Error: 500 - Internal server error
+ */
 router.put(
   "/update-info/:id",
+  authMiddleware,
   upload.fields([{ name: "profile_image" }]),
   async (req, res) => {
     try {
-      const userId = req.params.id;
-      const fullName = req.body.full_name;
+      const userId = Number.parseInt(req.params.id, 10);
+
+      // Validate userId
+      if (Number.isNaN(userId) || userId <= 0) {
+        return sendErrorResponse(
+          res,
+          "Invalid user ID",
+          "VALIDATION_ERROR",
+          400
+        );
+      }
+
+      const currentUserId = req.user.id;
+      const currentUserRole = req.user.role || req.user.role_id;
+
+      // ✅ Authorization check: User chỉ có thể update profile của chính mình, trừ khi là Admin
+      const isAdmin =
+        currentUserRole === 2 ||
+        currentUserRole === "Admin" ||
+        req.user.role_name === "Admin";
+      if (userId !== currentUserId && !isAdmin) {
+        return sendErrorResponse(
+          res,
+          "Bạn không có quyền cập nhật profile của người dùng khác",
+          "FORBIDDEN",
+          403
+        );
+      }
 
       const user = await User.findByPk(userId);
 
-      if (!user) return res.status(404).json({ message: "User not found" });
-
-      // Update user information
-      if (fullName) {
-        user.full_name = fullName;
+      if (!user) {
+        return sendNotFoundResponse(res, "User not found");
       }
 
-      // Handle file uploads
-      let imageUrl = null;
+      // ✅ Hỗ trợ cả camelCase và snake_case cho full_name
+      // Format: full_name hoặc fullName (optional)
+      const fullName = req.body.full_name || req.body.fullName;
+
+      // Track if any update was made
+      let hasUpdate = false;
+
+      // Update user information
+      if (fullName && typeof fullName === "string" && fullName.trim()) {
+        user.full_name = fullName.trim();
+        hasUpdate = true;
+      }
+
+      // ✅ Handle file uploads
+      // Format: profile_image: <file> (optional)
       if (
         req.files &&
         req.files["profile_image"] &&
@@ -1951,32 +2011,53 @@ router.put(
                 fs.unlinkSync(fullPath);
               }
             }
-          } catch (deleteErr) {
+          } catch (error_) {
+            console.error("Error deleting old image:", error_);
             // Continue with the update even if delete fails
           }
         }
 
         // Save new image URL
         const baseUrl = `${req.protocol}://${req.get("host")}`;
-        imageUrl = `${baseUrl}/uploads/${req.files["profile_image"][0].filename}`;
+        const imageUrl = `${baseUrl}/uploads/${req.files["profile_image"][0].filename}`;
         user.profile_image = imageUrl;
+        hasUpdate = true;
+      }
+
+      // Check if there's any update to save
+      if (!hasUpdate) {
+        return sendErrorResponse(
+          res,
+          "Không có dữ liệu nào để cập nhật. Vui lòng cung cấp full_name hoặc profile_image",
+          "VALIDATION_ERROR",
+          400
+        );
       }
 
       // Save user changes
       await user.save();
 
-      res.status(200).json({
-        message: "Profile updated successfully",
-        user: {
-          id: user.id,
-          full_name: user.full_name,
-          profile_image: user.profile_image,
-        },
+      // ✅ Reload user to get updated data with relations if needed
+      const updatedUser = await User.findByPk(userId, {
+        attributes: { exclude: ["password_hash", "otp_code"] },
+        include: [
+          {
+            model: Role,
+            attributes: ["id", "name", "description"],
+            as: "Role",
+          },
+        ],
       });
+
+      // ✅ Sử dụng standardized response format
+      sendUpdateResponse(
+        res,
+        transformToCamelCase(updatedUser),
+        "Profile updated successfully"
+      );
     } catch (error) {
-      res
-        .status(500)
-        .json({ message: "Error updating profile", error: error.message });
+      console.error("Error updating profile:", error);
+      sendInternalErrorResponse(res, error.message);
     }
   }
 );
