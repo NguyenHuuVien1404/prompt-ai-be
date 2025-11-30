@@ -11,6 +11,7 @@ const {
   authMiddleware,
   adminMiddleware,
 } = require("../middleware/authMiddleware");
+const { adminOrMarketerMiddleware } = require("../middleware/roleMiddleware");
 const {
   sendListResponse,
   sendDetailResponse,
@@ -237,175 +238,197 @@ router.get("/:id", async (req, res) => {
   }
 });
 // Route tạo blog mới
-router.post("/", handleUpload, validateBlogData, async (req, res) => {
-  try {
-    const serverUrl = `${req.protocol}://${req.get("host")}`;
-    const blogData = {
-      ...req.body,
-      category_id: Number(req.body.category_id || req.body.categoryId),
-      featured_image: req.file
-        ? `${serverUrl}/uploads/${req.file.filename}`
-        : null,
-    };
+router.post(
+  "/",
+  authMiddleware,
+  adminOrMarketerMiddleware,
+  handleUpload,
+  validateBlogData,
+  async (req, res) => {
+    // ✅ Chỉ Admin hoặc Marketer (role > 1) mới có thể tạo
+    try {
+      const serverUrl = `${req.protocol}://${req.get("host")}`;
+      const blogData = {
+        ...req.body,
+        category_id: Number(req.body.category_id || req.body.categoryId),
+        featured_image: req.file
+          ? `${serverUrl}/uploads/${req.file.filename}`
+          : null,
+      };
 
-    // ✅ Xử lý published_at để tránh lỗi "Invalid date" - giống như route PUT
-    if (req.body.published_at !== undefined) {
-      if (
-        req.body.published_at === null ||
-        req.body.published_at === "" ||
-        req.body.published_at === "null"
-      ) {
-        blogData.published_at = null;
-      } else if (
-        req.body.published_at === "now" ||
-        req.body.published_at === "current"
-      ) {
-        blogData.published_at = new Date();
-      } else if (
-        req.body.published_at === "draft" ||
-        req.body.published_at === "unpublish"
-      ) {
-        blogData.published_at = null;
-      } else {
-        // Kiểm tra xem có phải date hợp lệ không
-        const dateValue = new Date(req.body.published_at);
+      // ✅ Xử lý published_at để tránh lỗi "Invalid date" - giống như route PUT
+      if (req.body.published_at !== undefined) {
+        if (
+          req.body.published_at === null ||
+          req.body.published_at === "" ||
+          req.body.published_at === "null"
+        ) {
+          blogData.published_at = null;
+        } else if (
+          req.body.published_at === "now" ||
+          req.body.published_at === "current"
+        ) {
+          blogData.published_at = new Date();
+        } else if (
+          req.body.published_at === "draft" ||
+          req.body.published_at === "unpublish"
+        ) {
+          blogData.published_at = null;
+        } else {
+          // Kiểm tra xem có phải date hợp lệ không
+          const dateValue = new Date(req.body.published_at);
 
-        if (isNaN(dateValue.getTime())) {
-          return sendErrorResponse(
-            res,
-            "Invalid date format for published_at",
-            "VALIDATION_ERROR",
-            400
-          );
+          if (isNaN(dateValue.getTime())) {
+            return sendErrorResponse(
+              res,
+              "Invalid date format for published_at",
+              "VALIDATION_ERROR",
+              400
+            );
+          }
+          blogData.published_at = dateValue;
         }
-        blogData.published_at = dateValue;
+      } else {
+        // Fallback logic cũ nếu không có published_at
+        blogData.published_at =
+          req.body.status === "published" ? new Date() : null;
       }
-    } else {
-      // Fallback logic cũ nếu không có published_at
-      blogData.published_at =
-        req.body.status === "published" ? new Date() : null;
-    }
 
-    const blog = await Blog.create(blogData);
-    sendCreateResponse(
-      res,
-      transformToCamelCase(blog),
-      "Blog created successfully"
-    );
-  } catch (error) {
-    // Xóa file nếu có lỗi khi tạo blog
-    if (req.file) {
-      fs.unlinkSync(req.file.path);
+      const blog = await Blog.create(blogData);
+      sendCreateResponse(
+        res,
+        transformToCamelCase(blog),
+        "Blog created successfully"
+      );
+    } catch (error) {
+      // Xóa file nếu có lỗi khi tạo blog
+      if (req.file) {
+        fs.unlinkSync(req.file.path);
+      }
+      sendInternalErrorResponse(res, error.message);
     }
-    sendInternalErrorResponse(res, error.message);
   }
-});
+);
 
 // Route cập nhật blog
-router.put("/:id", handleUpload, validateBlogData, async (req, res) => {
-  try {
-    const blog = await Blog.findByPk(req.params.id);
-    if (!blog) return sendNotFoundResponse(res, "Blog not found");
+router.put(
+  "/:id",
+  authMiddleware,
+  adminOrMarketerMiddleware,
+  handleUpload,
+  validateBlogData,
+  async (req, res) => {
+    // ✅ Chỉ Admin hoặc Marketer (role > 1) mới có thể update
+    try {
+      const blog = await Blog.findByPk(req.params.id);
+      if (!blog) return sendNotFoundResponse(res, "Blog not found");
 
-    const serverUrl = `${req.protocol}://${req.get("host")}`;
-    let blogData = { ...req.body };
+      const serverUrl = `${req.protocol}://${req.get("host")}`;
+      let blogData = { ...req.body };
 
-    // Xử lý categoryId thành category_id
-    if (req.body.categoryId) {
-      blogData.category_id = Number(req.body.categoryId);
-      delete blogData.categoryId;
+      // Xử lý categoryId thành category_id
+      if (req.body.categoryId) {
+        blogData.category_id = Number(req.body.categoryId);
+        delete blogData.categoryId;
+      }
+
+      // Xử lý featured_image từ file upload hoặc JSON body
+      if (req.file) {
+        // Xóa ảnh cũ nếu có
+        if (blog.featured_image) {
+          // Extract filename from the full URL path
+          const filename = blog.featured_image.split("/uploads/").pop();
+          if (filename) {
+            const oldPath = path.join("/var/www/promvn/uploads", filename);
+            if (fs.existsSync(oldPath)) {
+              fs.unlinkSync(oldPath);
+            }
+          }
+        }
+        blogData.featured_image = `${serverUrl}/uploads/${req.file.filename}`;
+      } else if (req.body.featuredImage) {
+        // Xử lý featuredImage từ JSON body
+        blogData.featured_image = req.body.featuredImage;
+      }
+
+      // ✅ Xử lý published_at để tránh lỗi "Invalid date"
+      if (req.body.published_at !== undefined) {
+        if (
+          req.body.published_at === null ||
+          req.body.published_at === "" ||
+          req.body.published_at === "null"
+        ) {
+          blogData.published_at = null;
+        } else if (
+          req.body.published_at === "now" ||
+          req.body.published_at === "current"
+        ) {
+          blogData.published_at = new Date();
+        } else if (
+          req.body.published_at === "draft" ||
+          req.body.published_at === "unpublish"
+        ) {
+          blogData.published_at = null;
+        } else {
+          // Kiểm tra xem có phải date hợp lệ không
+          const dateValue = new Date(req.body.published_at);
+
+          if (isNaN(dateValue.getTime())) {
+            return sendErrorResponse(
+              res,
+              "Invalid date format for published_at",
+              "VALIDATION_ERROR",
+              400
+            );
+          }
+          blogData.published_at = dateValue;
+        }
+      }
+
+      await blog.update(blogData);
+      sendUpdateResponse(
+        res,
+        transformToCamelCase(blog),
+        "Blog updated successfully"
+      );
+    } catch (error) {
+      // Xóa file mới nếu có lỗi khi cập nhật
+      if (req.file) {
+        fs.unlinkSync(req.file.path);
+      }
+      sendInternalErrorResponse(res, error.message);
     }
+  }
+);
 
-    // Xử lý featured_image từ file upload hoặc JSON body
-    if (req.file) {
-      // Xóa ảnh cũ nếu có
+// Delete blog with image cleanup
+router.delete(
+  "/:id",
+  authMiddleware,
+  adminOrMarketerMiddleware,
+  async (req, res) => {
+    // ✅ Chỉ Admin hoặc Marketer (role > 1) mới có thể xóa
+    try {
+      const blog = await Blog.findByPk(req.params.id);
+      if (!blog) return sendNotFoundResponse(res, "Blog not found");
+
       if (blog.featured_image) {
         // Extract filename from the full URL path
         const filename = blog.featured_image.split("/uploads/").pop();
         if (filename) {
-          const oldPath = path.join("/var/www/promvn/uploads", filename);
-          if (fs.existsSync(oldPath)) {
-            fs.unlinkSync(oldPath);
+          const imagePath = path.join("/var/www/promvn/uploads", filename);
+          if (fs.existsSync(imagePath)) {
+            fs.unlinkSync(imagePath);
           }
         }
       }
-      blogData.featured_image = `${serverUrl}/uploads/${req.file.filename}`;
-    } else if (req.body.featuredImage) {
-      // Xử lý featuredImage từ JSON body
-      blogData.featured_image = req.body.featuredImage;
-    }
 
-    // ✅ Xử lý published_at để tránh lỗi "Invalid date"
-    if (req.body.published_at !== undefined) {
-      if (
-        req.body.published_at === null ||
-        req.body.published_at === "" ||
-        req.body.published_at === "null"
-      ) {
-        blogData.published_at = null;
-      } else if (
-        req.body.published_at === "now" ||
-        req.body.published_at === "current"
-      ) {
-        blogData.published_at = new Date();
-      } else if (
-        req.body.published_at === "draft" ||
-        req.body.published_at === "unpublish"
-      ) {
-        blogData.published_at = null;
-      } else {
-        // Kiểm tra xem có phải date hợp lệ không
-        const dateValue = new Date(req.body.published_at);
-
-        if (isNaN(dateValue.getTime())) {
-          return sendErrorResponse(
-            res,
-            "Invalid date format for published_at",
-            "VALIDATION_ERROR",
-            400
-          );
-        }
-        blogData.published_at = dateValue;
-      }
+      await blog.destroy();
+      sendDeleteResponse(res, "Successfully deleted");
+    } catch (error) {
+      sendInternalErrorResponse(res, error.message);
     }
-
-    await blog.update(blogData);
-    sendUpdateResponse(
-      res,
-      transformToCamelCase(blog),
-      "Blog updated successfully"
-    );
-  } catch (error) {
-    // Xóa file mới nếu có lỗi khi cập nhật
-    if (req.file) {
-      fs.unlinkSync(req.file.path);
-    }
-    sendInternalErrorResponse(res, error.message);
   }
-});
-
-// Delete blog with image cleanup
-router.delete("/:id", async (req, res) => {
-  try {
-    const blog = await Blog.findByPk(req.params.id);
-    if (!blog) return sendNotFoundResponse(res, "Blog not found");
-
-    if (blog.featured_image) {
-      // Extract filename from the full URL path
-      const filename = blog.featured_image.split("/uploads/").pop();
-      if (filename) {
-        const imagePath = path.join("/var/www/promvn/uploads", filename);
-        if (fs.existsSync(imagePath)) {
-          fs.unlinkSync(imagePath);
-        }
-      }
-    }
-
-    await blog.destroy();
-    sendDeleteResponse(res, "Successfully deleted");
-  } catch (error) {
-    sendInternalErrorResponse(res, error.message);
-  }
-});
+);
 
 module.exports = router;

@@ -7,6 +7,7 @@ const {
   authMiddleware,
   adminMiddleware,
 } = require("../middleware/authMiddleware");
+const { adminOrMarketerMiddleware } = require("../middleware/roleMiddleware");
 const Payment = require("../models/Payment");
 const User = require("../models/User");
 const {
@@ -192,150 +193,169 @@ router.get("/:id", async (req, res) => {
 });
 
 // Tạo coupon mới
-router.post("/", authMiddleware, adminMiddleware, async (req, res) => {
-  const t = await sequelize.transaction();
-  try {
-    // Transform camelCase to snake_case for database operations
-    const couponData = transformToSnakeCase(req.body);
+router.post(
+  "/",
+  authMiddleware,
+  adminOrMarketerMiddleware,
+  async (req, res) => {
+    // ✅ Chỉ Admin hoặc Marketer (role > 1) mới có thể tạo
+    const t = await sequelize.transaction();
+    try {
+      // Transform camelCase to snake_case for database operations
+      const couponData = transformToSnakeCase(req.body);
 
-    // Validate dữ liệu
-    if (
-      !couponData.code ||
-      couponData.discount === undefined ||
-      couponData.discount === null ||
-      !couponData.type
-    ) {
-      await t.rollback();
-      return sendErrorResponse(
+      // Validate dữ liệu
+      if (
+        !couponData.code ||
+        couponData.discount === undefined ||
+        couponData.discount === null ||
+        !couponData.type
+      ) {
+        await t.rollback();
+        return sendErrorResponse(
+          res,
+          "Thiếu thông tin bắt buộc",
+          "INVALID_DATA",
+          400
+        );
+      }
+
+      // Kiểm tra discount không âm
+      if (couponData.discount < 0) {
+        await t.rollback();
+        return sendErrorResponse(
+          res,
+          "Giá trị discount không được âm",
+          "INVALID_DISCOUNT",
+          400
+        );
+      }
+
+      // Kiểm tra code đã tồn tại chưa
+      const existingCoupon = await Coupon.findOne({
+        where: { code: couponData.code },
+      });
+
+      if (existingCoupon) {
+        await t.rollback();
+        return sendErrorResponse(
+          res,
+          "Mã coupon đã tồn tại",
+          "DUPLICATE_CODE",
+          400
+        );
+      }
+
+      // Tạo coupon mới
+      const coupon = await Coupon.create(couponData, { transaction: t });
+      await t.commit();
+
+      sendCreateResponse(
         res,
-        "Thiếu thông tin bắt buộc",
-        "INVALID_DATA",
-        400
+        transformToCamelCase(coupon),
+        "Tạo coupon thành công"
+      );
+    } catch (error) {
+      await t.rollback();
+
+      sendInternalErrorResponse(res, "Lỗi khi tạo coupon: " + error.message);
+    }
+  }
+);
+
+// Cập nhật coupon - chỉ Admin hoặc Marketer (role > 1) mới có thể update
+router.put(
+  "/:id",
+  authMiddleware,
+  adminOrMarketerMiddleware,
+  async (req, res) => {
+    const t = await sequelize.transaction();
+    try {
+      const coupon = await Coupon.findByPk(req.params.id, {
+        transaction: t,
+        lock: t.LOCK.UPDATE,
+      });
+
+      if (!coupon) {
+        await t.rollback();
+        return sendNotFoundResponse(res, "Không tìm thấy coupon");
+      }
+
+      // Lưu thông tin cũ
+      const oldData = { ...coupon.toJSON() };
+
+      // Transform camelCase to snake_case for database operations
+      const transformedData = transformToSnakeCase(req.body);
+
+      // Cập nhật coupon
+      await coupon.update(transformedData, { transaction: t });
+
+      // Reload lại dữ liệu mới nhất từ database
+      await coupon.reload({ transaction: t });
+      const newData = coupon.toJSON();
+
+      await t.commit();
+
+      res.json({
+        success: true,
+        message: "Cập nhật coupon thành công",
+        data: transformToCamelCase({
+          id: coupon.id,
+          code: coupon.code,
+          old_data: oldData,
+          new_data: newData,
+          updated_at: new Date(),
+        }),
+      });
+    } catch (error) {
+      await t.rollback();
+
+      sendInternalErrorResponse(
+        res,
+        "Lỗi khi cập nhật coupon: " + error.message
       );
     }
-
-    // Kiểm tra discount không âm
-    if (couponData.discount < 0) {
-      await t.rollback();
-      return sendErrorResponse(
-        res,
-        "Giá trị discount không được âm",
-        "INVALID_DISCOUNT",
-        400
-      );
-    }
-
-    // Kiểm tra code đã tồn tại chưa
-    const existingCoupon = await Coupon.findOne({
-      where: { code: couponData.code },
-    });
-
-    if (existingCoupon) {
-      await t.rollback();
-      return sendErrorResponse(
-        res,
-        "Mã coupon đã tồn tại",
-        "DUPLICATE_CODE",
-        400
-      );
-    }
-
-    // Tạo coupon mới
-    const coupon = await Coupon.create(couponData, { transaction: t });
-    await t.commit();
-
-    sendCreateResponse(
-      res,
-      transformToCamelCase(coupon),
-      "Tạo coupon thành công"
-    );
-  } catch (error) {
-    await t.rollback();
-
-    sendInternalErrorResponse(res, "Lỗi khi tạo coupon: " + error.message);
   }
-});
+);
 
-// Cập nhật coupon
-router.put("/:id", authMiddleware, adminMiddleware, async (req, res) => {
-  const t = await sequelize.transaction();
-  try {
-    const coupon = await Coupon.findByPk(req.params.id, {
-      transaction: t,
-      lock: t.LOCK.UPDATE,
-    });
+// Xóa coupon - chỉ Admin hoặc Marketer (role > 1) mới có thể xóa
+router.delete(
+  "/:id",
+  authMiddleware,
+  adminOrMarketerMiddleware,
+  async (req, res) => {
+    const t = await sequelize.transaction();
+    try {
+      const coupon = await Coupon.findByPk(req.params.id, {
+        transaction: t,
+        lock: t.LOCK.UPDATE,
+      });
 
-    if (!coupon) {
+      if (!coupon) {
+        await t.rollback();
+        return sendNotFoundResponse(res, "Không tìm thấy coupon");
+      }
+
+      const deletedCoupon = { ...coupon.toJSON() };
+      await coupon.destroy({ transaction: t });
+      await t.commit();
+
+      res.json({
+        success: true,
+        message: "Xóa coupon thành công",
+        data: transformToCamelCase({
+          id: deletedCoupon.id,
+          code: deletedCoupon.code,
+          deleted_at: new Date(),
+        }),
+      });
+    } catch (error) {
       await t.rollback();
-      return sendNotFoundResponse(res, "Không tìm thấy coupon");
+
+      sendInternalErrorResponse(res, "Lỗi khi xóa coupon: " + error.message);
     }
-
-    // Lưu thông tin cũ
-    const oldData = { ...coupon.toJSON() };
-
-    // Transform camelCase to snake_case for database operations
-    const transformedData = transformToSnakeCase(req.body);
-
-    // Cập nhật coupon
-    await coupon.update(transformedData, { transaction: t });
-
-    // Reload lại dữ liệu mới nhất từ database
-    await coupon.reload({ transaction: t });
-    const newData = coupon.toJSON();
-
-    await t.commit();
-
-    res.json({
-      success: true,
-      message: "Cập nhật coupon thành công",
-      data: transformToCamelCase({
-        id: coupon.id,
-        code: coupon.code,
-        old_data: oldData,
-        new_data: newData,
-        updated_at: new Date(),
-      }),
-    });
-  } catch (error) {
-    await t.rollback();
-
-    sendInternalErrorResponse(res, "Lỗi khi cập nhật coupon: " + error.message);
   }
-});
-
-// Xóa coupon
-router.delete("/:id", authMiddleware, adminMiddleware, async (req, res) => {
-  const t = await sequelize.transaction();
-  try {
-    const coupon = await Coupon.findByPk(req.params.id, {
-      transaction: t,
-      lock: t.LOCK.UPDATE,
-    });
-
-    if (!coupon) {
-      await t.rollback();
-      return sendNotFoundResponse(res, "Không tìm thấy coupon");
-    }
-
-    const deletedCoupon = { ...coupon.toJSON() };
-    await coupon.destroy({ transaction: t });
-    await t.commit();
-
-    res.json({
-      success: true,
-      message: "Xóa coupon thành công",
-      data: transformToCamelCase({
-        id: deletedCoupon.id,
-        code: deletedCoupon.code,
-        deleted_at: new Date(),
-      }),
-    });
-  } catch (error) {
-    await t.rollback();
-
-    sendInternalErrorResponse(res, "Lỗi khi xóa coupon: " + error.message);
-  }
-});
+);
 
 // Kiểm tra tính hợp lệ của coupon
 router.post("/validate", async (req, res) => {

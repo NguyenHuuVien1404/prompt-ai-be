@@ -5,6 +5,7 @@ const {
   authMiddleware,
   adminMiddleware,
 } = require("../middleware/authMiddleware");
+const { adminOrMarketerMiddleware } = require("../middleware/roleMiddleware");
 const {
   sendListResponse,
   sendDetailResponse,
@@ -53,52 +54,69 @@ router.get("/list", async (req, res) => {
     sendInternalErrorResponse(res, error.message);
   }
 });
-// Thêm danh mục mới
-router.post("/", async (req, res) => {
-  try {
-    const { name, description, slug } = req.body;
-    const category = await BlogCategory.create({ name, description, slug });
-    sendCreateResponse(
-      res,
-      transformToCamelCase(category),
-      "Blog category created successfully"
-    );
-  } catch (error) {
-    sendInternalErrorResponse(res, error.message);
+// Thêm danh mục mới - chỉ Admin hoặc Marketer (role > 1) mới có thể tạo
+router.post(
+  "/",
+  authMiddleware,
+  adminOrMarketerMiddleware,
+  async (req, res) => {
+    try {
+      const { name, description, slug } = req.body;
+      const category = await BlogCategory.create({ name, description, slug });
+      sendCreateResponse(
+        res,
+        transformToCamelCase(category),
+        "Blog category created successfully"
+      );
+    } catch (error) {
+      sendInternalErrorResponse(res, error.message);
+    }
   }
-});
+);
 
-// Cập nhật danh mục
-router.put("/:id", async (req, res) => {
-  try {
-    const { id } = req.params;
-    const category = await BlogCategory.findByPk(id);
-    if (!category) return sendNotFoundResponse(res, "Blog category not found");
+// Cập nhật danh mục - chỉ Admin hoặc Marketer (role > 1) mới có thể update
+router.put(
+  "/:id",
+  authMiddleware,
+  adminOrMarketerMiddleware,
+  async (req, res) => {
+    try {
+      const { id } = req.params;
+      const category = await BlogCategory.findByPk(id);
+      if (!category)
+        return sendNotFoundResponse(res, "Blog category not found");
 
-    await safeUpdate(BlogCategory, req.body, { where: { id } });
-    const updatedCategory = await BlogCategory.findByPk(id);
-    sendUpdateResponse(
-      res,
-      transformToCamelCase(updatedCategory),
-      "Blog category updated successfully"
-    );
-  } catch (error) {
-    sendInternalErrorResponse(res, error.message);
+      await safeUpdate(BlogCategory, req.body, { where: { id } });
+      const updatedCategory = await BlogCategory.findByPk(id);
+      sendUpdateResponse(
+        res,
+        transformToCamelCase(updatedCategory),
+        "Blog category updated successfully"
+      );
+    } catch (error) {
+      sendInternalErrorResponse(res, error.message);
+    }
   }
-});
+);
 
-// Xóa danh mục
-router.delete("/:id", async (req, res) => {
-  try {
-    const { id } = req.params;
-    const category = await BlogCategory.findByPk(id);
-    if (!category) return sendNotFoundResponse(res, "Blog category not found");
+// Xóa danh mục - chỉ Admin hoặc Marketer (role > 1) mới có thể xóa
+router.delete(
+  "/:id",
+  authMiddleware,
+  adminOrMarketerMiddleware,
+  async (req, res) => {
+    try {
+      const { id } = req.params;
+      const category = await BlogCategory.findByPk(id);
+      if (!category)
+        return sendNotFoundResponse(res, "Blog category not found");
 
-    await BlogCategory.destroy({ where: { id } });
-    sendDeleteResponse(res, "Blog category deleted successfully");
-  } catch (error) {
-    sendInternalErrorResponse(res, error.message);
+      await BlogCategory.destroy({ where: { id } });
+      sendDeleteResponse(res, "Blog category deleted successfully");
+    } catch (error) {
+      sendInternalErrorResponse(res, error.message);
+    }
   }
-});
+);
 
 module.exports = router;

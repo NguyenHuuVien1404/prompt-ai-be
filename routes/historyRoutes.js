@@ -5,6 +5,7 @@ const {
   authMiddleware,
   adminMiddleware,
 } = require("../middleware/authMiddleware");
+const { adminOrMarketerMiddleware } = require("../middleware/roleMiddleware");
 const {
   sendListResponse,
   sendDetailResponse,
@@ -56,53 +57,73 @@ router.get("/list", async (req, res) => {
   }
 });
 
-// Thêm lịch sử mới
-router.post("/", async (req, res) => {
-  try {
-    const { title, request, respone, user_id } = req.body;
-    const history = await History.create({ title, request, respone, user_id });
-    sendCreateResponse(
-      res,
-      transformToCamelCase(history),
-      "History created successfully"
-    );
-  } catch (error) {
-    sendInternalErrorResponse(res, error.message);
+// Thêm lịch sử mới - chỉ Admin hoặc Marketer (role > 1) mới có thể tạo
+router.post(
+  "/",
+  authMiddleware,
+  adminOrMarketerMiddleware,
+  async (req, res) => {
+    try {
+      const { title, request, respone, user_id } = req.body;
+      const history = await History.create({
+        title,
+        request,
+        respone,
+        user_id,
+      });
+      sendCreateResponse(
+        res,
+        transformToCamelCase(history),
+        "History created successfully"
+      );
+    } catch (error) {
+      sendInternalErrorResponse(res, error.message);
+    }
   }
-});
+);
 
-// Cập nhật lịch sử
-router.put("/:id", async (req, res) => {
-  try {
-    const { id } = req.params;
-    const history = await History.findByPk(id);
-    if (!history) return sendNotFoundResponse(res, "History not found");
+// Cập nhật lịch sử - chỉ Admin hoặc Marketer (role > 1) mới có thể update
+router.put(
+  "/:id",
+  authMiddleware,
+  adminOrMarketerMiddleware,
+  async (req, res) => {
+    try {
+      const { id } = req.params;
+      const history = await History.findByPk(id);
+      if (!history) return sendNotFoundResponse(res, "History not found");
 
-    await safeUpdate(History, req.body, { where: { id } });
-    const updatedHistory = await History.findByPk(id);
-    sendUpdateResponse(
-      res,
-      transformToCamelCase(updatedHistory),
-      "History updated successfully"
-    );
-  } catch (error) {
-    sendInternalErrorResponse(res, error.message);
+      await safeUpdate(History, req.body, { where: { id } });
+      const updatedHistory = await History.findByPk(id);
+      sendUpdateResponse(
+        res,
+        transformToCamelCase(updatedHistory),
+        "History updated successfully"
+      );
+    } catch (error) {
+      sendInternalErrorResponse(res, error.message);
+    }
   }
-});
+);
 
-// Xóa lịch sử
-router.delete("/:id", async (req, res) => {
-  try {
-    const { id } = req.params;
-    const history = await History.findByPk(id);
-    if (!history) return sendNotFoundResponse(res, "History not found");
+// Xóa lịch sử - chỉ Admin hoặc Marketer (role > 1) mới có thể xóa
+router.delete(
+  "/:id",
+  authMiddleware,
+  adminOrMarketerMiddleware,
+  async (req, res) => {
+    try {
+      const { id } = req.params;
+      const history = await History.findByPk(id);
+      if (!history) return sendNotFoundResponse(res, "History not found");
 
-    await History.destroy({ where: { id } });
-    sendDeleteResponse(res, "History deleted successfully");
-  } catch (error) {
-    sendInternalErrorResponse(res, error.message);
+      await History.destroy({ where: { id } });
+      sendDeleteResponse(res, "History deleted successfully");
+    } catch (error) {
+      sendInternalErrorResponse(res, error.message);
+    }
   }
-});
+);
 // Lấy lịch sử theo user_id
 router.get("/user/:user_id", async (req, res) => {
   try {

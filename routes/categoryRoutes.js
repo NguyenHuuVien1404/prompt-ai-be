@@ -346,6 +346,8 @@ router.get("/:id", async (req, res) => {
 // Create new category
 router.post(
   "/",
+  authMiddleware,
+  adminOrMarketerMiddleware, // ✅ Chỉ Admin hoặc Marketer (role > 1) mới có thể tạo
   upload.fields([{ name: "image" }, { name: "image_card" }]),
   async (req, res) => {
     try {
@@ -421,7 +423,7 @@ router.post(
 router.put(
   "/:id",
   authMiddleware,
-  adminMiddleware,
+  adminOrMarketerMiddleware, // ✅ Chỉ Admin hoặc Marketer (role > 1) mới có thể update
   handleUpload,
   async (req, res) => {
     try {
@@ -592,33 +594,41 @@ router.put(
   }
 );
 
-// Delete category
-router.delete("/:id", async (req, res) => {
-  try {
-    const categoryId = req.params.id;
-    const category = await Category.findByPk(categoryId);
+// Delete category - chỉ Admin hoặc Marketer (role > 1) mới có thể xóa
+router.delete(
+  "/:id",
+  authMiddleware,
+  adminOrMarketerMiddleware,
+  async (req, res) => {
+    try {
+      const categoryId = req.params.id;
+      const category = await Category.findByPk(categoryId);
 
-    if (!category) {
-      return sendNotFoundResponse(res, "Category not found");
+      if (!category) {
+        return sendNotFoundResponse(res, "Category not found");
+      }
+
+      const sectionId = category.section_id;
+      const categoryName = category.name;
+
+      await category.destroy();
+
+      // Invalidate relevant caches (tạm thời comment lại để kiểm tra lỗi treo)
+      // await Promise.all([
+      //     cache.invalidateCache(`category_detail_${categoryId}`),
+      //     cache.invalidateCache(`categories_list_*`),
+      //     cache.invalidateCache(`categories_by_section_${sectionId}*`),
+      // ]);
+
+      sendDeleteResponse(res, "Category deleted successfully");
+    } catch (error) {
+      sendInternalErrorResponse(
+        res,
+        "Error deleting category: " + error.message
+      );
     }
-
-    const sectionId = category.section_id;
-    const categoryName = category.name;
-
-    await category.destroy();
-
-    // Invalidate relevant caches (tạm thời comment lại để kiểm tra lỗi treo)
-    // await Promise.all([
-    //     cache.invalidateCache(`category_detail_${categoryId}`),
-    //     cache.invalidateCache(`categories_list_*`),
-    //     cache.invalidateCache(`categories_by_section_${sectionId}*`),
-    // ]);
-
-    sendDeleteResponse(res, "Category deleted successfully");
-  } catch (error) {
-    sendInternalErrorResponse(res, "Error deleting category: " + error.message);
   }
-});
+);
 
 // Get categories by type (free/premium)
 router.get("/by-type/:type", async (req, res) => {

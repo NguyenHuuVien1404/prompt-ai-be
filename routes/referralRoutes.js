@@ -2,6 +2,8 @@ const express = require("express");
 const router = express.Router();
 const Referral = require("../models/Referral"); // Import the Referral model
 const cache = require("../utils/cache"); // Import cache utility
+const { authMiddleware } = require("../middleware/authMiddleware");
+const { adminOrMarketerMiddleware } = require("../middleware/roleMiddleware");
 const {
   sendListResponse,
   sendDetailResponse,
@@ -17,53 +19,61 @@ const {
 // Import transform utilities
 const { transformToCamelCase } = require("../utils/transformUtils");
 
-// Create a new referral
-router.post("/", async (req, res) => {
-  try {
-    const { code, discount, count, status, endDate } = req.body;
+// Create a new referral - chỉ Admin hoặc Marketer (role > 1) mới có thể tạo
+router.post(
+  "/",
+  authMiddleware,
+  adminOrMarketerMiddleware,
+  async (req, res) => {
+    try {
+      const { code, discount, count, status, endDate } = req.body;
 
-    // Validate required fields
-    if (!code || !discount) {
-      return sendErrorResponse(
+      // Validate required fields
+      if (!code || !discount) {
+        return sendErrorResponse(
+          res,
+          "Code and discount are required",
+          "VALIDATION_ERROR",
+          400
+        );
+      }
+
+      // Check if the code already exists
+      const existingReferral = await Referral.findOne({ where: { code } });
+      if (existingReferral) {
+        return sendErrorResponse(
+          res,
+          "Referral code already exists",
+          "DUPLICATE_CODE",
+          400
+        );
+      }
+
+      // Create the referral
+      const referral = await Referral.create({
+        code,
+        discount,
+        count: count || 1, // Default to 1 if not provided
+        status: status || 1, // Default to 1 if not provided
+        endDate: endDate || null,
+      });
+
+      // Invalidate cache when creating a new referral
+      await cache.invalidateCache("all_referrals");
+
+      sendCreateResponse(
         res,
-        "Code and discount are required",
-        "VALIDATION_ERROR",
-        400
+        transformToCamelCase(referral),
+        "Referral created successfully"
+      );
+    } catch (error) {
+      sendInternalErrorResponse(
+        res,
+        "Error creating referral: " + error.message
       );
     }
-
-    // Check if the code already exists
-    const existingReferral = await Referral.findOne({ where: { code } });
-    if (existingReferral) {
-      return sendErrorResponse(
-        res,
-        "Referral code already exists",
-        "DUPLICATE_CODE",
-        400
-      );
-    }
-
-    // Create the referral
-    const referral = await Referral.create({
-      code,
-      discount,
-      count: count || 1, // Default to 1 if not provided
-      status: status || 1, // Default to 1 if not provided
-      endDate: endDate || null,
-    });
-
-    // Invalidate cache when creating a new referral
-    await cache.invalidateCache("all_referrals");
-
-    sendCreateResponse(
-      res,
-      transformToCamelCase(referral),
-      "Referral created successfully"
-    );
-  } catch (error) {
-    sendInternalErrorResponse(res, "Error creating referral: " + error.message);
   }
-});
+);
 
 // Get all referrals
 router.get("/", async (req, res) => {
@@ -137,106 +147,121 @@ router.get("/:id", async (req, res) => {
   }
 });
 
-// Update a referral
-router.put("/:id", async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { code, discount, count, status, endDate } = req.body;
+// Update a referral - chỉ Admin hoặc Marketer (role > 1) mới có thể update
+router.put(
+  "/:id",
+  authMiddleware,
+  adminOrMarketerMiddleware,
+  async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { code, discount, count, status, endDate } = req.body;
 
-    const referral = await Referral.findByPk(id);
-    if (!referral) {
-      return sendNotFoundResponse(res, "Referral not found");
-    }
-
-    // Check if the new code already exists (and isn't the current code)
-    if (code && code !== referral.code) {
-      const existingReferral = await Referral.findOne({ where: { code } });
-      if (existingReferral) {
-        return sendErrorResponse(
-          res,
-          "Referral code already exists",
-          "DUPLICATE_CODE",
-          400
-        );
+      const referral = await Referral.findByPk(id);
+      if (!referral) {
+        return sendNotFoundResponse(res, "Referral not found");
       }
+
+      // Check if the new code already exists (and isn't the current code)
+      if (code && code !== referral.code) {
+        const existingReferral = await Referral.findOne({ where: { code } });
+        if (existingReferral) {
+          return sendErrorResponse(
+            res,
+            "Referral code already exists",
+            "DUPLICATE_CODE",
+            400
+          );
+        }
+      }
+
+      // Update the referral
+      await referral.update({
+        code: code || referral.code,
+        discount: discount || referral.discount,
+        count: count || referral.count,
+        status: status || referral.status,
+        endDate: endDate || referral.endDate,
+      });
+
+      // Invalidate related caches
+      await Promise.all([
+        cache.invalidateCache(`referral_${id}`),
+        cache.invalidateCache("all_referrals"),
+      ]);
+
+      return res
+        .status(200)
+        .json({ message: "Referral updated successfully", referral });
+    } catch (error) {
+      sendInternalErrorResponse(res, "Server error: " + error.message);
     }
-
-    // Update the referral
-    await referral.update({
-      code: code || referral.code,
-      discount: discount || referral.discount,
-      count: count || referral.count,
-      status: status || referral.status,
-      endDate: endDate || referral.endDate,
-    });
-
-    // Invalidate related caches
-    await Promise.all([
-      cache.invalidateCache(`referral_${id}`),
-      cache.invalidateCache("all_referrals"),
-    ]);
-
-    return res
-      .status(200)
-      .json({ message: "Referral updated successfully", referral });
-  } catch (error) {
-    sendInternalErrorResponse(res, "Server error: " + error.message);
   }
-});
+);
 
-// Delete a referral
-router.delete("/:id", async (req, res) => {
-  try {
-    const { id } = req.params;
-    const referral = await Referral.findByPk(id);
+// Delete a referral - chỉ Admin hoặc Marketer (role > 1) mới có thể xóa
+router.delete(
+  "/:id",
+  authMiddleware,
+  adminOrMarketerMiddleware,
+  async (req, res) => {
+    try {
+      const { id } = req.params;
+      const referral = await Referral.findByPk(id);
 
-    if (!referral) {
-      return sendNotFoundResponse(res, "Referral not found");
+      if (!referral) {
+        return sendNotFoundResponse(res, "Referral not found");
+      }
+
+      await referral.destroy();
+
+      // Invalidate related caches
+      await Promise.all([
+        cache.invalidateCache(`referral_${id}`),
+        cache.invalidateCache("all_referrals"),
+      ]);
+
+      sendDeleteResponse(res, "Referral deleted successfully");
+    } catch (error) {
+      sendInternalErrorResponse(res, "Server error: " + error.message);
     }
-
-    await referral.destroy();
-
-    // Invalidate related caches
-    await Promise.all([
-      cache.invalidateCache(`referral_${id}`),
-      cache.invalidateCache("all_referrals"),
-    ]);
-
-    sendDeleteResponse(res, "Referral deleted successfully");
-  } catch (error) {
-    sendInternalErrorResponse(res, "Server error: " + error.message);
   }
-});
+);
 
-// Increment the count of a referral
-router.patch("/:id/increment-count", async (req, res) => {
-  try {
-    const { id } = req.params;
+// Increment the count of a referral - chỉ Admin hoặc Marketer (role > 1) mới có thể increment
+router.patch(
+  "/:id/increment-count",
+  authMiddleware,
+  adminOrMarketerMiddleware,
+  async (req, res) => {
+    try {
+      const { id } = req.params;
 
-    const referral = await Referral.findByPk(id);
-    if (!referral) {
-      return sendNotFoundResponse(res, "Referral not found");
+      const referral = await Referral.findByPk(id);
+      if (!referral) {
+        return sendNotFoundResponse(res, "Referral not found");
+      }
+
+      // Increment the count
+      await referral.increment("count", { by: 1 });
+
+      // Reload the referral to get the updated count
+      await referral.reload();
+
+      // Invalidate related caches
+      await Promise.all([
+        cache.invalidateCache(`referral_${id}`),
+        cache.invalidateCache("all_referrals"),
+      ]);
+
+      return res
+        .status(200)
+        .json({ message: "Referral count incremented successfully", referral });
+    } catch (error) {
+      sendInternalErrorResponse(res, "Server error: " + error.message);
     }
-
-    // Increment the count
-    await referral.increment("count", { by: 1 });
-
-    // Reload the referral to get the updated count
-    await referral.reload();
-
-    // Invalidate related caches
-    await Promise.all([
-      cache.invalidateCache(`referral_${id}`),
-      cache.invalidateCache("all_referrals"),
-    ]);
-
-    return res
-      .status(200)
-      .json({ message: "Referral count incremented successfully", referral });
-  } catch (error) {
-    sendInternalErrorResponse(res, "Server error: " + error.message);
   }
-});
+);
 
 // Get discount by referral code
 router.get("/get-discount/:code", async (req, res) => {

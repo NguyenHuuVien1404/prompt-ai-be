@@ -71,49 +71,67 @@ router.get("/:id", async (req, res) => {
 });
 
 // Thêm section mới
-router.post("/", authMiddleware, adminMiddleware, async (req, res) => {
-  try {
-    const { name, description } = req.body;
-    const section = await Section.create({ name, description });
-    sendCreateResponse(
-      res,
-      transformToCamelCase(section),
-      "Section created successfully"
-    );
-  } catch (error) {
-    sendInternalErrorResponse(res, error.message);
+router.post(
+  "/",
+  authMiddleware,
+  adminOrMarketerMiddleware,
+  async (req, res) => {
+    // ✅ Chỉ Admin hoặc Marketer (role > 1) mới có thể tạo
+    try {
+      const { name, description } = req.body;
+      const section = await Section.create({ name, description });
+      sendCreateResponse(
+        res,
+        transformToCamelCase(section),
+        "Section created successfully"
+      );
+    } catch (error) {
+      sendInternalErrorResponse(res, error.message);
+    }
   }
-});
+);
 
 // Cập nhật section
-router.put("/:id", authMiddleware, adminMiddleware, async (req, res) => {
-  try {
-    const { name, description } = req.body;
-    const section = await Section.findByPk(req.params.id);
-    if (!section) return sendNotFoundResponse(res, "Không tìm thấy section");
+router.put(
+  "/:id",
+  authMiddleware,
+  adminOrMarketerMiddleware,
+  async (req, res) => {
+    // ✅ Chỉ Admin hoặc Marketer (role > 1) mới có thể update
+    try {
+      const { name, description } = req.body;
+      const section = await Section.findByPk(req.params.id);
+      if (!section) return sendNotFoundResponse(res, "Không tìm thấy section");
 
-    await section.update({ name, description });
-    sendUpdateResponse(
-      res,
-      transformToCamelCase(section),
-      "Section updated successfully"
-    );
-  } catch (error) {
-    sendInternalErrorResponse(res, error.message);
+      await section.update({ name, description });
+      sendUpdateResponse(
+        res,
+        transformToCamelCase(section),
+        "Section updated successfully"
+      );
+    } catch (error) {
+      sendInternalErrorResponse(res, error.message);
+    }
   }
-});
+);
 
 // Xóa section
-router.delete("/:id", authMiddleware, adminMiddleware, async (req, res) => {
-  try {
-    const section = await Section.findByPk(req.params.id);
-    if (!section) return sendNotFoundResponse(res, "Không tìm thấy section");
+router.delete(
+  "/:id",
+  authMiddleware,
+  adminOrMarketerMiddleware,
+  async (req, res) => {
+    // ✅ Chỉ Admin hoặc Marketer (role > 1) mới có thể xóa
+    try {
+      const section = await Section.findByPk(req.params.id);
+      if (!section) return sendNotFoundResponse(res, "Không tìm thấy section");
 
-    await section.destroy();
-    sendDeleteResponse(res, "Section deleted successfully");
-  } catch (error) {
-    sendInternalErrorResponse(res, error.message);
+      await section.destroy();
+      sendDeleteResponse(res, "Section deleted successfully");
+    } catch (error) {
+      sendInternalErrorResponse(res, error.message);
+    }
   }
-});
+);
 
 module.exports = router;

@@ -26,15 +26,13 @@ const marketerMiddleware = (req, res, next) => {
   }
 };
 
-// Middleware kiểm tra vai trò admin hoặc marketer
+// Middleware kiểm tra vai trò admin hoặc marketer (role > 1)
 const adminOrMarketerMiddleware = (req, res, next) => {
   // ✅ Hỗ trợ cả role cũ và role_id mới
-  const isAdmin =
-    (req.user && req.user.role === 2) || (req.user && req.user.role_id === 2);
-  const isMarketer =
-    (req.user && req.user.role === 3) || (req.user && req.user.role_id === 3);
+  // Chỉ cần check role > 1 (Admin, Marketer, hoặc các role khác trong tương lai)
+  const userRole = req.user?.role || req.user?.role_id;
 
-  if (isAdmin || isMarketer) {
+  if (userRole && userRole > 1) {
     next();
   } else {
     res.status(403).json({ message: "Không có quyền truy cập" });

@@ -145,7 +145,7 @@ router.get("/:id", async (req, res) => {
 router.post(
   "/",
   authMiddleware,
-  adminMiddleware,
+  adminOrMarketerMiddleware, // ✅ Chỉ Admin hoặc Marketer (role > 1) mới có thể tạo
   upload.single("image"),
   async (req, res) => {
     try {
@@ -197,7 +197,7 @@ router.post(
 router.put(
   "/:id",
   authMiddleware,
-  adminMiddleware,
+  adminOrMarketerMiddleware, // ✅ Chỉ Admin hoặc Marketer (role > 1) mới có thể update
   upload.single("image"),
   async (req, res) => {
     try {
@@ -257,20 +257,29 @@ router.put(
 );
 
 // DELETE: Xóa Product
-router.delete("/:id", authMiddleware, adminMiddleware, async (req, res) => {
-  try {
-    const productId = req.params.id;
-    const product = await Product.findByPk(productId);
+router.delete(
+  "/:id",
+  authMiddleware,
+  adminOrMarketerMiddleware,
+  async (req, res) => {
+    // ✅ Chỉ Admin hoặc Marketer (role > 1) mới có thể xóa
+    try {
+      const productId = req.params.id;
+      const product = await Product.findByPk(productId);
 
-    if (!product) {
-      return sendNotFoundResponse(res, "Product not found");
+      if (!product) {
+        return sendNotFoundResponse(res, "Product not found");
+      }
+
+      await product.destroy();
+      sendDeleteResponse(res, "Product deleted successfully");
+    } catch (error) {
+      sendInternalErrorResponse(
+        res,
+        "Error deleting product: " + error.message
+      );
     }
-
-    await product.destroy();
-    sendDeleteResponse(res, "Product deleted successfully");
-  } catch (error) {
-    sendInternalErrorResponse(res, "Error deleting product: " + error.message);
   }
-});
+);
 
 module.exports = router;

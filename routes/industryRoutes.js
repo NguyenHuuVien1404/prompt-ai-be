@@ -56,9 +56,7 @@ router.get("/", async (req, res) => {
         ? categoryIds.map((id) => parseInt(id))
         : [parseInt(categoryIds)];
 
-      validCategoryIds = categoryIdArray.filter(
-        (id) => !isNaN(id) && id > 0
-      );
+      validCategoryIds = categoryIdArray.filter((id) => !isNaN(id) && id > 0);
 
       if (validCategoryIds.length > 0) {
         includeOptions.push({
@@ -100,18 +98,20 @@ router.get("/", async (req, res) => {
       // because offset/limit on join results can cause duplicate industries
       if (includeOptions.length > 0) {
         // Build query with proper escaping for arrays
-        const categoryIdsPlaceholder = validCategoryIds.map((_, index) => `?`).join(',');
+        const categoryIdsPlaceholder = validCategoryIds
+          .map((_, index) => `?`)
+          .join(",");
         const countParams = [...validCategoryIds];
         const queryParams = [...validCategoryIds];
-        
-        let searchCondition = '';
+
+        let searchCondition = "";
         if (search_normalized && search_normalized.trim()) {
-          searchCondition = 'AND i.name LIKE ?';
+          searchCondition = "AND i.name LIKE ?";
           const searchValue = `%${search_normalized.trim()}%`;
           countParams.push(searchValue);
           queryParams.push(searchValue);
         }
-        
+
         // Get total count using same query structure for consistency
         const countResults = await sequelize.query(
           `
@@ -128,15 +128,17 @@ router.get("/", async (req, res) => {
           }
         );
 
-        const totalCount = countResults && countResults.length > 0 && countResults[0].total 
-          ? parseInt(countResults[0].total) 
-          : 0;
-        
+        const totalCount =
+          countResults && countResults.length > 0 && countResults[0].total
+            ? parseInt(countResults[0].total)
+            : 0;
+
         // Calculate total pages and validate page number
         const totalPages = Math.ceil(totalCount / limit);
-        const validatedPageNumber = pageNumber > totalPages && totalPages > 0 ? totalPages : pageNumber;
+        const validatedPageNumber =
+          pageNumber > totalPages && totalPages > 0 ? totalPages : pageNumber;
         const validatedOffset = (validatedPageNumber - 1) * limit;
-        
+
         queryParams.push(limit, validatedOffset);
 
         // First, get the industry IDs that match the filter (with pagination)
@@ -159,12 +161,16 @@ router.get("/", async (req, res) => {
         );
 
         // Extract industry IDs from query results
-        const industryIds = Array.isArray(industryIdsQuery) 
+        const industryIds = Array.isArray(industryIdsQuery)
           ? industryIdsQuery.map((row) => row.id)
           : [];
 
         if (industryIds.length === 0) {
-          const pagination = calculatePagination(totalCount, validatedPageNumber, limit);
+          const pagination = calculatePagination(
+            totalCount,
+            validatedPageNumber,
+            limit
+          );
           return sendListResponse(res, [], pagination);
         }
 
@@ -180,7 +186,11 @@ router.get("/", async (req, res) => {
           order: [["name", "ASC"]],
         });
 
-        const pagination = calculatePagination(totalCount, validatedPageNumber, limit);
+        const pagination = calculatePagination(
+          totalCount,
+          validatedPageNumber,
+          limit
+        );
         sendListResponse(res, transformToCamelCase(industries), pagination);
       } else {
         // No category filter - normal pagination works fine
@@ -397,116 +407,137 @@ router.get("/:industryId/categories", async (req, res) => {
 });
 
 // Tạo industry mới (chỉ admin)
-router.post("/", authMiddleware, adminMiddleware, async (req, res) => {
-  try {
-    const { name, description } = req.body;
+router.post(
+  "/",
+  authMiddleware,
+  adminOrMarketerMiddleware,
+  async (req, res) => {
+    // ✅ Chỉ Admin hoặc Marketer (role > 1) mới có thể tạo
+    try {
+      const { name, description } = req.body;
 
-    if (!name) {
-      return sendErrorResponse(res, "Tên là bắt buộc", "VALIDATION_ERROR", 400);
-    }
+      if (!name) {
+        return sendErrorResponse(
+          res,
+          "Tên là bắt buộc",
+          "VALIDATION_ERROR",
+          400
+        );
+      }
 
-    const industry = await Industry.create({
-      name,
-      description,
-    });
+      const industry = await Industry.create({
+        name,
+        description,
+      });
 
-    sendCreateResponse(
-      res,
-      transformToCamelCase(industry),
-      "Tạo ngành nghề thành công"
-    );
-  } catch (error) {
-    console.error("Error creating industry:", error);
-    sendInternalErrorResponse(res, "Lỗi máy chủ nội bộ");
-  }
-});
-
-// Cập nhật industry (chỉ admin)
-router.put("/:id", authMiddleware, adminMiddleware, async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { name, description } = req.body;
-
-    const industry = await Industry.findByPk(id);
-    if (!industry) {
-      return sendNotFoundResponse(res, "Không tìm thấy ngành nghề");
-    }
-
-    await industry.update({
-      name: name || industry.name,
-      description:
-        description !== undefined ? description : industry.description,
-    });
-
-    sendUpdateResponse(
-      res,
-      transformToCamelCase(industry),
-      "Cập nhật ngành nghề thành công"
-    );
-  } catch (error) {
-    console.error("Error updating industry:", error);
-    sendInternalErrorResponse(res, "Lỗi máy chủ nội bộ");
-  }
-});
-
-// Xóa industry (chỉ admin)
-router.delete("/:id", authMiddleware, adminMiddleware, async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { force } = req.query; // Thêm option force delete
-
-    const industry = await Industry.findByPk(id);
-    if (!industry) {
-      return sendNotFoundResponse(res, "Không tìm thấy ngành nghề");
-    }
-
-    // Kiểm tra xem industry có đang được sử dụng trong category_industries không
-    const categoryIndustries = await CategoryIndustry.count({
-      where: { industry_id: id },
-    });
-
-    if (categoryIndustries > 0 && !force) {
-      return sendErrorResponse(
+      sendCreateResponse(
         res,
-        `Không thể xóa ngành nghề. Hiện tại đang được liên kết với ${categoryIndustries} danh mục. Vui lòng xóa các liên kết danh mục-ngành nghề trước hoặc sử dụng ?force=true để xóa tất cả liên kết.`,
-        "INDUSTRY_IN_USE",
-        409
+        transformToCamelCase(industry),
+        "Tạo ngành nghề thành công"
       );
+    } catch (error) {
+      console.error("Error creating industry:", error);
+      sendInternalErrorResponse(res, "Lỗi máy chủ nội bộ");
     }
+  }
+);
 
-    // Nếu force=true, xóa tất cả liên kết trước
-    if (force && categoryIndustries > 0) {
-      await CategoryIndustry.destroy({
+// Cập nhật industry - chỉ Admin hoặc Marketer (role > 1) mới có thể update
+router.put(
+  "/:id",
+  authMiddleware,
+  adminOrMarketerMiddleware,
+  async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { name, description } = req.body;
+
+      const industry = await Industry.findByPk(id);
+      if (!industry) {
+        return sendNotFoundResponse(res, "Không tìm thấy ngành nghề");
+      }
+
+      await industry.update({
+        name: name || industry.name,
+        description:
+          description !== undefined ? description : industry.description,
+      });
+
+      sendUpdateResponse(
+        res,
+        transformToCamelCase(industry),
+        "Cập nhật ngành nghề thành công"
+      );
+    } catch (error) {
+      console.error("Error updating industry:", error);
+      sendInternalErrorResponse(res, "Lỗi máy chủ nội bộ");
+    }
+  }
+);
+
+// Xóa industry - chỉ Admin hoặc Marketer (role > 1) mới có thể xóa
+router.delete(
+  "/:id",
+  authMiddleware,
+  adminOrMarketerMiddleware,
+  async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { force } = req.query; // Thêm option force delete
+
+      const industry = await Industry.findByPk(id);
+      if (!industry) {
+        return sendNotFoundResponse(res, "Không tìm thấy ngành nghề");
+      }
+
+      // Kiểm tra xem industry có đang được sử dụng trong category_industries không
+      const categoryIndustries = await CategoryIndustry.count({
         where: { industry_id: id },
       });
+
+      if (categoryIndustries > 0 && !force) {
+        return sendErrorResponse(
+          res,
+          `Không thể xóa ngành nghề. Hiện tại đang được liên kết với ${categoryIndustries} danh mục. Vui lòng xóa các liên kết danh mục-ngành nghề trước hoặc sử dụng ?force=true để xóa tất cả liên kết.`,
+          "INDUSTRY_IN_USE",
+          409
+        );
+      }
+
+      // Nếu force=true, xóa tất cả liên kết trước
+      if (force && categoryIndustries > 0) {
+        await CategoryIndustry.destroy({
+          where: { industry_id: id },
+        });
+      }
+
+      await industry.destroy();
+
+      sendDeleteResponse(res, "Xóa ngành nghề thành công");
+    } catch (error) {
+      console.error("Error deleting industry:", error);
+
+      // Xử lý foreign key constraint error
+      if (error.name === "SequelizeForeignKeyConstraintError") {
+        return sendErrorResponse(
+          res,
+          "Không thể xóa ngành nghề vì hiện tại đang được liên kết với một hoặc nhiều danh mục. Vui lòng xóa các liên kết danh mục-ngành nghề trước.",
+          "FOREIGN_KEY_CONSTRAINT_VIOLATION",
+          409
+        );
+      }
+
+      // Xử lý các lỗi khác
+      sendInternalErrorResponse(res, "Lỗi máy chủ nội bộ");
     }
-
-    await industry.destroy();
-
-    sendDeleteResponse(res, "Xóa ngành nghề thành công");
-  } catch (error) {
-    console.error("Error deleting industry:", error);
-
-    // Xử lý foreign key constraint error
-    if (error.name === "SequelizeForeignKeyConstraintError") {
-      return sendErrorResponse(
-        res,
-        "Không thể xóa ngành nghề vì hiện tại đang được liên kết với một hoặc nhiều danh mục. Vui lòng xóa các liên kết danh mục-ngành nghề trước.",
-        "FOREIGN_KEY_CONSTRAINT_VIOLATION",
-        409
-      );
-    }
-
-    // Xử lý các lỗi khác
-    sendInternalErrorResponse(res, "Lỗi máy chủ nội bộ");
   }
-});
+);
 
-// Liên kết category với industry (chỉ admin)
+// Liên kết category với industry - chỉ Admin hoặc Marketer (role > 1) mới có thể tạo
 router.post(
   "/:industryId/categories/:categoryId",
   authMiddleware,
-  adminMiddleware,
+  adminOrMarketerMiddleware,
   async (req, res) => {
     try {
       const { industryId, categoryId } = req.params;
@@ -558,11 +589,11 @@ router.post(
   }
 );
 
-// Hủy liên kết category với industry (chỉ admin)
+// Hủy liên kết category với industry - chỉ Admin hoặc Marketer (role > 1) mới có thể xóa
 router.delete(
   "/:industryId/categories/:categoryId",
   authMiddleware,
-  adminMiddleware,
+  adminOrMarketerMiddleware,
   async (req, res) => {
     try {
       const { industryId, categoryId } = req.params;

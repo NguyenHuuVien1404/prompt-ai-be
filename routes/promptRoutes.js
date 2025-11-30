@@ -14,6 +14,7 @@ const {
   authMiddleware,
   adminMiddleware,
 } = require("../middleware/authMiddleware");
+const { adminOrMarketerMiddleware } = require("../middleware/roleMiddleware");
 const checkSubTypeAccess = require("../middleware/subTypeMiddleware");
 const Industry = require("../models/Industry");
 const CategoryIndustry = require("../models/CategoryIndustry");
@@ -203,11 +204,11 @@ router.post("/upload", authMiddleware, upload.any(), async (req, res) => {
   }
 });
 
-// Export Excel template
+// Export Excel template - chỉ Admin hoặc Marketer (role > 1) mới có thể export
 router.get(
   "/export-template",
   authMiddleware,
-  adminMiddleware,
+  adminOrMarketerMiddleware,
   async (req, res) => {
     try {
       const { runTask } = require("../utils/worker");
@@ -258,11 +259,11 @@ router.get(
   }
 );
 
-// Export prompts to Excel
+// Export prompts to Excel - chỉ Admin hoặc Marketer (role > 1) mới có thể export
 router.get(
   "/export-excel",
   authMiddleware,
-  adminMiddleware,
+  adminOrMarketerMiddleware,
   async (req, res) => {
     try {
       const { runTask } = require("../utils/worker");
@@ -492,11 +493,11 @@ router.get(
   }
 );
 
-// Test export Excel (simple version)
+// Test export Excel (simple version) - chỉ Admin hoặc Marketer (role > 1) mới có thể test export
 router.get(
   "/export-excel-test",
   authMiddleware,
-  adminMiddleware,
+  adminOrMarketerMiddleware,
   async (req, res) => {
     try {
       const XLSX = require("xlsx");
@@ -576,11 +577,11 @@ router.get(
   }
 );
 
-// Test import/export with multiple industries
+// Test import/export with multiple industries - chỉ Admin hoặc Marketer (role > 1) mới có thể test export
 router.get(
   "/test-industries-export",
   authMiddleware,
-  adminMiddleware,
+  adminOrMarketerMiddleware,
   async (req, res) => {
     try {
       const { runTask } = require("../utils/worker");
@@ -636,11 +637,11 @@ router.get(
   }
 );
 
-// Export prompts to Excel with industry description (enhanced version)
+// Export prompts to Excel with industry description (enhanced version) - chỉ Admin hoặc Marketer (role > 1) mới có thể export
 router.get(
   "/export-excel-enhanced",
   authMiddleware,
-  adminMiddleware,
+  adminOrMarketerMiddleware,
   async (req, res) => {
     try {
       const { runTask } = require("../utils/worker");
@@ -714,11 +715,11 @@ router.get(
   }
 );
 
-// Import Excel file
+// Import Excel file - chỉ Admin hoặc Marketer (role > 1) mới có thể import
 router.post(
   "/import-excel",
   authMiddleware,
-  adminMiddleware,
+  adminOrMarketerMiddleware,
   uploadExcel.any(),
   async (req, res) => {
     try {
@@ -899,7 +900,7 @@ router.get("/", async (req, res) => {
             `LOWER(categories.name) = LOWER(${sequelize.escape(name)})`
           )
         );
-        
+
         const categories = await Category.findAll({
           where: Sequelize.or(...categoryNameConditions),
           attributes: ["id"],
@@ -909,14 +910,14 @@ router.get("/", async (req, res) => {
         if (foundIds.length > 0) {
           if (categoryFilterIds) {
             // Merge with existing IDs
-            categoryFilterIds = [...new Set([...categoryFilterIds, ...foundIds])];
+            categoryFilterIds = [
+              ...new Set([...categoryFilterIds, ...foundIds]),
+            ];
             where.category_id = { [Op.in]: categoryFilterIds };
           } else {
             categoryFilterIds = foundIds;
             where.category_id =
-              foundIds.length === 1
-                ? foundIds[0]
-                : { [Op.in]: foundIds };
+              foundIds.length === 1 ? foundIds[0] : { [Op.in]: foundIds };
           }
         } else if (numericValues.length === 0) {
           // No IDs found for string names and no numeric IDs
@@ -1773,7 +1774,7 @@ router.get("/:id", async (req, res) => {
 router.post(
   "/",
   authMiddleware,
-  adminMiddleware,
+  adminOrMarketerMiddleware, // ✅ Chỉ Admin hoặc Marketer (role > 1) mới có thể tạo
   checkSubTypeAccess,
   async (req, res) => {
     try {
@@ -1968,7 +1969,7 @@ router.post(
 router.put(
   "/bulk-subType",
   authMiddleware,
-  adminMiddleware,
+  adminOrMarketerMiddleware, // ✅ Chỉ Admin hoặc Marketer (role > 1) mới có thể update
   checkSubTypeAccess,
   async (req, res) => {
     try {
@@ -2095,7 +2096,7 @@ router.put(
 router.put(
   "/:id",
   authMiddleware,
-  adminMiddleware,
+  adminOrMarketerMiddleware, // ✅ Chỉ Admin hoặc Marketer (role > 1) mới có thể update
   checkSubTypeAccess,
   async (req, res) => {
     try {
@@ -2266,92 +2267,107 @@ router.put(
   }
 );
 
-router.delete("/bulk", authMiddleware, adminMiddleware, async (req, res) => {
-  try {
-    const { promptIds, prompt_ids } = req.body;
-    const promptIdsParam = promptIds || prompt_ids;
-    if (!promptIdsParam) {
-      return sendErrorResponse(
-        res,
-        "promptIds is required",
-        "VALIDATION_ERROR",
-        400
+router.delete(
+  "/bulk",
+  authMiddleware,
+  adminOrMarketerMiddleware,
+  async (req, res) => {
+    // ✅ Chỉ Admin hoặc Marketer (role > 1) mới có thể xóa
+    try {
+      const { promptIds, prompt_ids } = req.body;
+      const promptIdsParam = promptIds || prompt_ids;
+      if (!promptIdsParam) {
+        return sendErrorResponse(
+          res,
+          "promptIds is required",
+          "VALIDATION_ERROR",
+          400
+        );
+      }
+      const promptIdsArray = Array.isArray(promptIdsParam)
+        ? promptIdsParam
+        : typeof promptIdsParam === "string"
+        ? promptIdsParam
+            .split(",")
+            .map((id) => id.trim())
+            .filter((id) => id)
+        : [promptIdsParam];
+      const validPromptIds = promptIdsArray
+        .map((id) => parseInt(id))
+        .filter((id) => !isNaN(id) && id > 0);
+      if (validPromptIds.length === 0) {
+        return sendErrorResponse(
+          res,
+          "No valid prompt IDs provided",
+          "VALIDATION_ERROR",
+          400
+        );
+      }
+      const existingPrompts = await Prompt.findAll({
+        where: { id: { [Op.in]: validPromptIds } },
+        attributes: ["id"],
+      });
+      if (existingPrompts.length === 0) {
+        return sendNotFoundResponse(
+          res,
+          "None of the provided prompt IDs exist"
+        );
+      }
+      const existingIds = existingPrompts.map((prompt) => prompt.id);
+      const notFoundIds = validPromptIds.filter(
+        (id) => !existingIds.includes(id)
       );
+      const deletedCount = await Prompt.destroy({
+        where: { id: { [Op.in]: existingIds } },
+      });
+      const responseData = {
+        deleted: deletedCount,
+        totalRequested: validPromptIds.length,
+        totalFound: existingIds.length,
+        notFound: notFoundIds.length,
+        notFoundIds: notFoundIds.length > 0 ? notFoundIds : undefined,
+      };
+      if (!responseData.notFoundIds) {
+        delete responseData.notFoundIds;
+      }
+      res.status(200).json({
+        success: true,
+        message: `Deleted ${deletedCount} prompt(s) successfully`,
+        data: responseData,
+      });
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        message: "Error bulk deleting prompts",
+        error: error.message,
+      });
     }
-    const promptIdsArray = Array.isArray(promptIdsParam)
-      ? promptIdsParam
-      : typeof promptIdsParam === "string"
-      ? promptIdsParam
-          .split(",")
-          .map((id) => id.trim())
-          .filter((id) => id)
-      : [promptIdsParam];
-    const validPromptIds = promptIdsArray
-      .map((id) => parseInt(id))
-      .filter((id) => !isNaN(id) && id > 0);
-    if (validPromptIds.length === 0) {
-      return sendErrorResponse(
-        res,
-        "No valid prompt IDs provided",
-        "VALIDATION_ERROR",
-        400
-      );
-    }
-    const existingPrompts = await Prompt.findAll({
-      where: { id: { [Op.in]: validPromptIds } },
-      attributes: ["id"],
-    });
-    if (existingPrompts.length === 0) {
-      return sendNotFoundResponse(res, "None of the provided prompt IDs exist");
-    }
-    const existingIds = existingPrompts.map((prompt) => prompt.id);
-    const notFoundIds = validPromptIds.filter(
-      (id) => !existingIds.includes(id)
-    );
-    const deletedCount = await Prompt.destroy({
-      where: { id: { [Op.in]: existingIds } },
-    });
-    const responseData = {
-      deleted: deletedCount,
-      totalRequested: validPromptIds.length,
-      totalFound: existingIds.length,
-      notFound: notFoundIds.length,
-      notFoundIds: notFoundIds.length > 0 ? notFoundIds : undefined,
-    };
-    if (!responseData.notFoundIds) {
-      delete responseData.notFoundIds;
-    }
-    res.status(200).json({
-      success: true,
-      message: `Deleted ${deletedCount} prompt(s) successfully`,
-      data: responseData,
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: "Error bulk deleting prompts",
-      error: error.message,
-    });
   }
-});
+);
 
 // Delete a prompt
-router.delete("/:id", authMiddleware, adminMiddleware, async (req, res) => {
-  try {
-    const { id } = req.params;
-    const prompt = await Prompt.findByPk(id);
+router.delete(
+  "/:id",
+  authMiddleware,
+  adminOrMarketerMiddleware,
+  async (req, res) => {
+    // ✅ Chỉ Admin hoặc Marketer (role > 1) mới có thể xóa
+    try {
+      const { id } = req.params;
+      const prompt = await Prompt.findByPk(id);
 
-    if (!prompt) {
-      return res.status(404).json({ message: "Prompt not found" });
+      if (!prompt) {
+        return res.status(404).json({ message: "Prompt not found" });
+      }
+
+      await prompt.destroy();
+      res.status(200).json({ message: "Prompt deleted successfully" });
+    } catch (error) {
+      res
+        .status(500)
+        .json({ message: "Error deleting prompt", error: error.message });
     }
-
-    await prompt.destroy();
-    res.status(200).json({ message: "Prompt deleted successfully" });
-  } catch (error) {
-    res
-      .status(500)
-      .json({ message: "Error deleting prompt", error: error.message });
   }
-});
+);
 
 module.exports = router;

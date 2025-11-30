@@ -8,6 +8,7 @@ const {
   authMiddleware,
   adminMiddleware,
 } = require("../middleware/authMiddleware");
+const { adminOrMarketerMiddleware } = require("../middleware/roleMiddleware");
 const { sendReplyEmail, sendSurveyEmail } = require("../utils/emailService");
 const { User } = require("../models");
 const {
@@ -518,7 +519,7 @@ router.post("/add-email", async (req, res) => {
 router.patch(
   "/:id/reply",
   authMiddleware,
-  adminMiddleware,
+  adminOrMarketerMiddleware, // ✅ Chỉ Admin hoặc Marketer (role > 1) mới có thể reply
   async (req, res) => {
     try {
       const { id } = req.params;
@@ -567,58 +568,64 @@ router.patch(
 );
 
 // Cập nhật thông tin liên hệ - Chỉ admin mới có quyền
-router.put("/:id", authMiddleware, adminMiddleware, async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { name, email, message, type, phone_number, status, reply } =
-      req.body;
+router.put(
+  "/:id",
+  authMiddleware,
+  adminOrMarketerMiddleware,
+  async (req, res) => {
+    // ✅ Chỉ Admin hoặc Marketer (role > 1) mới có thể update
+    try {
+      const { id } = req.params;
+      const { name, email, message, type, phone_number, status, reply } =
+        req.body;
 
-    if (!id || isNaN(id)) {
-      return sendErrorResponse(
-        res,
-        "Invalid contact ID",
-        "VALIDATION_ERROR",
-        400
-      );
-    }
-
-    const contact = await Contact.findByPk(id);
-    if (!contact) {
-      return sendNotFoundResponse(res, "Contact not found");
-    }
-
-    // Cập nhật các trường được cung cấp
-    if (name !== undefined) contact.name = name;
-    if (email !== undefined) {
-      // Basic email validation
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      if (!emailRegex.test(email)) {
+      if (!id || isNaN(id)) {
         return sendErrorResponse(
           res,
-          "Invalid email format",
+          "Invalid contact ID",
           "VALIDATION_ERROR",
           400
         );
       }
-      contact.email = email;
+
+      const contact = await Contact.findByPk(id);
+      if (!contact) {
+        return sendNotFoundResponse(res, "Contact not found");
+      }
+
+      // Cập nhật các trường được cung cấp
+      if (name !== undefined) contact.name = name;
+      if (email !== undefined) {
+        // Basic email validation
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(email)) {
+          return sendErrorResponse(
+            res,
+            "Invalid email format",
+            "VALIDATION_ERROR",
+            400
+          );
+        }
+        contact.email = email;
+      }
+      if (message !== undefined) contact.message = message;
+      if (type !== undefined) contact.type = parseInt(type);
+      if (phone_number !== undefined) contact.phone_number = phone_number;
+      if (status !== undefined) contact.status = parseInt(status);
+      if (reply !== undefined) contact.reply = reply;
+
+      await contact.save();
+
+      sendUpdateResponse(
+        res,
+        transformToCamelCase(contact),
+        "Contact updated successfully"
+      );
+    } catch (error) {
+      sendErrorResponse(res, error.message, "UPDATE_ERROR", 400);
     }
-    if (message !== undefined) contact.message = message;
-    if (type !== undefined) contact.type = parseInt(type);
-    if (phone_number !== undefined) contact.phone_number = phone_number;
-    if (status !== undefined) contact.status = parseInt(status);
-    if (reply !== undefined) contact.reply = reply;
-
-    await contact.save();
-
-    sendUpdateResponse(
-      res,
-      transformToCamelCase(contact),
-      "Contact updated successfully"
-    );
-  } catch (error) {
-    sendErrorResponse(res, error.message, "UPDATE_ERROR", 400);
   }
-});
+);
 
 // Gửi email theo lô với retry
 const sendEmailsInBatches = async (
@@ -653,46 +660,51 @@ const sendEmailsInBatches = async (
   return failedEmails;
 };
 
-router.post("/survey", authMiddleware, adminMiddleware, async (req, res) => {
-  try {
-    const { reply } = req.body;
+router.post(
+  "/survey",
+  authMiddleware,
+  adminOrMarketerMiddleware,
+  async (req, res) => {
+    // ✅ Chỉ Admin hoặc Marketer (role > 1) mới có thể tạo survey
+    try {
+      const { reply } = req.body;
 
-    if (!reply) {
-      return sendErrorResponse(
+      if (!reply) {
+        return sendErrorResponse(
+          res,
+          "Reply content is required",
+          "VALIDATION_ERROR",
+          400
+        );
+      }
+
+      const users = await User.findAll({ attributes: ["email"] });
+      if (!users || users.length === 0) {
+        return sendNotFoundResponse(res, "No users found");
+      }
+
+      const emailList = users.map((user) => user.email);
+
+      sendEmailsInBatches(emailList, reply, 10, 3000)
+        .then((failedEmails) => {})
+        .catch((err) => {
+          console.error("Error in email sending:", err);
+        });
+
+      sendDetailResponse(
         res,
-        "Reply content is required",
-        "VALIDATION_ERROR",
-        400
+        { totalEmails: emailList.length },
+        "Email sending process started"
       );
+    } catch (error) {
+      sendInternalErrorResponse(res, error.message);
     }
-
-    const users = await User.findAll({ attributes: ["email"] });
-    if (!users || users.length === 0) {
-      return sendNotFoundResponse(res, "No users found");
-    }
-
-    const emailList = users.map((user) => user.email);
-
-    sendEmailsInBatches(emailList, reply, 10, 3000)
-      .then((failedEmails) => {
-      })
-      .catch((err) => {
-        console.error("Error in email sending:", err);
-      });
-
-    sendDetailResponse(
-      res,
-      { totalEmails: emailList.length },
-      "Email sending process started"
-    );
-  } catch (error) {
-    sendInternalErrorResponse(res, error.message);
   }
-});
+);
 router.post(
   "/survey-test",
   authMiddleware,
-  adminMiddleware,
+  adminOrMarketerMiddleware, // ✅ Chỉ Admin hoặc Marketer (role > 1) mới có thể test survey
   async (req, res) => {
     try {
       const { reply } = req.body;

@@ -326,8 +326,8 @@ const csvUpload = multer({
 });
 router.use("/upload", express.static("uploads")); // Cho phép truy cập ảnh đã upload
 
-// Lấy tất cả users (GET route for RESTful API)
-router.get("/", async (req, res) => {
+// Lấy tất cả users (GET route for RESTful API) - chỉ Admin hoặc Marketer (role > 1) mới có thể xem
+router.get("/", authMiddleware, adminOrMarketerMiddleware, async (req, res) => {
   try {
     // Lấy tham số từ query parameters - support both camelCase and snake_case
     let {
@@ -707,19 +707,24 @@ router.post(
   }
 );
 
-// Tạo user mới
-router.post("/", authMiddleware, adminMiddleware, async (req, res) => {
-  try {
-    const user = await safeCreate(User, req.body);
-    sendCreateResponse(
-      res,
-      transformToCamelCase(user),
-      "User created successfully"
-    );
-  } catch (error) {
-    sendInternalErrorResponse(res, error.message);
+// Tạo user mới - chỉ Admin hoặc Marketer (role > 1) mới có thể tạo
+router.post(
+  "/",
+  authMiddleware,
+  adminOrMarketerMiddleware,
+  async (req, res) => {
+    try {
+      const user = await safeCreate(User, req.body);
+      sendCreateResponse(
+        res,
+        transformToCamelCase(user),
+        "User created successfully"
+      );
+    } catch (error) {
+      sendInternalErrorResponse(res, error.message);
+    }
   }
-});
+);
 
 // Get current user (me) - requires authentication
 router.get("/me", authMiddleware, async (req, res) => {
@@ -1107,10 +1112,32 @@ router.get(
   }
 );
 
-// Lấy user theo ID
-router.get("/:id", async (req, res) => {
+// Lấy user theo ID - chỉ Admin hoặc Marketer (role > 1) mới có thể xem, hoặc user xem chính mình
+router.get("/:id", authMiddleware, async (req, res) => {
   try {
-    const user = await User.findByPk(req.params.id, {
+    const userId = Number.parseInt(req.params.id, 10);
+    const currentUserId = req.user.id;
+    const currentUserRole = req.user.role || req.user.role_id;
+
+    // ✅ Authorization check: User chỉ có thể xem chính mình, trừ khi là Admin/Marketer (role > 1)
+    const isAdminOrMarketer =
+      currentUserRole === 2 ||
+      currentUserRole === 3 ||
+      currentUserRole === "Admin" ||
+      currentUserRole === "Marketer" ||
+      req.user.role_name === "Admin" ||
+      req.user.role_name === "Marketer";
+
+    if (userId !== currentUserId && !isAdminOrMarketer) {
+      return sendErrorResponse(
+        res,
+        "Bạn không có quyền xem thông tin của người dùng khác",
+        "FORBIDDEN",
+        403
+      );
+    }
+
+    const user = await User.findByPk(userId, {
       include: [
         {
           model: Role,
@@ -1206,145 +1233,156 @@ router.get("/:id", async (req, res) => {
   }
 });
 
-// Cập nhật user
-router.put("/:id", async (req, res) => {
-  const transaction = await sequelize.transaction();
+// Cập nhật user - chỉ Admin hoặc Marketer mới có thể update
+router.put(
+  "/:id",
+  authMiddleware,
+  adminOrMarketerMiddleware,
+  async (req, res) => {
+    const transaction = await sequelize.transaction();
 
-  try {
-    const user = await User.findByPk(req.params.id, { transaction });
-    if (!user) {
-      await transaction.rollback();
-      return sendNotFoundResponse(res, "User not found");
-    }
-
-    // Extract userSub data from request body BEFORE transformation
-    const { userSub, ...userData } = req.body;
-
-    // Transform userData to snake_case for database operations
-    const transformedUserData = transformToSnakeCase(userData);
-
-    // Update user information (exclude userSub data)
-    // Force update with individual field - try Object.entries approach
-    let countPromptValue = undefined;
-    for (const [key, value] of Object.entries(transformedUserData)) {
-      if (key === "count_prompt") {
-        countPromptValue = value;
-        break;
+    try {
+      const user = await User.findByPk(req.params.id, { transaction });
+      if (!user) {
+        await transaction.rollback();
+        return sendNotFoundResponse(res, "User not found");
       }
-    }
 
-    if (countPromptValue !== undefined) {
-      user.count_promt = countPromptValue;
-      await user.save({ transaction });
-    } else {
-      await user.update(transformedUserData, { transaction });
-    }
+      // Extract userSub data from request body BEFORE transformation
+      const { userSub, ...userData } = req.body;
 
-    // Update subscription if userSub data is provided
-    if (userSub) {
-      const { subscriptionId, startDate, endDate, token, status } = userSub;
+      // Transform userData to snake_case for database operations
+      const transformedUserData = transformToSnakeCase(userData);
 
-      // Find ANY user subscription (not just active ones)
-      const existingUserSub = await UserSub.findOne({
-        where: { user_id: req.params.id },
-        order: [["id", "DESC"]], // Get the most recent one by ID
-        transaction,
-      });
+      // Update user information (exclude userSub data)
+      // Force update with individual field - try Object.entries approach
+      let countPromptValue = undefined;
+      for (const [key, value] of Object.entries(transformedUserData)) {
+        if (key === "count_prompt") {
+          countPromptValue = value;
+          break;
+        }
+      }
 
-      if (existingUserSub) {
-        // Update existing subscription
-        const updateData = {
-          sub_id: subscriptionId || existingUserSub.sub_id,
-          start_date: startDate || existingUserSub.start_date,
-          end_date: endDate || existingUserSub.end_date,
-          token: token !== undefined ? token : existingUserSub.token,
-          status: status !== undefined ? status : existingUserSub.status,
-        };
+      if (countPromptValue !== undefined) {
+        user.count_promt = countPromptValue;
+        await user.save({ transaction });
+      } else {
+        await user.update(transformedUserData, { transaction });
+      }
 
-        await existingUserSub.update(updateData, { transaction });
-      } else if (subscriptionId) {
-        // ✅ Enforce single userSub rule: DELETE existing userSubs before creating new one
+      // Update subscription if userSub data is provided
+      if (userSub) {
+        const { subscriptionId, startDate, endDate, token, status } = userSub;
+
+        // Find ANY user subscription (not just active ones)
+        const existingUserSub = await UserSub.findOne({
+          where: { user_id: req.params.id },
+          order: [["id", "DESC"]], // Get the most recent one by ID
+          transaction,
+        });
+
+        if (existingUserSub) {
+          // Update existing subscription
+          const updateData = {
+            sub_id: subscriptionId || existingUserSub.sub_id,
+            start_date: startDate || existingUserSub.start_date,
+            end_date: endDate || existingUserSub.end_date,
+            token: token !== undefined ? token : existingUserSub.token,
+            status: status !== undefined ? status : existingUserSub.status,
+          };
+
+          await existingUserSub.update(updateData, { transaction });
+        } else if (subscriptionId) {
+          // ✅ Enforce single userSub rule: DELETE existing userSubs before creating new one
+          await UserSub.destroy({
+            where: { user_id: req.params.id },
+            transaction,
+          });
+
+          // Create new subscription if none exists
+          const createData = {
+            user_id: req.params.id,
+            sub_id: subscriptionId,
+            status: status || 1,
+            start_date: startDate || new Date(),
+            end_date:
+              endDate || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+            token: token || 0,
+          };
+
+          await UserSub.create(createData, { transaction });
+        } else {
+        }
+      }
+
+      // Handle legacy subId or sub_id for backward compatibility
+      const subId = req.body.subId || req.body.sub_id;
+      if (subId && !userSub) {
+        // ✅ Enforce single userSub rule: DELETE existing userSubs before updating
         await UserSub.destroy({
           where: { user_id: req.params.id },
           transaction,
         });
 
-        // Create new subscription if none exists
-        const createData = {
-          user_id: req.params.id,
-          sub_id: subscriptionId,
-          status: status || 1,
-          start_date: startDate || new Date(),
-          end_date: endDate || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-          token: token || 0,
-        };
-
-        await UserSub.create(createData, { transaction });
-      } else {
+        // Create new subscription with legacy subId
+        await UserSub.create(
+          {
+            user_id: req.params.id,
+            sub_id: subId,
+            status: 1,
+            start_date: new Date(),
+            end_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days from now
+          },
+          { transaction }
+        );
       }
-    }
 
-    // Handle legacy subId or sub_id for backward compatibility
-    const subId = req.body.subId || req.body.sub_id;
-    if (subId && !userSub) {
-      // ✅ Enforce single userSub rule: DELETE existing userSubs before updating
-      await UserSub.destroy({
-        where: { user_id: req.params.id },
-        transaction,
+      // Commit transaction
+      await transaction.commit();
+
+      // Get updated user with subscription
+      const updatedUser = await User.findByPk(req.params.id, {
+        include: [
+          {
+            model: UserSub,
+            where: { status: 1 },
+            include: [Subscription],
+          },
+        ],
       });
 
-      // Create new subscription with legacy subId
-      await UserSub.create(
-        {
-          user_id: req.params.id,
-          sub_id: subId,
-          status: 1,
-          start_date: new Date(),
-          end_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days from now
-        },
-        { transaction }
+      sendUpdateResponse(
+        res,
+        transformToCamelCase(updatedUser),
+        "User updated successfully"
       );
+    } catch (error) {
+      // Rollback transaction on error
+      await transaction.rollback();
+      console.error(`Error updating user ${req.params.id}:`, error);
+      sendInternalErrorResponse(res, error.message);
     }
-
-    // Commit transaction
-    await transaction.commit();
-
-    // Get updated user with subscription
-    const updatedUser = await User.findByPk(req.params.id, {
-      include: [
-        {
-          model: UserSub,
-          where: { status: 1 },
-          include: [Subscription],
-        },
-      ],
-    });
-
-    sendUpdateResponse(
-      res,
-      transformToCamelCase(updatedUser),
-      "User updated successfully"
-    );
-  } catch (error) {
-    // Rollback transaction on error
-    await transaction.rollback();
-    console.error(`Error updating user ${req.params.id}:`, error);
-    sendInternalErrorResponse(res, error.message);
   }
-});
+);
 
-// Xóa user
-router.delete("/:id", authMiddleware, adminMiddleware, async (req, res) => {
-  try {
-    const user = await User.findByPk(req.params.id);
-    if (!user) return sendNotFoundResponse(res, "User not found");
+// Xóa user - chỉ Admin hoặc Marketer (role > 1) mới có thể xóa
+router.delete(
+  "/:id",
+  authMiddleware,
+  adminOrMarketerMiddleware,
+  async (req, res) => {
+    try {
+      const user = await User.findByPk(req.params.id);
+      if (!user) return sendNotFoundResponse(res, "User not found");
 
-    await user.destroy();
-    sendDeleteResponse(res, "User deleted successfully");
-  } catch (error) {
-    sendInternalErrorResponse(res, error.message);
+      await user.destroy();
+      sendDeleteResponse(res, "User deleted successfully");
+    } catch (error) {
+      sendInternalErrorResponse(res, error.message);
+    }
   }
-});
+);
 const generateOtp = () =>
   Math.floor(100000 + Math.random() * 900000).toString();
 
@@ -1881,41 +1919,46 @@ router.post("/login-password", async (req, res) => {
     sendInternalErrorResponse(res, error.message);
   }
 });
-// Cập nhật count_promt giảm 1 cho user theo id
-router.put("/count-prompt/:id", async (req, res) => {
-  try {
-    const userId = req.params.id;
+// Cập nhật count_promt giảm 1 cho user theo id - chỉ Admin hoặc Marketer mới có thể update
+router.put(
+  "/count-prompt/:id",
+  authMiddleware,
+  adminOrMarketerMiddleware,
+  async (req, res) => {
+    try {
+      const userId = req.params.id;
 
-    // Tìm người dùng theo id
-    const user = await User.findByPk(userId);
+      // Tìm người dùng theo id
+      const user = await User.findByPk(userId);
 
-    if (!user) {
-      return res.status(404).json({ message: "User not found" });
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      // Kiểm tra nếu count_promt đã đạt 0, không giảm nữa
+      if (user.count_promt <= 0) {
+        return res
+          .status(200)
+          .json({ message: "count_promt is min", count_prompt: 0 });
+      }
+
+      // Giảm count_promt đi 1
+      user.count_promt -= 1;
+
+      // Lưu thay đổi
+      await user.save();
+
+      res.status(200).json({
+        message: "count_promt decreased successfully",
+        count_promt: user.count_promt,
+      });
+    } catch (error) {
+      res
+        .status(500)
+        .json({ message: "Error updating count_promt", error: error.message });
     }
-
-    // Kiểm tra nếu count_promt đã đạt 0, không giảm nữa
-    if (user.count_promt <= 0) {
-      return res
-        .status(200)
-        .json({ message: "count_promt is min", count_prompt: 0 });
-    }
-
-    // Giảm count_promt đi 1
-    user.count_promt -= 1;
-
-    // Lưu thay đổi
-    await user.save();
-
-    res.status(200).json({
-      message: "count_promt decreased successfully",
-      count_promt: user.count_promt,
-    });
-  } catch (error) {
-    res
-      .status(500)
-      .json({ message: "Error updating count_promt", error: error.message });
   }
-});
+);
 
 /**
  * @route PUT /api/users/update-info/:id
@@ -1938,6 +1981,7 @@ router.put("/count-prompt/:id", async (req, res) => {
 router.put(
   "/update-info/:id",
   authMiddleware,
+  adminOrMarketerMiddleware, // ✅ Chỉ Admin hoặc Marketer (role > 1) mới có thể update
   upload.fields([{ name: "profile_image" }]),
   async (req, res) => {
     try {
@@ -1953,23 +1997,8 @@ router.put(
         );
       }
 
-      const currentUserId = req.user.id;
-      const currentUserRole = req.user.role || req.user.role_id;
-
-      // ✅ Authorization check: User chỉ có thể update profile của chính mình, trừ khi là Admin
-      const isAdmin =
-        currentUserRole === 2 ||
-        currentUserRole === "Admin" ||
-        req.user.role_name === "Admin";
-      if (userId !== currentUserId && !isAdmin) {
-        return sendErrorResponse(
-          res,
-          "Bạn không có quyền cập nhật profile của người dùng khác",
-          "FORBIDDEN",
-          403
-        );
-      }
-
+      // ✅ Middleware adminOrMarketerMiddleware đã kiểm tra role > 1 (Admin/Marketer)
+      // Nên không cần check lại trong code
       const user = await User.findByPk(userId);
 
       if (!user) {
@@ -2062,40 +2091,46 @@ router.put(
   }
 );
 
-router.put("/change-password/:id", async (req, res) => {
-  try {
-    const userId = req.params.id;
-    const currentPass = req.query.password;
-    const newPassword = req.query.newPassword;
-    const user = await User.findByPk(userId);
+// Thay đổi mật khẩu - chỉ Admin hoặc Marketer mới có thể update
+router.put(
+  "/change-password/:id",
+  authMiddleware,
+  adminOrMarketerMiddleware,
+  async (req, res) => {
+    try {
+      const userId = req.params.id;
+      const currentPass = req.query.password;
+      const newPassword = req.query.newPassword;
+      const user = await User.findByPk(userId);
 
-    if (!user)
-      return res.status(404).json({ message: "Tài khoản không tồn tại" });
+      if (!user)
+        return res.status(404).json({ message: "Tài khoản không tồn tại" });
 
-    // Kiểm tra mật khẩu cũ với mật khẩu đã mã hóa trong cơ sở dữ liệu
-    const isMatch = await bcrypt.compare(currentPass, user.password_hash);
+      // Kiểm tra mật khẩu cũ với mật khẩu đã mã hóa trong cơ sở dữ liệu
+      const isMatch = await bcrypt.compare(currentPass, user.password_hash);
 
-    if (!isMatch) {
-      return res
-        .status(200)
-        .json({ message: "Mật khẩu hiện tại không chính xác!", type: 1 }); //type = 1: sai mật khẩu
+      if (!isMatch) {
+        return res
+          .status(200)
+          .json({ message: "Mật khẩu hiện tại không chính xác!", type: 1 }); //type = 1: sai mật khẩu
+      }
+      // Mã hóa mật khẩu mới
+      const hashedNewPassword = await bcrypt.hash(newPassword, 10);
+
+      // Cập nhật mật khẩu mới vào cơ sở dữ liệu
+      user.password_hash = hashedNewPassword;
+      await user.save();
+      res.status(200).json({
+        type: 2, // OK
+        message: "Cập nhật mật khẩu thành công!",
+      });
+    } catch (error) {
+      res
+        .status(500)
+        .json({ message: "Lỗi khi cập nhật mật khẩu", error: error.message });
     }
-    // Mã hóa mật khẩu mới
-    const hashedNewPassword = await bcrypt.hash(newPassword, 10);
-
-    // Cập nhật mật khẩu mới vào cơ sở dữ liệu
-    user.password_hash = hashedNewPassword;
-    await user.save();
-    res.status(200).json({
-      type: 2, // OK
-      message: "Cập nhật mật khẩu thành công!",
-    });
-  } catch (error) {
-    res
-      .status(500)
-      .json({ message: "Lỗi khi cập nhật mật khẩu", error: error.message });
   }
-});
+);
 // Gửi email đặt lại mật khẩu
 router.post("/forgot-password", async (req, res) => {
   try {
@@ -2155,7 +2190,7 @@ router.post("/reset-password", async (req, res) => {
 router.put(
   "/:id/subscriptions/:subId",
   authMiddleware,
-  adminMiddleware,
+  adminOrMarketerMiddleware, // ✅ Chỉ Admin hoặc Marketer (role > 1) mới có thể update
   async (req, res) => {
     try {
       const { new_sub_id, status, start_date, end_date, token } = req.body;
@@ -2199,7 +2234,7 @@ router.put(
 router.get(
   "/:id/subscriptions",
   authMiddleware,
-  adminMiddleware,
+  adminOrMarketerMiddleware, // ✅ Chỉ Admin hoặc Marketer (role > 1) mới có thể xem
   async (req, res) => {
     try {
       const subscriptions = await UserSub.findAll({
@@ -2229,7 +2264,7 @@ router.get(
 router.post(
   "/:id/subscriptions",
   authMiddleware,
-  adminMiddleware,
+  adminOrMarketerMiddleware, // ✅ Chỉ Admin hoặc Marketer (role > 1) mới có thể tạo
   async (req, res) => {
     try {
       const { sub_id, start_date, end_date } = req.body;
@@ -2269,7 +2304,7 @@ router.post(
 router.delete(
   "/:id/subscriptions/:subId",
   authMiddleware,
-  adminMiddleware,
+  adminOrMarketerMiddleware, // ✅ Chỉ Admin hoặc Marketer (role > 1) mới có thể xóa
   async (req, res) => {
     try {
       const userSub = await UserSub.findOne({
@@ -2290,7 +2325,7 @@ router.delete(
 router.patch(
   "/:id/subscriptions/:subId/change",
   authMiddleware,
-  adminMiddleware,
+  adminOrMarketerMiddleware, // ✅ Chỉ Admin hoặc Marketer (role > 1) mới có thể thay đổi
   async (req, res) => {
     try {
       const { new_sub_id, start_date } = req.body;
@@ -2446,7 +2481,7 @@ router.post("/auth/google", async (req, res) => {
 router.post(
   "/export-excel",
   authMiddleware,
-  adminMiddleware,
+  adminOrMarketerMiddleware, // ✅ Chỉ Admin hoặc Marketer (role > 1) mới có thể export
   async (req, res) => {
     try {
       const XLSX = require("xlsx");
@@ -2695,7 +2730,7 @@ router.post(
 router.post(
   "/test-import",
   authMiddleware,
-  adminMiddleware,
+  adminOrMarketerMiddleware, // ✅ Chỉ Admin hoặc Marketer (role > 1) mới có thể import
   async (req, res) => {
     try {
       const { users } = req.body;
@@ -2873,7 +2908,7 @@ router.post(
 router.post(
   "/import-csv",
   authMiddleware,
-  adminMiddleware,
+  adminOrMarketerMiddleware, // ✅ Chỉ Admin hoặc Marketer (role > 1) mới có thể import
   csvUpload.single("csvFile"),
   async (req, res) => {
     try {
@@ -3224,7 +3259,7 @@ router.post(
 router.post(
   "/fix-duplicate-subscriptions",
   authMiddleware,
-  adminMiddleware,
+  adminOrMarketerMiddleware, // ✅ Chỉ Admin hoặc Marketer (role > 1) mới có thể fix
   async (req, res) => {
     try {
       const { userId } = req.body;
@@ -3300,7 +3335,7 @@ router.post(
 router.post(
   "/fix-all-duplicate-subscriptions",
   authMiddleware,
-  adminMiddleware,
+  adminOrMarketerMiddleware, // ✅ Chỉ Admin hoặc Marketer (role > 1) mới có thể fix
   async (req, res) => {
     try {
       // Tìm tất cả users có nhiều hơn 1 subscription active

@@ -6,6 +6,7 @@ const {
   authMiddleware,
   adminMiddleware,
 } = require("../middleware/authMiddleware");
+const { adminOrMarketerMiddleware } = require("../middleware/roleMiddleware");
 const {
   sendListResponse,
   sendDetailResponse,
@@ -22,7 +23,8 @@ const {
 const { transformToCamelCase } = require("../utils/transformUtils");
 
 // Get all device logs (admin only) - MUST be before /:userId route
-router.get("/", authMiddleware, adminMiddleware, async (req, res) => {
+router.get("/", authMiddleware, adminOrMarketerMiddleware, async (req, res) => {
+  // ✅ Chỉ Admin hoặc Marketer (role > 1) mới có thể xem
   try {
     // Get pagination parameters
     const page = parseInt(req.query.page) || 1;
@@ -118,53 +120,58 @@ router.get("/me", authMiddleware, async (req, res) => {
   }
 });
 
-// Get device logs for specific user (admin only)
-router.get("/:userId", authMiddleware, adminMiddleware, async (req, res) => {
-  try {
-    const user_id = req.params.userId;
+// Get device logs for specific user - chỉ Admin hoặc Marketer (role > 1) mới có thể xem
+router.get(
+  "/:userId",
+  authMiddleware,
+  adminOrMarketerMiddleware,
+  async (req, res) => {
+    try {
+      const user_id = req.params.userId;
 
-    // Get pagination parameters
-    const page = parseInt(req.query.page) || 1;
-    const pageSize = parseInt(req.query.pageSize) || 10;
-    const offset = (page - 1) * pageSize;
+      // Get pagination parameters
+      const page = parseInt(req.query.page) || 1;
+      const pageSize = parseInt(req.query.pageSize) || 10;
+      const offset = (page - 1) * pageSize;
 
-    // Get all device logs for the user
-    const devices = await DeviceLog.findAll({
-      where: { user_id: user_id },
-      order: [["created_at", "DESC"]],
-      limit: pageSize,
-      offset: offset,
-    });
+      // Get all device logs for the user
+      const devices = await DeviceLog.findAll({
+        where: { user_id: user_id },
+        order: [["created_at", "DESC"]],
+        limit: pageSize,
+        offset: offset,
+      });
 
-    // Get total count for pagination
-    const totalCount = await DeviceLog.count({
-      where: { user_id: user_id },
-    });
+      // Get total count for pagination
+      const totalCount = await DeviceLog.count({
+        where: { user_id: user_id },
+      });
 
-    if (devices.length === 0) {
-      return sendNotFoundResponse(
-        res,
-        "Không tìm thấy thông tin thiết bị đăng nhập"
-      );
-    }
-
-    // Filter to get only the latest record for each IP address
-    const uniqueDevices = [];
-    const ipSet = new Set();
-
-    // Iterate through sorted records to get the latest record for each IP
-    for (const device of devices) {
-      if (!ipSet.has(device.ip_address)) {
-        ipSet.add(device.ip_address);
-        uniqueDevices.push(device);
+      if (devices.length === 0) {
+        return sendNotFoundResponse(
+          res,
+          "Không tìm thấy thông tin thiết bị đăng nhập"
+        );
       }
-    }
 
-    const pagination = calculatePagination(totalCount, page, pageSize);
-    sendListResponse(res, transformToCamelCase(uniqueDevices), pagination);
-  } catch (error) {
-    sendInternalErrorResponse(res, error.message);
+      // Filter to get only the latest record for each IP address
+      const uniqueDevices = [];
+      const ipSet = new Set();
+
+      // Iterate through sorted records to get the latest record for each IP
+      for (const device of devices) {
+        if (!ipSet.has(device.ip_address)) {
+          ipSet.add(device.ip_address);
+          uniqueDevices.push(device);
+        }
+      }
+
+      const pagination = calculatePagination(totalCount, page, pageSize);
+      sendListResponse(res, transformToCamelCase(uniqueDevices), pagination);
+    } catch (error) {
+      sendInternalErrorResponse(res, error.message);
+    }
   }
-});
+);
 
 module.exports = router;

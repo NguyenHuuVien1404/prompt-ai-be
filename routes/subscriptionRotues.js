@@ -281,107 +281,125 @@ router.get(
 );
 
 // Tạo Subscription mới
-router.post("/", authMiddleware, adminMiddleware, async (req, res) => {
-  try {
-    const {
-      name_sub,
-      type,
-      duration,
-      billing_cycle,
-      price,
-      price_year,
-      price_per_month_year,
-      price_total_yearly,
-      description,
-      description_per_year,
-      imageDiscount,
-      is_popular,
-    } = req.body;
+router.post(
+  "/",
+  authMiddleware,
+  adminOrMarketerMiddleware,
+  async (req, res) => {
+    // ✅ Chỉ Admin hoặc Marketer (role > 1) mới có thể tạo
+    try {
+      const {
+        name_sub,
+        type,
+        duration,
+        billing_cycle,
+        price,
+        price_year,
+        price_per_month_year,
+        price_total_yearly,
+        description,
+        description_per_year,
+        imageDiscount,
+        is_popular,
+      } = req.body;
 
-    const newSubscription = await Subscription.create({
-      name_sub,
-      type,
-      duration,
-      billing_cycle,
-      price,
-      price_year,
-      price_per_month_year,
-      price_total_yearly,
-      description,
-      description_per_year,
-      imageDiscount,
-      is_popular,
-    });
+      const newSubscription = await Subscription.create({
+        name_sub,
+        type,
+        duration,
+        billing_cycle,
+        price,
+        price_year,
+        price_per_month_year,
+        price_total_yearly,
+        description,
+        description_per_year,
+        imageDiscount,
+        is_popular,
+      });
 
-    sendCreateResponse(
-      res,
-      transformToCamelCase(newSubscription),
-      "Subscription created successfully"
-    );
-  } catch (error) {
-    sendInternalErrorResponse(res, error.message);
+      sendCreateResponse(
+        res,
+        transformToCamelCase(newSubscription),
+        "Subscription created successfully"
+      );
+    } catch (error) {
+      sendInternalErrorResponse(res, error.message);
+    }
   }
-});
+);
 
 // Cập nhật Subscription
-router.put("/:id", authMiddleware, adminMiddleware, async (req, res) => {
-  try {
-    const {
-      name_sub,
-      type,
-      duration,
-      billing_cycle,
-      price,
-      price_year,
-      price_per_month_year,
-      price_total_yearly,
-      description,
-      description_per_year,
-      imageDiscount,
-      is_popular,
-    } = req.body;
+router.put(
+  "/:id",
+  authMiddleware,
+  adminOrMarketerMiddleware,
+  async (req, res) => {
+    // ✅ Chỉ Admin hoặc Marketer (role > 1) mới có thể update
+    try {
+      const {
+        name_sub,
+        type,
+        duration,
+        billing_cycle,
+        price,
+        price_year,
+        price_per_month_year,
+        price_total_yearly,
+        description,
+        description_per_year,
+        imageDiscount,
+        is_popular,
+      } = req.body;
 
-    const subscription = await Subscription.findByPk(req.params.id);
-    if (!subscription) {
-      return sendNotFoundResponse(res, "Không tìm thấy Subscription!");
+      const subscription = await Subscription.findByPk(req.params.id);
+      if (!subscription) {
+        return sendNotFoundResponse(res, "Không tìm thấy Subscription!");
+      }
+
+      await subscription.update({
+        name_sub,
+        type,
+        duration,
+        billing_cycle,
+        price,
+        price_year,
+        price_per_month_year,
+        price_total_yearly,
+        description,
+        description_per_year,
+        imageDiscount,
+        is_popular,
+      });
+
+      sendUpdateResponse(
+        res,
+        transformToCamelCase(subscription),
+        "Subscription updated successfully"
+      );
+    } catch (error) {
+      sendInternalErrorResponse(res, "Lỗi khi cập nhật Subscription!");
     }
-
-    await subscription.update({
-      name_sub,
-      type,
-      duration,
-      billing_cycle,
-      price,
-      price_year,
-      price_per_month_year,
-      price_total_yearly,
-      description,
-      description_per_year,
-      imageDiscount,
-      is_popular,
-    });
-
-    sendUpdateResponse(
-      res,
-      transformToCamelCase(subscription),
-      "Subscription updated successfully"
-    );
-  } catch (error) {
-    sendInternalErrorResponse(res, "Lỗi khi cập nhật Subscription!");
   }
-});
+);
 
 // Xóa Subscription
-router.delete("/:id", authMiddleware, adminMiddleware, async (req, res) => {
-  try {
-    const subscription = await Subscription.findByPk(req.params.id);
-    if (!subscription) {
-      return sendNotFoundResponse(res, "Không tìm thấy Subscription!");
+router.delete(
+  "/:id",
+  authMiddleware,
+  adminOrMarketerMiddleware,
+  async (req, res) => {
+    // ✅ Chỉ Admin hoặc Marketer (role > 1) mới có thể xóa
+    try {
+      const subscription = await Subscription.findByPk(req.params.id);
+      if (!subscription) {
+        return sendNotFoundResponse(res, "Không tìm thấy Subscription!");
+      }
+      await subscription.destroy();
+      sendDeleteResponse(res, "Xóa Subscription thành công!");
+    } catch (error) {
+      sendInternalErrorResponse(res, "Lỗi khi xóa Subscription!");
     }
-    await subscription.destroy();
-    sendDeleteResponse(res, "Xóa Subscription thành công!");
-  } catch (error) {
-    sendInternalErrorResponse(res, "Lỗi khi xóa Subscription!");
   }
-});
+);
 module.exports = router;

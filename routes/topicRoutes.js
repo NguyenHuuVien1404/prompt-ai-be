@@ -112,49 +112,67 @@ router.get("/:id", async (req, res) => {
 });
 
 // Thêm chủ đề mới
-router.post("/", authMiddleware, adminMiddleware, async (req, res) => {
-  try {
-    const { name, description } = req.body;
-    const topic = await Topic.create({ name, description });
-    sendCreateResponse(
-      res,
-      transformToCamelCase(topic),
-      "Topic created successfully"
-    );
-  } catch (error) {
-    sendInternalErrorResponse(res, error.message);
+router.post(
+  "/",
+  authMiddleware,
+  adminOrMarketerMiddleware,
+  async (req, res) => {
+    // ✅ Chỉ Admin hoặc Marketer (role > 1) mới có thể tạo
+    try {
+      const { name, description } = req.body;
+      const topic = await Topic.create({ name, description });
+      sendCreateResponse(
+        res,
+        transformToCamelCase(topic),
+        "Topic created successfully"
+      );
+    } catch (error) {
+      sendInternalErrorResponse(res, error.message);
+    }
   }
-});
+);
 
 // Cập nhật chủ đề
-router.put("/:id", authMiddleware, adminMiddleware, async (req, res) => {
-  try {
-    const { name } = req.body;
-    const topic = await Topic.findByPk(req.params.id);
-    if (!topic) return sendNotFoundResponse(res, "Không tìm thấy chủ đề");
+router.put(
+  "/:id",
+  authMiddleware,
+  adminOrMarketerMiddleware,
+  async (req, res) => {
+    // ✅ Chỉ Admin hoặc Marketer (role > 1) mới có thể update
+    try {
+      const { name } = req.body;
+      const topic = await Topic.findByPk(req.params.id);
+      if (!topic) return sendNotFoundResponse(res, "Không tìm thấy chủ đề");
 
-    await topic.update({ name });
-    sendUpdateResponse(
-      res,
-      transformToCamelCase(topic),
-      "Topic updated successfully"
-    );
-  } catch (error) {
-    sendInternalErrorResponse(res, error.message);
+      await topic.update({ name });
+      sendUpdateResponse(
+        res,
+        transformToCamelCase(topic),
+        "Topic updated successfully"
+      );
+    } catch (error) {
+      sendInternalErrorResponse(res, error.message);
+    }
   }
-});
+);
 
 // Xóa chủ đề
-router.delete("/:id", authMiddleware, adminMiddleware, async (req, res) => {
-  try {
-    const topic = await Topic.findByPk(req.params.id);
-    if (!topic) return sendNotFoundResponse(res, "Không tìm thấy chủ đề");
+router.delete(
+  "/:id",
+  authMiddleware,
+  adminOrMarketerMiddleware,
+  async (req, res) => {
+    // ✅ Chỉ Admin hoặc Marketer (role > 1) mới có thể xóa
+    try {
+      const topic = await Topic.findByPk(req.params.id);
+      if (!topic) return sendNotFoundResponse(res, "Không tìm thấy chủ đề");
 
-    await topic.destroy();
-    sendDeleteResponse(res, "Topic deleted successfully");
-  } catch (error) {
-    sendInternalErrorResponse(res, error.message);
+      await topic.destroy();
+      sendDeleteResponse(res, "Topic deleted successfully");
+    } catch (error) {
+      sendInternalErrorResponse(res, error.message);
+    }
   }
-});
+);
 
 module.exports = router;

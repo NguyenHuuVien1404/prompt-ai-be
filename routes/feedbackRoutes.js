@@ -196,7 +196,7 @@ router.post("/", authMiddleware, async (req, res) => {
 router.patch(
   "/:id/reply",
   authMiddleware,
-  adminMiddleware,
+  adminOrMarketerMiddleware, // ✅ Chỉ Admin hoặc Marketer (role > 1) mới có thể reply
   async (req, res) => {
     try {
       const { id } = req.params;
@@ -245,69 +245,80 @@ router.patch(
 );
 
 // Cập nhật thông tin feedback - Chỉ admin mới có quyền
-router.put("/:id", authMiddleware, adminMiddleware, async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { phone, feedbackName, message, status, reply } = req.body;
+router.put(
+  "/:id",
+  authMiddleware,
+  adminOrMarketerMiddleware,
+  async (req, res) => {
+    // ✅ Chỉ Admin hoặc Marketer (role > 1) mới có thể update
+    try {
+      const { id } = req.params;
+      const { phone, feedbackName, message, status, reply } = req.body;
 
-    if (!id || isNaN(id)) {
-      return sendErrorResponse(
+      if (!id || isNaN(id)) {
+        return sendErrorResponse(
+          res,
+          "Invalid feedback ID",
+          "VALIDATION_ERROR",
+          400
+        );
+      }
+
+      const feedback = await Feedback.findByPk(id);
+      if (!feedback) {
+        return sendNotFoundResponse(res, "Feedback not found");
+      }
+
+      // Cập nhật các trường được cung cấp
+      if (phone !== undefined) feedback.phone = phone;
+      if (feedbackName !== undefined) feedback.feedback_name = feedbackName;
+      if (message !== undefined) feedback.message = message;
+      if (status !== undefined) feedback.status = parseInt(status);
+      if (reply !== undefined) feedback.reply = reply;
+
+      await feedback.save();
+
+      sendUpdateResponse(
         res,
-        "Invalid feedback ID",
-        "VALIDATION_ERROR",
-        400
+        transformToCamelCase(feedback),
+        "Feedback updated successfully"
       );
+    } catch (error) {
+      sendErrorResponse(res, error.message, "UPDATE_ERROR", 400);
     }
-
-    const feedback = await Feedback.findByPk(id);
-    if (!feedback) {
-      return sendNotFoundResponse(res, "Feedback not found");
-    }
-
-    // Cập nhật các trường được cung cấp
-    if (phone !== undefined) feedback.phone = phone;
-    if (feedbackName !== undefined) feedback.feedback_name = feedbackName;
-    if (message !== undefined) feedback.message = message;
-    if (status !== undefined) feedback.status = parseInt(status);
-    if (reply !== undefined) feedback.reply = reply;
-
-    await feedback.save();
-
-    sendUpdateResponse(
-      res,
-      transformToCamelCase(feedback),
-      "Feedback updated successfully"
-    );
-  } catch (error) {
-    sendErrorResponse(res, error.message, "UPDATE_ERROR", 400);
   }
-});
+);
 
-// Xóa feedback - Chỉ admin mới có quyền
-router.delete("/:id", authMiddleware, adminMiddleware, async (req, res) => {
-  try {
-    const { id } = req.params;
+// Xóa feedback - Chỉ Admin hoặc Marketer (role > 1) mới có quyền
+router.delete(
+  "/:id",
+  authMiddleware,
+  adminOrMarketerMiddleware,
+  async (req, res) => {
+    try {
+      const { id } = req.params;
 
-    if (!id || isNaN(id)) {
-      return sendErrorResponse(
-        res,
-        "Invalid feedback ID",
-        "VALIDATION_ERROR",
-        400
-      );
+      if (!id || isNaN(id)) {
+        return sendErrorResponse(
+          res,
+          "Invalid feedback ID",
+          "VALIDATION_ERROR",
+          400
+        );
+      }
+
+      const feedback = await Feedback.findByPk(id);
+      if (!feedback) {
+        return sendNotFoundResponse(res, "Feedback not found");
+      }
+
+      await feedback.destroy();
+
+      sendDeleteResponse(res, "Feedback deleted successfully");
+    } catch (error) {
+      sendErrorResponse(res, error.message, "DELETE_ERROR", 400);
     }
-
-    const feedback = await Feedback.findByPk(id);
-    if (!feedback) {
-      return sendNotFoundResponse(res, "Feedback not found");
-    }
-
-    await feedback.destroy();
-
-    sendDeleteResponse(res, "Feedback deleted successfully");
-  } catch (error) {
-    sendErrorResponse(res, error.message, "DELETE_ERROR", 400);
   }
-});
+);
 
 module.exports = router;

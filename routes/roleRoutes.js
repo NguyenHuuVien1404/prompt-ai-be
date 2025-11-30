@@ -115,51 +115,16 @@ router.get("/:id", async (req, res) => {
 });
 
 // Tạo role mới
-router.post("/", authMiddleware, adminMiddleware, async (req, res) => {
-  try {
-    const { name, description, permissions } = req.body;
+router.post(
+  "/",
+  authMiddleware,
+  adminOrMarketerMiddleware,
+  async (req, res) => {
+    // ✅ Chỉ Admin hoặc Marketer (role > 1) mới có thể tạo
+    try {
+      const { name, description, permissions } = req.body;
 
-    // Kiểm tra role name đã tồn tại chưa
-    const existingRole = await Role.findOne({ where: { name } });
-    if (existingRole) {
-      return sendErrorResponse(
-        res,
-        "Tên role đã tồn tại",
-        "DUPLICATE_NAME",
-        400
-      );
-    }
-
-    const newRole = await Role.create({
-      name,
-      description,
-      permissions: processPermissionsForStorage(permissions),
-      is_active: true,
-    });
-
-    sendCreateResponse(
-      res,
-      transformToCamelCase(newRole),
-      "Tạo role thành công"
-    );
-  } catch (error) {
-    sendInternalErrorResponse(res, error.message);
-  }
-});
-
-// Cập nhật role
-router.put("/:id", authMiddleware, adminMiddleware, async (req, res) => {
-  try {
-    const { name, description, permissions, is_active } = req.body;
-    const roleId = req.params.id;
-
-    const role = await Role.findByPk(roleId);
-    if (!role) {
-      return sendNotFoundResponse(res, "Role không tồn tại");
-    }
-
-    // Kiểm tra nếu đổi tên thì tên mới có trùng không
-    if (name && name !== role.name) {
+      // Kiểm tra role name đã tồn tại chưa
       const existingRole = await Role.findOne({ where: { name } });
       if (existingRole) {
         return sendErrorResponse(
@@ -169,65 +134,116 @@ router.put("/:id", authMiddleware, adminMiddleware, async (req, res) => {
           400
         );
       }
-    }
 
-    // Cập nhật role
-    await role.update({
-      name: name || role.name,
-      description: description !== undefined ? description : role.description,
-      permissions:
-        permissions !== undefined
-          ? processPermissionsForStorage(permissions)
-          : role.permissions,
-      is_active: is_active !== undefined ? is_active : role.is_active,
-    });
+      const newRole = await Role.create({
+        name,
+        description,
+        permissions: processPermissionsForStorage(permissions),
+        is_active: true,
+      });
 
-    sendUpdateResponse(
-      res,
-      transformToCamelCase(role),
-      "Cập nhật role thành công"
-    );
-  } catch (error) {
-    sendInternalErrorResponse(res, error.message);
-  }
-});
-
-// Xóa role (soft delete)
-router.delete("/:id", authMiddleware, adminMiddleware, async (req, res) => {
-  try {
-    const roleId = req.params.id;
-
-    const role = await Role.findByPk(roleId);
-    if (!role) {
-      return sendNotFoundResponse(res, "Role không tồn tại");
-    }
-
-    // Kiểm tra xem có user nào đang sử dụng role này không
-    const usersWithRole = await User.count({ where: { role_id: roleId } });
-
-    if (usersWithRole > 0) {
-      return sendErrorResponse(
+      sendCreateResponse(
         res,
-        `Không thể xóa role này vì có ${usersWithRole} user đang sử dụng`,
-        "ROLE_IN_USE",
-        400
+        transformToCamelCase(newRole),
+        "Tạo role thành công"
       );
+    } catch (error) {
+      sendInternalErrorResponse(res, error.message);
     }
-
-    // Soft delete bằng cách set is_active = false
-    await role.update({ is_active: false });
-
-    sendDeleteResponse(res, "Xóa role thành công");
-  } catch (error) {
-    sendInternalErrorResponse(res, error.message);
   }
-});
+);
+
+// Cập nhật role - chỉ Admin hoặc Marketer (role > 1) mới có thể update
+router.put(
+  "/:id",
+  authMiddleware,
+  adminOrMarketerMiddleware,
+  async (req, res) => {
+    try {
+      const { name, description, permissions, is_active } = req.body;
+      const roleId = req.params.id;
+
+      const role = await Role.findByPk(roleId);
+      if (!role) {
+        return sendNotFoundResponse(res, "Role không tồn tại");
+      }
+
+      // Kiểm tra nếu đổi tên thì tên mới có trùng không
+      if (name && name !== role.name) {
+        const existingRole = await Role.findOne({ where: { name } });
+        if (existingRole) {
+          return sendErrorResponse(
+            res,
+            "Tên role đã tồn tại",
+            "DUPLICATE_NAME",
+            400
+          );
+        }
+      }
+
+      // Cập nhật role
+      await role.update({
+        name: name || role.name,
+        description: description !== undefined ? description : role.description,
+        permissions:
+          permissions !== undefined
+            ? processPermissionsForStorage(permissions)
+            : role.permissions,
+        is_active: is_active !== undefined ? is_active : role.is_active,
+      });
+
+      sendUpdateResponse(
+        res,
+        transformToCamelCase(role),
+        "Cập nhật role thành công"
+      );
+    } catch (error) {
+      sendInternalErrorResponse(res, error.message);
+    }
+  }
+);
+
+// Xóa role (soft delete) - chỉ Admin hoặc Marketer (role > 1) mới có thể xóa
+router.delete(
+  "/:id",
+  authMiddleware,
+  adminOrMarketerMiddleware,
+  async (req, res) => {
+    try {
+      const roleId = req.params.id;
+
+      const role = await Role.findByPk(roleId);
+      if (!role) {
+        return sendNotFoundResponse(res, "Role không tồn tại");
+      }
+
+      // Kiểm tra xem có user nào đang sử dụng role này không
+      const usersWithRole = await User.count({ where: { role_id: roleId } });
+
+      if (usersWithRole > 0) {
+        return sendErrorResponse(
+          res,
+          `Không thể xóa role này vì có ${usersWithRole} user đang sử dụng`,
+          "ROLE_IN_USE",
+          400
+        );
+      }
+
+      // Soft delete bằng cách set is_active = false
+      await role.update({ is_active: false });
+
+      sendDeleteResponse(res, "Xóa role thành công");
+    } catch (error) {
+      sendInternalErrorResponse(res, error.message);
+    }
+  }
+);
 
 // Khôi phục role đã xóa
 router.patch(
   "/:id/restore",
   authMiddleware,
-  adminMiddleware,
+  adminOrMarketerMiddleware, // ✅ Chỉ Admin hoặc Marketer (role > 1) mới có thể restore
   async (req, res) => {
     try {
       const roleId = req.params.id;
@@ -254,7 +270,7 @@ router.patch(
 router.get(
   "/deleted/list",
   authMiddleware,
-  adminMiddleware,
+  adminOrMarketerMiddleware, // ✅ Chỉ Admin hoặc Marketer (role > 1) mới có thể xem
   async (req, res) => {
     try {
       const deletedRoles = await Role.findAll({
@@ -386,7 +402,7 @@ router.get(
 router.post(
   "/:roleId/assign-user",
   authMiddleware,
-  adminMiddleware,
+  adminOrMarketerMiddleware, // ✅ Chỉ Admin hoặc Marketer (role > 1) mới có thể assign role
   async (req, res) => {
     try {
       const roleId = req.params.roleId;
@@ -448,7 +464,7 @@ router.post(
 router.post(
   "/:roleId/assign-multiple-users",
   authMiddleware,
-  adminMiddleware,
+  adminOrMarketerMiddleware, // ✅ Chỉ Admin hoặc Marketer (role > 1) mới có thể assign role
   async (req, res) => {
     try {
       const roleId = req.params.roleId;
@@ -526,7 +542,7 @@ router.post(
 router.delete(
   "/:roleId/remove-user/:userId",
   authMiddleware,
-  adminMiddleware,
+  adminOrMarketerMiddleware, // ✅ Chỉ Admin hoặc Marketer (role > 1) mới có thể remove role
   async (req, res) => {
     try {
       const roleId = req.params.roleId;
