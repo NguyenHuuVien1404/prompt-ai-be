@@ -173,20 +173,34 @@ router.post(
           .json({ error: "userPrompt quá dài (tối đa 10,000 ký tự)" });
       }
 
+      // ✅ Validate model name - chỉ các model đang được OpenAI hỗ trợ
+      const validModels = ["gpt-4o", "gpt-4o-mini", "gpt-5.1", "gpt-5-mini"];
+      if (model && !validModels.includes(model)) {
+        return res.status(400).json({
+          error: `Model không hợp lệ. Các model được hỗ trợ: ${validModels.join(
+            ", "
+          )}`,
+        });
+      }
+
       transaction = await sequelize.transaction();
 
       let cost;
       switch (model) {
-        case "gpt-4o":
-        case "gpt-4-turbo":
-          cost = 5;
+        case "gpt-5.1":
+          cost = 8; // reasoning mạnh nhất, giá cao nhất
           break;
-        case "gpt-5":
+        case "gpt-4o":
+          cost = 5; // đa phương thức rất tốt, trung bình-cao
+          break;
         case "gpt-5-mini":
-          cost = 4;
+          cost = 3; // thông minh hơn 4o-mini, rẻ
+          break;
+        case "gpt-4o-mini":
+          cost = 2; // basic tasks, rẻ nhất
           break;
         default:
-          cost = 1;
+          cost = 1; // fallback
           break;
       }
       const userId = req.user.id;
