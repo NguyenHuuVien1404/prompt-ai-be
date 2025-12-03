@@ -174,7 +174,7 @@ router.post(
       }
 
       // ✅ Validate model name - chỉ các model đang được OpenAI hỗ trợ
-      const validModels = ["gpt-4o", "gpt-4o-mini", "gpt-5.1", "gpt-5-mini"];
+      const validModels = ["gpt-4o", "  ", "gpt-5.1", "gpt-5-mini"];
       if (model && !validModels.includes(model)) {
         return res.status(400).json({
           error: `Model không hợp lệ. Các model được hỗ trợ: ${validModels.join(
@@ -196,6 +196,7 @@ router.post(
         case "gpt-5-mini":
           cost = 3; // thông minh hơn 4o-mini, rẻ
           break;
+        case "gpt-4.1-mini":
         case "gpt-4o-mini":
           cost = 2; // basic tasks, rẻ nhất
           break;
