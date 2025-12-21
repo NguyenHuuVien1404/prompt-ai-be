@@ -31,6 +31,7 @@ const {
   calculatePagination,
 } = require("../utils/responseUtils");
 const { transformToCamelCase } = require("../utils/transformUtils");
+const { createCacheKey, getCachedPrompts, getCachedPromptDetail, invalidatePromptCache } = require("../utils/promptCache");
 
 // Cấu hình Multer để lưu file vào thư mục "uploads"
 const storage = multer.diskStorage({
@@ -1155,18 +1156,32 @@ router.get("/", async (req, res) => {
       totalCount = await Prompt.count({ where });
     }
 
-    // Get actual data with includes
-    const rows = await Prompt.findAll({
-      where,
-      include: includeArray,
-      limit: pageSize,
-      offset: offset,
-      order: order,
+    // Tạo cache key từ query params
+    const cacheKey = createCacheKey('prompts:list:', {
+      page,
+      pageSize,
+      ...where,
+      order: JSON.stringify(order),
+      include: JSON.stringify(includeArray.map(inc => ({ model: inc.model.name, as: inc.as })))
     });
 
-    const pagination = calculatePagination(totalCount, page, pageSize);
-    const transformedRows = transformToCamelCase(rows);
-    sendListResponse(res, transformedRows, pagination);
+    // Lấy data từ cache hoặc database
+    const result = await getCachedPrompts(cacheKey, async () => {
+      const rows = await Prompt.findAll({
+        where,
+        include: includeArray,
+        limit: pageSize,
+        offset: offset,
+        order: order,
+      });
+      return {
+        rows: transformToCamelCase(rows),
+        totalCount
+      };
+    });
+
+    const pagination = calculatePagination(result.totalCount, page, pageSize);
+    sendListResponse(res, result.rows, pagination);
   } catch (error) {
     res
       .status(500)
@@ -1276,18 +1291,31 @@ router.get("/latest", checkSubTypeAccess, async (req, res) => {
     }
     const totalCount = countQuery.count;
 
-    // Get actual data with includes
-    const rows = await Prompt.findAll({
-      where: whereCondition,
-      include: includeArray,
-      limit: pageSize,
-      offset: offset,
-      order: [["created_at", "DESC"]],
+    // Tạo cache key
+    const cacheKey = createCacheKey('prompts:latest:', {
+      page,
+      pageSize,
+      ...whereCondition,
+      industry_id: req.query.industry_id || null
     });
 
-    const pagination = calculatePagination(totalCount, page, pageSize);
-    const transformedRows = transformToCamelCase(rows);
-    sendListResponse(res, transformedRows, pagination);
+    // Lấy data từ cache hoặc database
+    const result = await getCachedPrompts(cacheKey, async () => {
+      const rows = await Prompt.findAll({
+        where: whereCondition,
+        include: includeArray,
+        limit: pageSize,
+        offset: offset,
+        order: [["created_at", "DESC"]],
+      });
+      return {
+        rows: transformToCamelCase(rows),
+        totalCount
+      };
+    });
+
+    const pagination = calculatePagination(result.totalCount, page, pageSize);
+    sendListResponse(res, result.rows, pagination);
   } catch (error) {
     res
       .status(500)
@@ -1575,8 +1603,23 @@ router.get("/newest", checkSubTypeAccess, async (req, res) => {
       order: [["created_at", "DESC"]],
     });
 
-    const pagination = calculatePagination(totalCount, currentPage, pageSize);
-    sendListResponse(res, transformToCamelCase(newest_prompts), pagination);
+    // Tạo cache key
+    const cacheKey = createCacheKey('prompts:newest:', {
+      page: currentPage,
+      pageSize,
+      ...whereCondition
+    });
+
+    // Lấy data từ cache hoặc database
+    const result = await getCachedPrompts(cacheKey, async () => {
+      return {
+        rows: transformToCamelCase(newest_prompts),
+        totalCount
+      };
+    });
+
+    const pagination = calculatePagination(result.totalCount, currentPage, pageSize);
+    sendListResponse(res, result.rows, pagination);
   } catch (error) {
     console.error("Error fetching newest prompts:", error);
     sendInternalErrorResponse(res, "Lỗi máy chủ nội bộ");
@@ -1697,72 +1740,80 @@ router.get("/:id", async (req, res) => {
 
     let whereCondition = { id };
 
-    const prompt = await Prompt.findOne({
-      where: whereCondition,
-      include: [
-        {
-          model: Category,
-          as: "category",
-          attributes: ["id", "name"],
-          required: false, // LEFT JOIN
-          include: [
-            {
-              model: Section,
-              as: "section",
-              attributes: ["id", "name", "description"],
-              required: false, // LEFT JOIN
-            },
-            {
-              model: Industry,
-              as: "industries",
-              attributes: ["id", "name", "description"],
-              through: { attributes: [] },
-              required: false, // LEFT JOIN
-            },
-          ],
+    // Lấy prompt detail từ cache hoặc database
+    const result = await getCachedPromptDetail(id, async () => {
+      const prompt = await Prompt.findOne({
+        where: whereCondition,
+        include: [
+          {
+            model: Category,
+            as: "category",
+            attributes: ["id", "name"],
+            required: false, // LEFT JOIN
+            include: [
+              {
+                model: Section,
+                as: "section",
+                attributes: ["id", "name", "description"],
+                required: false, // LEFT JOIN
+              },
+              {
+                model: Industry,
+                as: "industries",
+                attributes: ["id", "name", "description"],
+                through: { attributes: [] },
+                required: false, // LEFT JOIN
+              },
+            ],
+          },
+          {
+            model: Topic,
+            as: "topic",
+            attributes: ["id", "name"],
+            required: false, // LEFT JOIN
+          },
+          {
+            model: Industry,
+            as: "promptIndustries",
+            attributes: ["id", "name", "description"],
+            through: { attributes: [] },
+            required: false, // LEFT JOIN
+          },
+        ],
+      });
+
+      if (!prompt) {
+        return null;
+      }
+
+      const relatedPrompts = await Prompt.findAll({
+        where: {
+          category_id: prompt.category_id,
+          sub_type: prompt.sub_type,
+          id: { [Op.ne]: id },
         },
-        {
-          model: Topic,
-          as: "topic",
-          attributes: ["id", "name"],
-          required: false, // LEFT JOIN
-        },
-        {
-          model: Industry,
-          as: "promptIndustries",
-          attributes: ["id", "name", "description"],
-          through: { attributes: [] },
-          required: false, // LEFT JOIN
-        },
-      ],
+        attributes: ["id", "title", "short_description"],
+        include: [
+          {
+            model: Category,
+            as: "category",
+            attributes: ["id", "name"],
+            required: false, // LEFT JOIN
+          },
+        ],
+        limit: 5,
+      });
+
+      return transformToCamelCase(prompt);
     });
 
-    if (!prompt) {
+    if (!result) {
       return res
         .status(404)
         .json({ message: "Prompt not found or you don't have access to it" });
     }
 
-    const relatedPrompts = await Prompt.findAll({
-      where: {
-        category_id: prompt.category_id,
-        sub_type: prompt.sub_type,
-        id: { [Op.ne]: id },
-      },
-      attributes: ["id", "title", "short_description"],
-      include: [
-        {
-          model: Category,
-          as: "category",
-          attributes: ["id", "name"],
-          required: false, // LEFT JOIN
-        },
-      ],
-      limit: 5,
-    });
-
-    const transformedPrompt = transformToCamelCase(prompt);
-    sendDetailResponse(res, transformedPrompt);
+    sendDetailResponse(res, result);
   } catch (error) {
     res
       .status(500)
@@ -1953,6 +2004,9 @@ router.post(
         ],
       });
 
+      // Invalidate cache sau khi tạo prompt mới
+      await invalidatePromptCache();
+
       res.status(201).json({
         message: "Prompt created successfully",
         prompt: transformToCamelCase(createdPrompt),
@@ -2075,6 +2129,9 @@ router.put(
       if (responseData.notFoundIds === undefined) {
         delete responseData.notFoundIds;
       }
+
+      // Invalidate cache sau khi bulk update
+      await invalidatePromptCache();
 
       res.status(200).json({
         success: true,
@@ -2255,6 +2312,9 @@ router.put(
         ],
       });
 
+      // Invalidate cache sau khi update prompt
+      await invalidatePromptCache(req.params.id);
+
       res.status(200).json({
         message: "Prompt updated successfully",
         prompt: transformToCamelCase(updatedPrompt),
@@ -2320,6 +2380,10 @@ router.delete(
       const deletedCount = await Prompt.destroy({
         where: { id: { [Op.in]: existingIds } },
       });
+      
+      // Invalidate cache sau khi bulk delete
+      await invalidatePromptCache();
+      
       const responseData = {
         deleted: deletedCount,
         totalRequested: validPromptIds.length,
@@ -2361,6 +2425,10 @@ router.delete(
       }
 
       await prompt.destroy();
+      
+      // Invalidate cache sau khi delete prompt
+      await invalidatePromptCache(req.params.id);
+      
       res.status(200).json({ message: "Prompt deleted successfully" });
     } catch (error) {
       res

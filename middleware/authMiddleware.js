@@ -1,6 +1,17 @@
 const jwt = require("jsonwebtoken");
+const crypto = require("crypto");
+const cache = require("../utils/cache");
 
-const authMiddleware = (req, res, next) => {
+const BLACKLIST_PREFIX = "blacklist:token:";
+
+/**
+ * Hash token để tạo key ngắn gọn cho Redis
+ */
+const hashToken = (token) => {
+  return crypto.createHash("sha256").update(token).digest("hex");
+};
+
+const authMiddleware = async (req, res, next) => {
   try {
     // Get token from header
     const authHeader = req.headers.authorization;
@@ -9,6 +20,14 @@ const authMiddleware = (req, res, next) => {
     }
 
     const token = authHeader.split(" ")[1];
+
+    // Check token blacklist TRƯỚC khi verify
+    const tokenHash = hashToken(token);
+    const isBlacklisted = await cache.getCache(`${BLACKLIST_PREFIX}${tokenHash}`);
+    
+    if (isBlacklisted) {
+      return res.status(401).json({ message: "Token đã bị vô hiệu hóa" });
+    }
 
     // Verify token
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
@@ -35,4 +54,4 @@ const adminMiddleware = (req, res, next) => {
   }
 };
 
-module.exports = { authMiddleware, adminMiddleware };
+module.exports = { authMiddleware, adminMiddleware, hashToken };

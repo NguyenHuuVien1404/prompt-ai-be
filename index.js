@@ -1,14 +1,10 @@
 const express = require("express");
-const rateLimit = require("express-rate-limit");
 const helmet = require("helmet");
 const ddosProtection = require("./middleware/ddosProtection");
 const dotenv = require("dotenv");
 const cors = require("cors");
 const multer = require("multer");
 const mammoth = require("mammoth");
-const XLSX = require("xlsx");
-const sequelize = require("./config/database.js");
-const { runTask } = require("./utils/worker");
 const compression = require("compression");
 const {
   apiLimiter,
@@ -33,10 +29,6 @@ const productRoutes = require("./routes/productRoutes.js");
 const deviceLogRoutes = require("./routes/deviceLogRoutes.js");
 const paymentRouters = require("./routes/paymentRouters.js");
 const referralRoutes = require("./routes/referralRoutes.js");
-const Prompt = require("./models/Prompt.js");
-const Topic = require("./models/Topic.js");
-const Category = require("./models/Category.js");
-const Referral = require("./models/Referral.js");
 const chatGPTRoutes = require("./routes/chatGPTRoutes.js");
 const historyRoutes = require("./routes/historyRoutes.js");
 const couponRoutes = require("./routes/couponRoutes");

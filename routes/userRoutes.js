@@ -4,6 +4,7 @@ const { User, Role } = require("../models");
 const router = express.Router();
 const bcrypt = require("bcryptjs");
 const { sendOtpEmail } = require("../utils/emailService");
+const { saveOtp, verifyOtp, deleteOtp } = require("../utils/otpService");
 const UserSub = require("../models/UserSub");
 const Subscription = require("../models/Subscription");
 const DeviceLog = require("../models/DeviceLog");
@@ -18,6 +19,7 @@ const csvWriter = require("csv-writer");
 const {
   authMiddleware,
   adminMiddleware,
+  hashToken,
 } = require("../middleware/authMiddleware");
 const { adminOrMarketerMiddleware } = require("../middleware/roleMiddleware");
 const { Op } = require("sequelize");
@@ -727,6 +729,41 @@ router.post(
 );
 
 // Get current user (me) - requires authentication
+// Logout - Thêm token vào blacklist
+router.post("/logout", authMiddleware, async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      return res.status(401).json({ message: "Không có token xác thực" });
+    }
+
+    const token = authHeader.split(" ")[1];
+
+    // Decode token để lấy expiry time
+    let decoded;
+    try {
+      decoded = jwt.decode(token);
+    } catch (error) {
+      return res.status(401).json({ message: "Token không hợp lệ" });
+    }
+
+    // Tính thời gian còn lại của token (seconds)
+    const now = Math.floor(Date.now() / 1000);
+    const expiry = decoded.exp || now + 3600; // Fallback 1 giờ nếu không có exp
+    const ttl = Math.max(0, expiry - now);
+
+    // Thêm token vào blacklist với TTL = thời gian còn lại của token
+    const tokenHash = hashToken(token);
+    const cache = require("../utils/cache");
+    await cache.setCache(`blacklist:token:${tokenHash}`, "1", ttl);
+
+    return res.json({ message: "Đăng xuất thành công" });
+  } catch (error) {
+    console.error("Logout error:", error);
+    return res.status(500).json({ message: "Lỗi khi đăng xuất" });
+  }
+});
+
 router.get("/me", authMiddleware, async (req, res) => {
   try {
     const userId = req.user.id; // Get user ID from JWT token
@@ -1409,12 +1446,15 @@ router.post("/register", async (req, res) => {
       full_name,
       email,
       password_hash: hashedPassword,
-      otp_code: otp,
+      otp_code: otp, // Vẫn lưu vào DB để backward compatible
       otp_expires_at: new Date(Date.now() + 10 * 60 * 1000), // OTP hết hạn sau 10 phút
       account_status: 1,
       role: 1,
       count_promt: 15,
     });
+
+    // Lưu OTP vào Redis (dual-write)
+    await saveOtp(email, otp, newUser);
 
     // Lấy ID của subscription miễn phí
     const freeSub = await Subscription.findOne({
@@ -1477,10 +1517,8 @@ router.post("/resend-otp", async (req, res) => {
     // Tạo mã OTP mới
     const otp = generateOtp();
 
-    // Cập nhật OTP và thời gian hết hạn trong database
-    user.otp_code = otp;
-    user.otp_expires_at = new Date(Date.now() + 10 * 60 * 1000); // 10 phút
-    await user.save();
+    // Lưu OTP vào Redis và Database (dual-write)
+    await saveOtp(email, otp, user);
 
     // Gửi email chứa OTP
     await sendOtpEmail(email, otp);
@@ -1520,11 +1558,10 @@ router.post("/verify-otp", async (req, res) => {
       ],
     });
 
-    if (
-      !user ||
-      user.otp_code !== otp ||
-      new Date() > new Date(user.otp_expires_at)
-    ) {
+    // Verify OTP từ Redis hoặc Database (dual-read)
+    const isValidOtp = await verifyOtp(email, otp, user);
+
+    if (!isValidOtp) {
       return res
         .status(400)
         .json({ error: "Mã OTP không hợp lệ hoặc đã hết hạn" });
@@ -1532,8 +1569,6 @@ router.post("/verify-otp", async (req, res) => {
 
     // Cập nhật trạng thái xác thực
     user.is_verified = true;
-    user.otp_code = null;
-    user.otp_expires_at = null;
     await user.save();
 
     // Lấy permissions từ role
@@ -1701,19 +1736,16 @@ router.post("/login-verify", async (req, res) => {
       include: { model: UserSub },
       nest: true,
     });
-    if (
-      !user ||
-      user.otp_code !== otp ||
-      new Date() > new Date(user.otp_expires_at)
-    ) {
+    // Verify OTP từ Redis hoặc Database (dual-read)
+    const isValidOtp = await verifyOtp(email, otp, user);
+
+    if (!isValidOtp) {
       return res
         .status(400)
         .json({ error: "Mã OTP không hợp lệ hoặc đã hết hạn" });
     }
 
-    // 🟢 Xóa OTP sau khi đăng nhập
-    user.otp_code = null;
-    //cập nhật đã xác thực
+    // Cập nhật đã xác thực (OTP đã được xóa trong verifyOtp)
     user.is_verified = 1;
     await user.save();
 
@@ -1901,9 +1933,8 @@ router.post("/login-password", async (req, res) => {
     } else {
       // Tài khoản chưa xác thực - tạo OTP mới và gửi
       const otp = generateOtp();
-      user.otp_code = otp;
-      user.otp_expires_at = new Date(Date.now() + 10 * 60 * 1000);
-      await user.save();
+      // Lưu OTP vào Redis và Database (dual-write)
+      await saveOtp(email, otp, user);
 
       await sendOtpEmail(email, otp);
 
@@ -2143,9 +2174,8 @@ router.post("/forgot-password", async (req, res) => {
 
     // Tạo mã OTP
     const otp = generateOtp();
-    user.otp_code = otp;
-    user.otp_expires_at = new Date(Date.now() + 10 * 60 * 1000); // Hết hạn sau 10 phút
-    await user.save();
+    // Lưu OTP vào Redis và Database (dual-write)
+    await saveOtp(email, otp, user);
 
     // Gửi email chứa mã OTP
     await sendOtpEmail(email, otp);
@@ -2164,11 +2194,10 @@ router.post("/reset-password", async (req, res) => {
   try {
     const { email, otp, newPassword } = req.body; // Thay token bằng otp
     const user = await User.findOne({ where: { email } });
-    if (
-      !user ||
-      user.otp_code !== otp ||
-      new Date() > new Date(user.otp_expires_at)
-    ) {
+    // Verify OTP từ Redis hoặc Database (dual-read)
+    const isValidOtp = await verifyOtp(email, otp, user);
+
+    if (!isValidOtp) {
       return res
         .status(400)
         .json({ error: "Mã OTP không hợp lệ hoặc đã hết hạn" });
@@ -2177,8 +2206,6 @@ router.post("/reset-password", async (req, res) => {
     // Mã hóa mật khẩu mới
     const hashedPassword = await bcrypt.hash(newPassword, 10);
     user.password_hash = hashedPassword;
-    user.otp_code = null; // Xóa mã OTP sau khi sử dụng
-    user.otp_expires_at = null;
     await user.save();
 
     res.json({ message: "Đặt lại mật khẩu thành công" });
