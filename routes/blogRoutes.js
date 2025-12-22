@@ -171,11 +171,12 @@ router.get("/list", async (req, res) => {
     const offset = (currentPage - 1) * pageSize;
     const limit = pageSize;
 
-    const whereCondition = {
-      title: {
-        [Op.like]: `%${search}%`,
-      },
-    };
+    const whereCondition = {};
+    if (search && search.trim() !== "") {
+      whereCondition.title = {
+        [Op.like]: `%${search.trim()}%`,
+      };
+    }
 
     // Get total count without includes
     const totalCount = await Blog.count({ where: whereCondition });

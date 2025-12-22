@@ -1027,17 +1027,21 @@ router.get("/", async (req, res) => {
       req.query.searchTerm ||
       req.query.searchText ||
       req.query.search_text;
-    if (searchQuery) {
-      const searchTerm = `%${searchQuery}%`;
+    if (searchQuery && String(searchQuery).trim()) {
+      const searchTerm = String(searchQuery).trim();
+      // Use Op.like - MySQL LIKE is case-insensitive with utf8mb4_unicode_ci collation by default
+      const searchPattern = `%${searchTerm}%`;
+      // Sequelize automatically combines Op.or with other conditions using AND
+      // So: where = { category_id: 2, [Op.or]: [...] } becomes: category_id = 2 AND (title LIKE ... OR content LIKE ...)
       where[Op.or] = [
-        { title: { [Op.like]: searchTerm } },
-        { content: { [Op.like]: searchTerm } },
-        { short_description: { [Op.like]: searchTerm } },
-        { what: { [Op.like]: searchTerm } },
-        { tips: { [Op.like]: searchTerm } },
-        { text: { [Op.like]: searchTerm } },
-        { how: { [Op.like]: searchTerm } },
-        { optimizationGuide: { [Op.like]: searchTerm } },
+        { title: { [Op.like]: searchPattern } },
+        { content: { [Op.like]: searchPattern } },
+        { short_description: { [Op.like]: searchPattern } },
+        { what: { [Op.like]: searchPattern } },
+        { tips: { [Op.like]: searchPattern } },
+        { text: { [Op.like]: searchPattern } },
+        { how: { [Op.like]: searchPattern } },
+        { optimizationGuide: { [Op.like]: searchPattern } },
       ];
     }
 
@@ -1157,23 +1161,34 @@ router.get("/", async (req, res) => {
     }
 
     // Tạo cache key từ query params
-    const cacheKey = createCacheKey('prompts:list:', {
+    // Include searchTerm explicitly in cache key to ensure proper caching
+    const cacheKeyParams = {
       page,
       pageSize,
+      searchTerm: searchQuery && String(searchQuery).trim() ? String(searchQuery).trim() : null,
       ...where,
       order: JSON.stringify(order),
       include: JSON.stringify(includeArray.map(inc => ({ model: inc.model.name, as: inc.as })))
-    });
+    };
+    const cacheKey = createCacheKey('prompts:list:', cacheKeyParams);
 
     // Lấy data từ cache hoặc database
     const result = await getCachedPrompts(cacheKey, async () => {
-      const rows = await Prompt.findAll({
+      const queryOptions = {
         where,
         include: includeArray,
         limit: pageSize,
         offset: offset,
         order: order,
-      });
+      };
+      
+      // Debug: Log the query for troubleshooting (remove in production)
+      if (searchQuery && String(searchQuery).trim()) {
+        console.log('Search query:', searchQuery);
+        console.log('Where clause:', JSON.stringify(where, null, 2));
+      }
+      
+      const rows = await Prompt.findAll(queryOptions);
       return {
         rows: transformToCamelCase(rows),
         totalCount
@@ -1217,12 +1232,24 @@ router.get("/latest", checkSubTypeAccess, async (req, res) => {
       whereCondition.topic_id = req.query.topic_id;
     }
 
-    if (req.query.search_text) {
-      const searchText = req.query.search_text;
+    // Handle search - support multiple parameter names
+    const searchQueryLatest =
+      req.query.search ||
+      req.query.searchTerm ||
+      req.query.searchText ||
+      req.query.search_text;
+    if (searchQueryLatest && String(searchQueryLatest).trim()) {
+      const searchTerm = String(searchQueryLatest).trim();
+      const searchPattern = `%${searchTerm}%`;
       whereCondition[Op.or] = [
-        { title: { [Op.like]: `%${searchText}%` } },
-        { title: { [Op.like]: `%${searchText.toLowerCase()}%` } },
-        { title: { [Op.like]: `%${searchText.toUpperCase()}%` } },
+        { title: { [Op.like]: searchPattern } },
+        { content: { [Op.like]: searchPattern } },
+        { short_description: { [Op.like]: searchPattern } },
+        { what: { [Op.like]: searchPattern } },
+        { tips: { [Op.like]: searchPattern } },
+        { text: { [Op.like]: searchPattern } },
+        { how: { [Op.like]: searchPattern } },
+        { optimizationGuide: { [Op.like]: searchPattern } },
       ];
     }
 
@@ -1339,7 +1366,12 @@ router.get("/by-category", checkSubTypeAccess, async (req, res) => {
     }
     const is_type = req.query.isType || req.query.is_type || 1;
     const topic_id = req.query.topicId || req.query.topic_id;
-    const searchText = req.query.searchText || req.query.search_text;
+    // Handle search - support multiple parameter names
+    const searchQueryByCategory =
+      req.query.search ||
+      req.query.searchTerm ||
+      req.query.searchText ||
+      req.query.search_text;
     const page = parseInt(req.query.pageIndex || req.query.page) || 1;
     const pageSize =
       parseInt(req.query.limit) || parseInt(req.query.pageSize) || 12;
@@ -1364,11 +1396,19 @@ router.get("/by-category", checkSubTypeAccess, async (req, res) => {
     ) {
       whereCondition.topic_id = topic_id;
     }
-    if (searchText) {
+    
+    if (searchQueryByCategory && String(searchQueryByCategory).trim()) {
+      const searchTerm = String(searchQueryByCategory).trim();
+      const searchPattern = `%${searchTerm}%`;
       whereCondition[Op.or] = [
-        { title: { [Op.like]: `%${searchText}%` } },
-        { title: { [Op.like]: `%${searchText.toLowerCase()}%` } },
-        { title: { [Op.like]: `%${searchText.toUpperCase()}%` } },
+        { title: { [Op.like]: searchPattern } },
+        { content: { [Op.like]: searchPattern } },
+        { short_description: { [Op.like]: searchPattern } },
+        { what: { [Op.like]: searchPattern } },
+        { tips: { [Op.like]: searchPattern } },
+        { text: { [Op.like]: searchPattern } },
+        { how: { [Op.like]: searchPattern } },
+        { optimizationGuide: { [Op.like]: searchPattern } },
       ];
     }
 

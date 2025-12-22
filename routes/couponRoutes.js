@@ -87,9 +87,14 @@ router.get("/", async (req, res) => {
 
     // Xây dựng điều kiện tìm kiếm
     const where = {};
-    if (search) {
-      where[Op.or] = [{ code: { [Op.like]: `%${search}%` } }];
+    
+    // Handle search - must be set before other conditions to work properly with Sequelize
+    if (search && String(search).trim()) {
+      const searchTerm = String(search).trim();
+      where[Op.or] = [{ code: { [Op.like]: `%${searchTerm}%` } }];
     }
+    
+    // Add other filters - Sequelize will automatically combine with Op.or using AND
     if (status) {
       where.is_active = status === "active";
     }
